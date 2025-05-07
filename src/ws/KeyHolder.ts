@@ -3,14 +3,20 @@ export class KeyHolder {
     private key: number;
     public keys: Record<string, number>;
 
-    constructor() {
+    constructor(keys: string[]) {
         this.key = 1;
         this.keys = {};
+        this.createKeys(keys);
     }
 
     public createKey(tag: string): void {
-        this.key++;
+        if(tag.includes(",")) {
+            console.log(`Tag "${tag}" is invalid; keys cannot contain commas.`);
+            return;
+        }
+
         this.keys[tag] = this.key;
+        this.key++;
     }
     public createKeys(tags: string[]): void {
         for (const tag of tags) this.createKey(tag);
@@ -21,6 +27,10 @@ export class KeyHolder {
     }
     public getChar(key: string): string {
         return String.fromCodePoint(this.get(key));
+    }
+
+    tags(): string {
+        return Object.keys(this.keys).join(",");
     }
 
 }

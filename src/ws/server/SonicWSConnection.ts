@@ -57,7 +57,7 @@ export class SonicWSConnection {
         this.listeners[code].push(listener);
     }
 
-    public send(key: string, value: string) {
+    public send(key: string, value: string = "") {
         const code = this.host.serverKeys.getChar(key);
         if(code == null) throw new Error(`Key "${key}" has not been created!`);
 

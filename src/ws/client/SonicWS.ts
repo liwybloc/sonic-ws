@@ -10,8 +10,10 @@ export class SonicWS {
         event: {[key: string]: Array<(key: string) => void>}
     };
 
-    public clientKeys: KeyHolder;
-    public serverKeys: KeyHolder;
+    private preListen: {[key: string]: Array<(key: string) => void>};
+
+    private clientKeys: KeyHolder;
+    private serverKeys: KeyHolder;
 
     constructor(url: string, options?: WS.ClientOptions) {
         this.ws = new WS.WebSocket(url, options);
@@ -22,12 +24,29 @@ export class SonicWS {
             event: {},
         };
 
-        this.clientKeys = new KeyHolder();
-        this.serverKeys = new KeyHolder();
+        this.preListen = {};
+
+        this.clientKeys = new KeyHolder([]);
+        this.serverKeys = new KeyHolder([]);
+
+        this.ws.on('upgrade', (req) => {
+            const headers = req.headers;
+            const ckData = headers['s-clientkeys'], skData = headers['s-serverkeys'];
+            if(!ckData || !skData || typeof ckData != 'string' || typeof skData != 'string') {
+                this.ws.close();
+                console.error("The server requested is not a Sonic WS server.");
+                return;
+            }
+
+            this.clientKeys.createKeys(ckData.split(","));
+            this.serverKeys.createKeys(skData.split(","));
+
+            Object.keys(this.preListen).forEach(key => this.preListen[key].forEach(l => this.listen(key, l)));
+        });
 
         this.ws.on('message', (data: string) => {
             data = data.toString();
-            
+
             this.listeners.message.forEach(listener => listener(data));
 
             if(data.length < 1) return;
@@ -44,12 +63,19 @@ export class SonicWS {
         });
     }
 
-    public raw_onmessage(listener: (data: string) => void): void {
-        this.listeners.message.push(listener);
+    private listen(key: string, listener: (value: string) => void) {
+        const skey = this.serverKeys.get(key);
+        if(!skey) {
+            console.log("Key is not available on server: " + skey);
+            return;
+        }
+
+        if(!this.listeners.event[skey]) this.listeners.event[skey] = [];
+        this.listeners.event[skey].push(listener);
     }
 
-    public raw_onclose(listener: (event: CloseEvent) => void): void {
-        this.listeners.close.push(listener);
+    public raw_onmessage(listener: (data: string) => void): void {
+        this.listeners.message.push(listener);
     }
 
     public send(key: string, value: string): void {
@@ -62,19 +88,17 @@ export class SonicWS {
     public on_ready(listener: () => void): void {
         this.ws.on('open', listener);
     }
+    public on_close(listener: (event: CloseEvent) => void): void {
+        this.ws.on('close', listener);
+    }
 
     public on(key: string, listener: (value: string) => void) {
-        this.listeners.event[this.serverKeys.get(key)].push(listener);
-    }
-
-    public createClientKeys(...keys: string[]) {
-        this.clientKeys.createKeys(keys);
-    }
-    public createServerKeys(...keys: string[]) {
-        this.serverKeys.createKeys(keys);
-        for(const key of keys) {
-            this.listeners.event[this.serverKeys.get(key)] = [];
+        if(this.ws.readyState != this.ws.OPEN) {
+            if(!this.preListen[key]) this.preListen[key] = [];
+            this.preListen[key].push(listener);
+            return;
         }
+        this.listen(key, listener);
     }
 
 }

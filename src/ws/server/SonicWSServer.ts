@@ -3,31 +3,30 @@ import { SonicWSConnection } from './SonicWSConnection';
 import { KeyHolder } from '../KeyHolder';
 
 export class SonicWSServer {
-    private ws: WS.WebSocketServer;
+    private wss: WS.WebSocketServer;
 
     public clientKeys: KeyHolder;
     public serverKeys: KeyHolder;
 
-    constructor(options: WS.ServerOptions) {
-        this.ws = new WS.WebSocketServer(options);
+    constructor(ck: string[], sk: string[], options: WS.ServerOptions = {}) {
+        this.wss = new WS.WebSocketServer(options);
 
-        this.clientKeys = new KeyHolder();
-        this.serverKeys = new KeyHolder();
-    }
+        this.clientKeys = new KeyHolder(ck);
+        this.serverKeys = new KeyHolder(sk);
 
-    public createClientKeys(...keys: string[]) {
-        this.clientKeys.createKeys(keys);
-    }
-    public createServerKeys(...keys: string[]) {
-        this.serverKeys.createKeys(keys);
+        // send tags to the client so it doesn't have to hard code them in
+        this.wss.on('headers', (headers: string[]) => {
+            headers.push('S-ClientKeys: ' + ck.join(","));
+            headers.push('S-ServerKeys: ' + sk.join(","));
+        })
     }
 
     public on_connect(runner: (client: SonicWSConnection) => void): void {
-        this.ws.on('connection', (socket) => runner(new SonicWSConnection(socket, this)));
+        this.wss.on('connection', (socket) => runner(new SonicWSConnection(socket, this)));
     }
 
     public on_ready(runner: () => void): void {
-        this.ws.on('listening', runner);
+        this.wss.on('listening', runner);
     }
 
 }
