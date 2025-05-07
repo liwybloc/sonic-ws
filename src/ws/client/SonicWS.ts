@@ -1,5 +1,5 @@
 import * as WS from 'ws';
-import { KeyHolder } from './KeyHolder';
+import { KeyHolder } from '../KeyHolder';
 
 export class SonicWS {
     private ws: WS.WebSocket;

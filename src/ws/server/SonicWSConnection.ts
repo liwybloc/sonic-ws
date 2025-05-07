@@ -1,7 +1,7 @@
 import * as WS from 'ws';
 import { SonicWSServer } from './SonicWSServer';
 
-export class SonicWSClient {
+export class SonicWSConnection {
     private socket: WS.WebSocket;
     private host: SonicWSServer;
     private listeners: Record<string, Array<(value: string) => void>>;

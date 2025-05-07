@@ -1,3 +1,3 @@
-export { SonicWS } from './ws/SonicWS';
-export { SonicWSClient } from './ws/SonicWSClient';
-export { SonicWSServer } from './ws/SonicWSServer';
+export { SonicWS } from './ws/client/SonicWS';
+export { SonicWSConnection } from './ws/server/SonicWSConnection';
+export { SonicWSServer } from './ws/server/SonicWSServer';

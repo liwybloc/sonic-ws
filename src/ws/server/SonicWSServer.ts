@@ -1,6 +1,6 @@
 import * as WS from 'ws';
-import { SonicWSClient } from './SonicWSClient';
-import { KeyHolder } from './KeyHolder';
+import { SonicWSConnection } from './SonicWSConnection';
+import { KeyHolder } from '../KeyHolder';
 
 export class SonicWSServer {
     private ws: WS.WebSocketServer;
@@ -22,8 +22,8 @@ export class SonicWSServer {
         this.serverKeys.createKeys(keys);
     }
 
-    public on_connect(runner: (client: SonicWSClient) => void): void {
-        this.ws.on('connection', (socket) => runner(new SonicWSClient(socket, this)));
+    public on_connect(runner: (client: SonicWSConnection) => void): void {
+        this.ws.on('connection', (socket) => runner(new SonicWSConnection(socket, this)));
     }
 
     public on_ready(runner: () => void): void {
