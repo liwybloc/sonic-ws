@@ -1,0 +1,17 @@
+{
+  "name": "sonic-ws",
+  "version": "1.0.0",
+  "description": "A bandwidth efficient websocket library",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "lily",
+  "license": "ISC",
+  "dependencies": {
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  }
+}
