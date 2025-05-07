@@ -1,3 +1,4 @@
 src/**/*
 .gitattributes
 tsconfig.json
+test.js

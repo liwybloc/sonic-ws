@@ -35,8 +35,16 @@ export class SonicWSConnection {
         });
     }
 
+    public on_close(listener: (code: number, reason: Buffer) => void): void {
+        this.socket.on('close', listener);
+    }
+
     public raw_send(data: string): void {
         this.socket.send(data);
+    }
+
+    public close(): void {
+        this.socket.close();
     }
 
     /** Listens for when the client sends a message. This will use the server's key system */
