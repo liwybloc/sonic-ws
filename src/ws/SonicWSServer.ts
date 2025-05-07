@@ -1,15 +1,25 @@
 import * as WS from 'ws';
 import { SonicWSClient } from './SonicWSClient';
+import { KeyHolder } from './KeyHolder';
 
 export class SonicWSServer {
     private ws: WS.WebSocketServer;
-    private key: number;
-    public keys: Record<string, number>;
+
+    public clientKeys: KeyHolder;
+    public serverKeys: KeyHolder;
 
     constructor(options: WS.ServerOptions) {
         this.ws = new WS.WebSocketServer(options);
-        this.key = ' '.codePointAt(0)!;
-        this.keys = {};
+
+        this.clientKeys = new KeyHolder();
+        this.serverKeys = new KeyHolder();
+    }
+
+    public createClientKeys(...keys: string[]) {
+        this.clientKeys.createKeys(keys);
+    }
+    public createServerKeys(...keys: string[]) {
+        this.serverKeys.createKeys(keys);
     }
 
     public on_connect(runner: (client: SonicWSClient) => void): void {
@@ -20,13 +30,4 @@ export class SonicWSServer {
         this.ws.on('listening', runner);
     }
 
-    /** Creates a key; remember to keep keys created in the same order as the client */
-    public createKey(tag: string): void {
-        this.key++;
-        this.keys[tag] = this.key;
-    }
-    /** Creates multiple keys; remember to keep keys created in the same order as the client */
-    public createKeys(...tags: string[]): void {
-        for (const tag of tags) this.createKey(tag);
-    }
 }

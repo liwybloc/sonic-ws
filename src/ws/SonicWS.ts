@@ -1,9 +1,8 @@
 import * as WS from 'ws';
+import { KeyHolder } from './KeyHolder';
 
 export class SonicWS {
     private ws: WS.WebSocket;
-    private key: number;
-    public keys: Record<string, number>;
 
     private listeners: {
         message: Array<(data: string) => void>,
@@ -11,17 +10,20 @@ export class SonicWS {
         event: {[key: string]: Array<(key: string) => void>}
     };
 
+    public clientKeys: KeyHolder;
+    public serverKeys: KeyHolder;
+
     constructor(url: string, options?: WS.ClientOptions) {
         this.ws = new WS.WebSocket(url, options);
-
-        this.key = ' '.codePointAt(0)!;
-        this.keys = {};
 
         this.listeners = {
             message: [],
             close: [],
             event: {},
         };
+
+        this.clientKeys = new KeyHolder();
+        this.serverKeys = new KeyHolder();
 
         this.ws.on('message', (data: string) => {
             data = data.toString();
@@ -50,22 +52,11 @@ export class SonicWS {
         this.listeners.close.push(listener);
     }
 
-    /** Creates a key; remember to keep keys created in the same order as the server */
-    public createKey(tag: string): void {
-        this.key++;
-        this.keys[tag] = this.key;
-        this.listeners.event[this.key] = [];
-    }
-    /** Creates multiple keys; remember to keep keys created in the same order as the server */
-    public createKeys(...tags: string[]): void {
-        for (const tag of tags) this.createKey(tag);
-    }
-
     public send(key: string, value: string): void {
-        const code = this.keys[key];
-        if (code === undefined) throw new Error(`Key "${key}" has not been created!`);
+        const code = this.clientKeys.getChar(key);
+        if (code == null) throw new Error(`Key "${key}" has not been created!`);
 
-        this.ws.send(String.fromCodePoint(code) + value);
+        this.ws.send(code + value);
     }
 
     public on_ready(listener: () => void): void {
@@ -73,7 +64,17 @@ export class SonicWS {
     }
 
     public on(key: string, listener: (value: string) => void) {
-        this.listeners.event[this.keys[key]].push(listener);
+        this.listeners.event[this.serverKeys.get(key)].push(listener);
+    }
+
+    public createClientKeys(...keys: string[]) {
+        this.clientKeys.createKeys(keys);
+    }
+    public createServerKeys(...keys: string[]) {
+        this.serverKeys.createKeys(keys);
+        for(const key of keys) {
+            this.listeners.event[this.serverKeys.get(key)] = [];
+        }
     }
 
 }

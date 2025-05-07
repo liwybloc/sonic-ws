@@ -11,18 +11,27 @@ export class SonicWSClient {
         this.host = host;
 
         this.listeners = {};
-        for (const key of Object.values(host.keys)) {
+        for (const key of Object.values(host.clientKeys.keys)) {
             this.listeners[String.fromCodePoint(key)] = [];
         }
 
         this.socket.on('message', (data: WS.RawData) => {
             const message = data.toString();
-            if (message.length === 0) return;
+
+            if (message.length < 1) {
+                this.socket.close();
+                return;
+            }
 
             const key = message.substring(0, 1);
             const value = message.substring(1);
 
-            this.listeners[key]?.forEach(listener => listener(value));
+            if(!this.listeners[key]) {
+                this.socket.close();
+                return;
+            }
+
+            this.listeners[key].forEach(listener => listener(value));
         });
     }
 
@@ -32,20 +41,19 @@ export class SonicWSClient {
 
     /** Listens for when the client sends a message. This will use the server's key system */
     public on(key: string, listener: (value: string) => void): void {
-        const code = this.host.keys[key];
-        if (code === undefined) throw new Error(`Key "${key}" has not been created!`);
+        const code = this.host.clientKeys.getChar(key);
+        if (code == null) throw new Error(`Key "${key}" has not been created!`);
 
-        const symbol = String.fromCodePoint(code);
-        if (!this.listeners[symbol]) this.listeners[symbol] = [];
+        if (!this.listeners[code]) this.listeners[code] = [];
 
-        this.listeners[symbol].push(listener);
+        this.listeners[code].push(listener);
     }
 
     public send(key: string, value: string) {
-        const code = this.host.keys[key];
-        if(code === undefined) throw new Error(`Key "${key}" has not been created!`);
+        const code = this.host.serverKeys.getChar(key);
+        if(code == null) throw new Error(`Key "${key}" has not been created!`);
 
-        this.socket.send(String.fromCodePoint(code) + value);
+        this.socket.send(code + value);
     }
 
 }
