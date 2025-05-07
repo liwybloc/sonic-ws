@@ -1,11 +1,21 @@
 {
   "name": "sonic-ws",
-  "version": "1.0.0",
+  "version": "alpha-1.0.0",
   "description": "A bandwidth efficient websocket library",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc -d",
+    "test": "npm run build && node test"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cutelittlelily/sonic-ws.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cutelittlelily/sonic-ws/issues"
+  },
+  "homepage": "https://github.com/cutelittlelily/sonic-ws#readme",
   "author": "lily",
   "license": "ISC",
   "dependencies": {
