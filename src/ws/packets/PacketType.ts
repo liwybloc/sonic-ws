@@ -33,10 +33,12 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
     [PacketType.NONE]: (data) => data == "",
     [PacketType.RAW]: () => true,
 
-    [PacketType.INTS_C]: () => true,                     // same here \/\/\/\/
-    [PacketType.INTS_D]: (data, cap) => data.length > 0 && (data.length - 1) == data[0].codePointAt(0)! * cap,
+    [PacketType.INTS_C]: (data, cap) => data.length == cap,// same here \/\/\/\/
+    [PacketType.INTS_D]: (data, cap) => data.length > 0 && processCodePoints(data).length == data[0].codePointAt(0)! * cap + 1,
     
-    [PacketType.DECIMAL]: (data, cap) => data.length > 0 && (data.length - 1) == data[0].codePointAt(0)! * cap,
+    [PacketType.DECIMAL]: (data, cap) => {
+        return data.length > 0 && processCodePoints(data).length == data[0].codePointAt(0)! * cap * 2 + 1;
+    },
 
     [PacketType.BOOLEAN]: (data) => data == NULL || data == "",
 }
