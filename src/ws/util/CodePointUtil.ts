@@ -1,5 +1,8 @@
 // this shit is so complex so i commented it...
 
+// null char so it's easy
+export const NULL = String.fromCodePoint(0);
+
 // the highest code point of utf16
 export const MAX_C = 0x10FFFF;
 
@@ -47,6 +50,12 @@ export function toSignedINT_C(number: number): number {
     return number < 0 ? -number + NEGATIVE_C : number;
 }
 
+// just conversion and checks lol
+export function stringedINT_C(number: number): string {
+    if(number >= NEGATIVE_C) throw new Error("INT_C numbers cannot go above " + NEGATIVE_C);
+    return String.fromCodePoint(toSignedINT_C(number));
+}
+
 // calculate how many characters (digits) are needed to store this number in OVERFLOW base
 export function sectorSize(number: number): number {
     // 0 would make -Infinity;
@@ -58,7 +67,7 @@ export function sectorSize(number: number): number {
 // encodes a signed integer into a unicode-safe string using a large base (OVERFLOW)
 export function convertINT_D(number: number, chars: number): string {
     // special case: zero is always encoded as a single null character
-    if (number == 0) return String.fromCodePoint(0);
+    if (number == 0) return NULL;
 
     // store the sign and work with the absolute value
     const negative = number < 0;

@@ -34,12 +34,20 @@ export class SonicWSConnection {
             const key = message[0];
             const value = message.substring(1);
 
+            // not a key, bye bye
             if(!this.listeners[key]) {
                 this.socket.close();
                 return;
             }
 
-            this.listeners[key].forEach(listener => listener.listen(value));
+            for(const listener of this.listeners[key]) {
+                const valid = listener.listen(value);
+                // if invalid then ignore it
+                if(!valid) {
+                    socket.close();
+                    break;
+                }
+            };
         });
     }
 
@@ -56,13 +64,21 @@ export class SonicWSConnection {
         this.socket.close();
     }
 
-    public on(key: string, type: PacketType, listener: (value: string) => void, dontSpread: boolean = false): void {
+    /**
+     * Listens for a packet
+     * @param key The tag of the key to listen for
+     * @param type The type of packet to listen for
+     * @param listener A function to listen for it
+     * @param dataCap The amount of values that can pass through the function
+     * @param dontSpread If the values should be kept in an array instead of spread
+     */
+    public on(key: string, type: PacketType, listener: (value: string) => void, dataCap: number, dontSpread: boolean = false): void {
         const code = this.host.clientKeys.getChar(key);
         if (code == null) throw new Error(`Key "${key}" has not been created!`);
 
         if (!this.listeners[code]) this.listeners[code] = [];
 
-        this.listeners[code].push(new PacketListener(type, listener, dontSpread));
+        this.listeners[code].push(new PacketListener(type, listener, dataCap, dontSpread));
     }
 
     public send(key: string, type: PacketType = PacketType.NONE, ...value: any[]) {

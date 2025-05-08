@@ -80,11 +80,15 @@ export class SonicWS {
         this.listeners.message.push(listener);
     }
 
+    public raw_send(data: string): void {
+        this.ws.send(data);
+    }
+
     public send(key: string, type: PacketType = PacketType.NONE, ...value: any[]): void {
         const code = this.clientKeys.getChar(key);
         if (code == null) throw new Error(`Key "${key}" has not been created!`);
 
-        this.ws.send(code + PacketSendProcessors[type](...value));
+        this.raw_send(code + PacketSendProcessors[type](...value));
     }
 
     public on_ready(listener: () => void): void {
@@ -95,7 +99,7 @@ export class SonicWS {
     }
 
     public on(key: string, type: PacketType, listener: (value: string) => void, dontSpread: boolean = false) {
-        const packetListener = new PacketListener(type, listener, dontSpread);
+        const packetListener = new PacketListener(type, listener, -1, dontSpread);
         if(this.ws.readyState != this.ws.OPEN) {
             if(!this.preListen[key]) this.preListen[key] = [];
             this.preListen[key].push(packetListener);
