@@ -18,10 +18,11 @@ export class SonicWSConnection {
 
         this.listeners = {};
         for (const key of Object.values(host.clientKeys.keys)) {
-            this.listeners[String.fromCodePoint(key)] = [];
+            this.listeners[String.fromCharCode(key)] = [];
         }
 
         this.socket.on('message', (data: WS.RawData) => {
+
             const message = data.toString();
 
             if(this.print) console.log(`\x1b[31m⬇\x1b[0m ${this.id} ${message}`);

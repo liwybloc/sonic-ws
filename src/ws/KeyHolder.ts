@@ -26,7 +26,7 @@ export class KeyHolder {
         return this.keys[key];
     }
     public getChar(key: string): string {
-        return String.fromCodePoint(this.get(key));
+        return String.fromCharCode(this.get(key));
     }
 
 }

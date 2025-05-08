@@ -32,7 +32,7 @@ export abstract class SonicWSCore {
 
             const key = data.substring(0, 1);
             const value = data.substring(1);
-            const code = key.codePointAt(0);
+            const code = key.charCodeAt(0);
             if (code != null) {
                 this.listeners.event[code]?.forEach(l => l.listen(value));
             }

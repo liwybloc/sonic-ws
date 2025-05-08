@@ -1,5 +1,5 @@
 import { splitArray } from "../util/ArrayUtil";
-import { convertINT_D, deconvertINT_D, fromSignedINT_C, NEGATIVE_C, NULL, processCodePoints, sectorSize, stringedINT_C, toSignedINT_C } from "../util/CodePointUtil";
+import { convertINT_D, deconvertINT_D, fromSignedINT_C, NULL, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
 
 export enum PacketType {
  
@@ -11,10 +11,10 @@ export enum PacketType {
     /** Raw string data (alias) */
     STRING = 1,
 
-    /** One or more numbers from -557,056 to 557,055 */
+    /** One or more numbers from -27,648 to 27,647 */
     INTS_C = 2,
 
-    /** One or more numbers. Similar maximum size will produce maximum efficiency */
+    /** One or more numbers of any size. Similar maximum size will produce maximum efficiency */
     INTS_D = 3,
 
     /** One decimal number; unoptimal */
@@ -34,11 +34,9 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
     [PacketType.RAW]: () => true,
 
     [PacketType.INTS_C]: (data, cap) => data.length == cap,// same here \/\/\/\/
-    [PacketType.INTS_D]: (data, cap) => data.length > 0 && processCodePoints(data).length == data[0].codePointAt(0)! * cap + 1,
+    [PacketType.INTS_D]: (data, cap) => data.length > 0 && processCharCodes(data).length == data[0].charCodeAt(0)! * cap + 1,
     
-    [PacketType.DECIMAL]: (data, cap) => {
-        return data.length > 0 && processCodePoints(data).length == data[0].codePointAt(0)! * cap * 2 + 1;
-    },
+    [PacketType.DECIMAL]: (data, cap) => data.length > 0 && processCharCodes(data).length == data[0].charCodeAt(0)! * cap * 2 + 1,
 
     [PacketType.BOOLEAN]: (data) => data == NULL || data == "",
 }
@@ -48,13 +46,13 @@ export const PacketReceiveProcessors: Record<PacketType, (data: string) => "" | 
     [PacketType.NONE]: (_) => "",
     [PacketType.RAW]: (data) => data,
 
-    [PacketType.INTS_C]: (data) => processCodePoints(data).map(fromSignedINT_C),
-    [PacketType.INTS_D]: (data) => splitArray(processCodePoints(data.substring(1)), data[0].codePointAt(0)!).map(arr => String.fromCodePoint(...arr)).map(deconvertINT_D),
+    [PacketType.INTS_C]: (data) => processCharCodes(data).map(fromSignedINT_C),
+    [PacketType.INTS_D]: (data) => splitArray(processCharCodes(data.substring(1)), data[0].charCodeAt(0)!).map(arr => String.fromCharCode(...arr)).map(deconvertINT_D),
 
     [PacketType.DECIMAL]: (data) => {
-        const points = processCodePoints(data);
+        const points = processCharCodes(data);
         const sectSize = points.shift()!;
-        const sects = splitArray(points, sectSize).map(arr => String.fromCodePoint(...arr)).map(deconvertINT_D);
+        const sects = splitArray(points, sectSize).map(arr => String.fromCharCode(...arr)).map(deconvertINT_D);
         return parseFloat(sects[0] + "." + sects[1]);
     },
 
@@ -69,7 +67,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
     [PacketType.INTS_D]: (...numbers: number[]) => {
         const sectSize = numbers.reduce((c, n) => Math.max(c, sectorSize(n)), 1);
         const sects = numbers.map(n => convertINT_D(n, sectSize)).join("");
-        return String.fromCodePoint(sectSize) + sects;
+        return String.fromCharCode(sectSize) + sects;
     },
 
     [PacketType.DECIMAL]: (data) => {
@@ -78,7 +76,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
         const decimal = split.length > 1 ? parseFloat(split[1]) || 0 : 0;
 
         const sectSize = Math.max(sectorSize(whole), sectorSize(decimal));
-        return String.fromCodePoint(sectSize) + convertINT_D(whole, sectSize) + convertINT_D(decimal, sectSize);
+        return String.fromCharCode(sectSize) + convertINT_D(whole, sectSize) + convertINT_D(decimal, sectSize);
     },
     
     [PacketType.BOOLEAN]: (data) => data ? NULL : "",
