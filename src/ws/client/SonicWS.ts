@@ -1,5 +1,7 @@
 import * as WS from 'ws';
 import { KeyHolder } from '../KeyHolder';
+import { PacketSendProcessors, PacketType } from '../packets/PacketType';
+import { PacketListener } from '../packets/PacketListener';
 
 export class SonicWS {
     private ws: WS.WebSocket;
@@ -7,10 +9,10 @@ export class SonicWS {
     private listeners: {
         message: Array<(data: string) => void>,
         close: Array<(event: CloseEvent) => void>
-        event: {[key: string]: Array<(key: string) => void>}
+        event: {[key: string]: Array<PacketListener>}
     };
 
-    private preListen: {[key: string]: Array<(key: string) => void>};
+    private preListen: {[key: string]: Array<PacketListener>};
 
     private clientKeys: KeyHolder;
     private serverKeys: KeyHolder;
@@ -32,7 +34,7 @@ export class SonicWS {
         this.ws.on('upgrade', (req) => {
             const headers = req.headers;
             const ckData = headers['s-clientkeys'], skData = headers['s-serverkeys'];
-            if(!ckData || !skData || typeof ckData != 'string' || typeof skData != 'string') {
+            if(ckData == null || skData == null || typeof ckData != 'string' || typeof skData != 'string') {
                 this.ws.close();
                 console.error("The server requested is not a Sonic WS server.");
                 return;
@@ -54,7 +56,7 @@ export class SonicWS {
             const key = data.substring(0, 1);
             const value = data.substring(1);
 
-            this.listeners.event[key.codePointAt(0)!]?.forEach(l => l(value));
+            this.listeners.event[key.codePointAt(0)!]?.forEach(l => l.listen(value));
 
         });
 
@@ -63,7 +65,7 @@ export class SonicWS {
         });
     }
 
-    private listen(key: string, listener: (value: string) => void) {
+    private listen(key: string, listener: PacketListener) {
         const skey = this.serverKeys.get(key);
         if(!skey) {
             console.log("Key is not available on server: " + skey);
@@ -78,11 +80,11 @@ export class SonicWS {
         this.listeners.message.push(listener);
     }
 
-    public send(key: string, value: string): void {
+    public send(key: string, type: PacketType = PacketType.NONE, ...value: any[]): void {
         const code = this.clientKeys.getChar(key);
         if (code == null) throw new Error(`Key "${key}" has not been created!`);
 
-        this.ws.send(code + value);
+        this.ws.send(code + PacketSendProcessors[type](...value));
     }
 
     public on_ready(listener: () => void): void {
@@ -92,13 +94,14 @@ export class SonicWS {
         this.ws.on('close', listener);
     }
 
-    public on(key: string, listener: (value: string) => void) {
+    public on(key: string, type: PacketType, listener: (value: string) => void, dontSpread: boolean = false) {
+        const packetListener = new PacketListener(type, listener, dontSpread);
         if(this.ws.readyState != this.ws.OPEN) {
             if(!this.preListen[key]) this.preListen[key] = [];
-            this.preListen[key].push(listener);
+            this.preListen[key].push(packetListener);
             return;
         }
-        this.listen(key, listener);
+        this.listen(key, packetListener);
     }
 
 }

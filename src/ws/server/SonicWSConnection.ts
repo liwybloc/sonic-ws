@@ -1,14 +1,20 @@
 import * as WS from 'ws';
 import { SonicWSServer } from './SonicWSServer';
+import { PacketSendProcessors, PacketType } from '../packets/PacketType';
+import { PacketListener } from '../packets/PacketListener';
 
 export class SonicWSConnection {
     private socket: WS.WebSocket;
     private host: SonicWSServer;
-    private listeners: Record<string, Array<(value: string) => void>>;
+    private listeners: Record<string, Array<PacketListener>>;
+    private print: boolean = false;
+    
+    public id: number;
 
-    constructor(socket: WS.WebSocket, host: SonicWSServer) {
+    constructor(socket: WS.WebSocket, host: SonicWSServer, id: number) {
         this.socket = socket;
         this.host = host;
+        this.id = id;
 
         this.listeners = {};
         for (const key of Object.values(host.clientKeys.keys)) {
@@ -17,6 +23,8 @@ export class SonicWSConnection {
 
         this.socket.on('message', (data: WS.RawData) => {
             const message = data.toString();
+
+            if(this.print) console.log(`\x1b[31m⬇\x1b[0m ${this.id} ${message}`);
 
             if (message.length < 1) {
                 this.socket.close();
@@ -31,7 +39,7 @@ export class SonicWSConnection {
                 return;
             }
 
-            this.listeners[key].forEach(listener => listener(value));
+            this.listeners[key].forEach(listener => listener.listen(value));
         });
     }
 
@@ -40,6 +48,7 @@ export class SonicWSConnection {
     }
 
     public raw_send(data: string): void {
+        if(this.print) console.log(`\x1b[32m⬆\x1b[0m ${this.id} ${data}`);
         this.socket.send(data);
     }
 
@@ -47,21 +56,25 @@ export class SonicWSConnection {
         this.socket.close();
     }
 
-    /** Listens for when the client sends a message. This will use the server's key system */
-    public on(key: string, listener: (value: string) => void): void {
+    public on(key: string, type: PacketType, listener: (value: string) => void, dontSpread: boolean = false): void {
         const code = this.host.clientKeys.getChar(key);
         if (code == null) throw new Error(`Key "${key}" has not been created!`);
 
         if (!this.listeners[code]) this.listeners[code] = [];
 
-        this.listeners[code].push(listener);
+        this.listeners[code].push(new PacketListener(type, listener, dontSpread));
     }
 
-    public send(key: string, value: string = "") {
+    public send(key: string, type: PacketType = PacketType.NONE, ...value: any[]) {
         const code = this.host.serverKeys.getChar(key);
         if(code == null) throw new Error(`Key "${key}" has not been created!`);
+        
+        this.raw_send(code + PacketSendProcessors[type](...value));
+    }
 
-        this.socket.send(code + value);
+    /** Toggles printing all sent and received messages */
+    public togglePrint(): void {
+        this.print = !this.print;
     }
 
 }

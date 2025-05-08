@@ -29,8 +29,4 @@ export class KeyHolder {
         return String.fromCodePoint(this.get(key));
     }
 
-    tags(): string {
-        return Object.keys(this.keys).join(",");
-    }
-
 }
