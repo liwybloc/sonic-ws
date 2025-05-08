@@ -36,7 +36,7 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
     [PacketType.INTS_C]: () => true,                     // same here \/\/\/\/
     [PacketType.INTS_D]: (data, cap) => data.length > 0 && (data.length - 1) == data[0].codePointAt(0)! * cap,
     
-    [PacketType.DECIMAL]: () => true,
+    [PacketType.DECIMAL]: (data, cap) => data.length > 0 && (data.length - 1) == data[0].codePointAt(0)! * cap,
 
     [PacketType.BOOLEAN]: (data) => data == NULL || data == "",
 }
