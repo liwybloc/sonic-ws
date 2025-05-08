@@ -31,7 +31,7 @@ export class SonicWSConnection {
                 return;
             }
 
-            const key = message.substring(0, 1);
+            const key = message[0];
             const value = message.substring(1);
 
             if(!this.listeners[key]) {
