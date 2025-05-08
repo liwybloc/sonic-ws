@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -d",
-    "test": "npm run build && node test.mjs"
+    "test": "rimraf ./dist && npm run build && node test.mjs"
   },
   "repository": {
     "type": "git",
