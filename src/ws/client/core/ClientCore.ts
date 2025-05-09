@@ -3,6 +3,7 @@ import { Packet, PacketSendProcessors, PacketType } from '../../packets/PacketTy
 import { PacketListener } from '../../packets/PacketListener';
 import { NULL } from '../../util/CodePointUtil';
 import { splitArray } from '../../util/ArrayUtil';
+import { emitPacket } from '../../util/PacketUtils';
 
 export abstract class SonicWSCore {
     protected ws: WebSocket;
@@ -88,12 +89,8 @@ export abstract class SonicWSCore {
         this.ws.send(data);
     }
 
-    public send(tag: string, ...value: any[]): void {
-        const code = this.clientPackets.getChar(tag);
-        if (code == NULL) throw new Error(`Tag "${tag}" has not been created!`);
-        const packet = this.clientPackets.getPacket(tag);
-
-        this.raw_send(code + PacketSendProcessors[packet.type](...value));
+    public send(tag: string, ...values: any[]): void {
+        emitPacket(this.clientPackets, (d) => this.raw_send(d), tag, values);
     }
 
     public on_ready(listener: () => void): void {

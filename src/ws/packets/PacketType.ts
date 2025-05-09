@@ -122,7 +122,3 @@ export class Packet {
         return arr;
     }
 }
-
-export function CreatePacket(tag: string, type: PacketType = PacketType.NONE, dataCap: number = 1, dontSpread: boolean = false) {
-    return new Packet(tag, type, dataCap, dontSpread);
-}

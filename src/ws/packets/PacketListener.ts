@@ -8,7 +8,7 @@ export class PacketListener {
     private dontSpread: boolean;
     private dataCap: number;
 
-    constructor(packet: Packet, listener: (data: string) => void) {
+    constructor(packet: Packet, listener: (...data: any[]) => void) {
         this.processor = PacketReceiveProcessors[packet.type];
         this.validifier = PacketValidityProcessors[packet.type];
         this.listener = listener;
@@ -17,8 +17,7 @@ export class PacketListener {
     }
 
     listen(value: string): boolean {
-        // -1 if it's the client
-        if(this.dataCap != -1 && !this.validifier(value, this.dataCap)) return false;
+        if(!this.validifier(value, this.dataCap)) return false;
 
         const processed = this.processor(value);
 

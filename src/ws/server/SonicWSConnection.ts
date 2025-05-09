@@ -3,6 +3,7 @@ import { SonicWSServer } from './SonicWSServer';
 import { PacketSendProcessors, PacketType } from '../packets/PacketType';
 import { PacketListener } from '../packets/PacketListener';
 import { getStringBytes } from '../util/CodePointUtil';
+import { emitPacket } from '../util/PacketUtils';
 
 export class SonicWSConnection {
     private socket: WS.WebSocket;
@@ -71,7 +72,7 @@ export class SonicWSConnection {
      * @param tag The tag of the key to listen for
      * @param listener A function to listen for it
      */
-    public on(tag: string, listener: (value: any) => void): void {
+    public on(tag: string, listener: (...values: any) => void): void {
         const code = this.host.clientPackets.getChar(tag);
         if (code == null) throw new Error(`Tag "${tag}" has not been created!`);
         const packet = this.host.clientPackets.getPacket(tag);
@@ -81,12 +82,8 @@ export class SonicWSConnection {
         this.listeners[code].push(new PacketListener(packet, listener));
     }
 
-    public send(tag: string, ...value: any[]) {
-        const code = this.host.serverPackets.getChar(tag);
-        if(code == null) throw new Error(`Tag "${tag}" has not been created!`);
-        const packet = this.host.serverPackets.getPacket(tag);
-
-        this.raw_send(code + PacketSendProcessors[packet.type](...value));
+    public send(tag: string, ...values: any[]) {
+        emitPacket(this.host.serverPackets, (d) => this.raw_send(d), tag, values);
     }
 
     /** Toggles printing all sent and received messages */
