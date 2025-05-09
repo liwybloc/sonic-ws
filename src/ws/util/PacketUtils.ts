@@ -12,5 +12,6 @@ export function emitPacket(packets: PacketHolder, send: (data: string) => void, 
     const packet = packets.getPacket(tag);
     if(values.length > packet.dataCap) throw new Error(`Packet "${tag}" only allows ${packet.dataCap} values!`);
 
-    send(code + PacketSendProcessors[packet.type](...values));
+    const data = code + PacketSendProcessors[packet.type](...values);
+    send(data);
 }

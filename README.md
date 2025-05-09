@@ -1,2 +1,63 @@
 # sonic-ws
-Bandwidth efficient (but stupid) websocket library
+
+## INFO
+
+WebSocket library focused on bandwidth efficiency and security.
+
+It can reduce packet size by up to 70% and process large packets in microseconds.
+
+It has low latency and optimized data transfer.
+
+While still simple and efficient, SonicWS provides efficient packet transfers.
+
+## SAMPLES
+
+Importing:
+```js
+import { PacketType, SonicWS, SonicWSServer, CreatePacket } from "sonic-ws";
+```
+
+Server:
+```js
+const wss = new SonicWSServer(
+    [CreatePacket("pong", PacketType.INTS_D, 1)], // client-sent packets
+    [CreatePacket("ping", PacketType.INTS_D, 1)], // server-sent packets
+    { port: 1234 }
+);
+
+wss.on_connect((socket) => {
+
+    console.log("Socket connection:", socket.id);
+
+    socket.on("pong", (num) => {
+        console.log("Ponged!", num);
+    });
+
+    setInterval(() => {
+        socket.send("ping", Date.now());
+    }, 10000);
+
+});
+
+wss.on_ready(() => {
+    console.log("Server ready!");
+});
+```
+
+Client:
+```js
+const ws = new SonicWS("ws://localhost:1234");
+
+ws.on_ready(() => {
+    console.log("Connected to server");
+});
+
+ws.on("ping", (num) => {
+    console.log("Pinged!", num);
+    ws.send("pong", Date.now());
+})
+
+ws.on_close((event) => {
+    console.log("closed client: " + event.code);
+});
+```

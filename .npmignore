@@ -1,6 +1,8 @@
 dist/ws/client/browser/**/*
 src/**/*
 html/**/*
+bundled/**/*
 .gitattributes
 tsconfig.json
 test*
+webpack.config.js

@@ -34,9 +34,9 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
     [PacketType.RAW]: () => true,
 
     [PacketType.INTS_C]: (data, cap) => data.length == cap,// same here \/\/\/\/
-    [PacketType.INTS_D]: (data, cap) => data.length > 0 && processCharCodes(data).length % data[0].charCodeAt(0)! + 1 <= cap,
-    
-    [PacketType.DECIMAL]: (data, cap) => data.length > 0 && processCharCodes(data).length % data[0].charCodeAt(0)! * 2 + 1 <= cap,
+    [PacketType.INTS_D]: (data, cap) => data.length > 0 && (processCharCodes(data).length - 1) % data[0].charCodeAt(0)! <= cap,
+     
+    [PacketType.DECIMAL]: (data, cap) => data.length > 0 && (processCharCodes(data).length - 1) % data[0].charCodeAt(0)! * 2 <= cap,
 
     [PacketType.BOOLEAN]: (data) => data == NULL || data == "",
 }
