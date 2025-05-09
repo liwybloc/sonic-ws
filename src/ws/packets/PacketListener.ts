@@ -1,4 +1,4 @@
-import { PacketType, PacketReceiveProcessors, PacketValidityProcessors, Packet } from "./PacketType";
+import { PacketReceiveProcessors, PacketValidityProcessors, Packet } from "./PacketType";
 
 export class PacketListener {
 
@@ -17,13 +17,17 @@ export class PacketListener {
     }
 
     listen(value: string): boolean {
-        if(!this.validifier(value, this.dataCap)) return false;
+        try {
+            if(!this.validifier(value, this.dataCap)) return false;
 
-        const processed = this.processor(value);
+            const processed = this.processor(value);
 
-        if(Array.isArray(processed) && !this.dontSpread) this.listener(...processed);
-        else this.listener(processed);
-        return true;
+            if(Array.isArray(processed) && !this.dontSpread) this.listener(...processed);
+            else this.listener(processed);
+            return true;
+        } catch (err) {
+            return false;
+        }
     }
 
 }

@@ -3,6 +3,7 @@ import { SonicWSConnection } from './SonicWSConnection';
 import { PacketHolder } from '../KeyHolder';
 import { Packet } from '../packets/PacketType';
 import { NULL } from '../util/CodePointUtil';
+import { VERSION } from '../../version';
 
 export class SonicWSServer {
     private wss: WS.WebSocketServer;
@@ -25,7 +26,7 @@ export class SonicWSServer {
             const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID());
 
             // send tags to the client so it doesn't have to hard code them in
-            socket.send("SWS" + this.clientPackets.serialize() + NULL + this.serverPackets.serialize());
+            socket.send("SWS" + String.fromCharCode(VERSION) + this.clientPackets.serialize() + NULL + this.serverPackets.serialize());
 
             this.connections.push(sonicConnection);
             this.connectListeners.forEach(l => l(sonicConnection));
