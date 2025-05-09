@@ -1,6 +1,6 @@
 {
   "name": "sonic-ws",
-  "version": "1.0.0-beta.3",
+  "version": "1.0.0-beta.3-clean",
   "description": "A bandwidth efficient websocket library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,7 +11,7 @@
     "build": "npm run build_node && npm run build_web",
 
     "test_web": "npm run build && node test-site/server.mjs",
-    "test_node": "npm run build_node && node test.mjs"
+    "test_node": "npm run build && node test.mjs"
   },
   "repository": {
     "type": "git",

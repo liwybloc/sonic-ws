@@ -12,12 +12,17 @@ While still simple and efficient, SonicWS provides efficient packet transfers.
 
 ## SAMPLES
 
-Importing:
+### Importing:
+Node (Client & Server):
 ```js
 import { PacketType, SonicWS, SonicWSServer, CreatePacket } from "sonic-ws";
 ```
+Browser (Client):
+```html
+<script src="https://raw.githubusercontent.com/cutelittlelily/sonic-ws/refs/heads/main/bundled/SonicWS_bundle.js"></script>
+```
 
-Server:
+### Server:
 ```js
 const wss = new SonicWSServer(
     [CreatePacket("pong", PacketType.INTS_D, 1)], // client-sent packets
@@ -44,7 +49,7 @@ wss.on_ready(() => {
 });
 ```
 
-Client:
+### Client:
 ```js
 const ws = new SonicWS("ws://localhost:1234");
 
