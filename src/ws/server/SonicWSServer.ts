@@ -19,14 +19,12 @@ export class SonicWSServer {
         this.clientKeys = new KeyHolder(ck);
         this.serverKeys = new KeyHolder(sk);
 
-        // send tags to the client so it doesn't have to hard code them in
-        this.wss.on('headers', (headers: string[]) => {
-            headers.push('S-ClientKeys: ' + ck.join(","));
-            headers.push('S-ServerKeys: ' + sk.join(","));
-        });
-
         this.wss.on('connection', (socket) => {
             const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID());
+
+            // send tags to the client so it doesn't have to hard code them in
+            socket.send("SWS" + ck.join(",") + ";" + sk.join(","));
+
             this.connections.push(sonicConnection);
             this.connectListeners.forEach(l => l(sonicConnection));
 

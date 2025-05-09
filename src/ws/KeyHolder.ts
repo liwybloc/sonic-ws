@@ -2,10 +2,12 @@ export class KeyHolder {
 
     private key: number;
     public keys: Record<string, number>;
+    public tags: Record<number, string>;
 
     constructor(keys: string[]) {
         this.key = 1;
         this.keys = {};
+        this.tags = {};
         this.createKeys(keys);
     }
 
@@ -16,6 +18,7 @@ export class KeyHolder {
         }
 
         this.keys[tag] = this.key;
+        this.tags[this.key] = tag;
         this.key++;
     }
     public createKeys(tags: string[]): void {
@@ -27,6 +30,14 @@ export class KeyHolder {
     }
     public getChar(key: string): string {
         return String.fromCharCode(this.get(key));
+    }
+
+    public has(data: string): boolean {
+        return this.tags[data.charCodeAt(0)] != null;
+    }
+
+    public static empty(): KeyHolder {
+        return new KeyHolder([]);
     }
 
 }

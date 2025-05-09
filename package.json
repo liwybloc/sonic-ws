@@ -5,8 +5,12 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -d",
-    "test": "rimraf ./dist && npm run build && node test.mjs"
+    "webpack": "webpack --mode production",
+    "build_web": "rimraf ./html && tsc --target ES5 --module ES6 --outdir ./html src/ws/client/browser/ClientBrowser.ts && npm run webpack",
+    "test_web": "npm run build_web && node test-site/server.mjs",
+    "build_node": "rimraf ./dist && tsc -d",
+    "test_node": "npm run build_node && node test.mjs",
+    "build": "npm run build_node && npm run build_web"
   },
   "repository": {
     "type": "git",
@@ -22,6 +26,14 @@
     "ws": "^8.18.2"
   },
   "devDependencies": {
-    "@types/ws": "^8.18.1"
+    "@types/node": "^22.15.17",
+    "@types/ws": "^8.18.1",
+    "ts-loader": "^9.5.2",
+    "typescript": "^5.8.3",
+    "undici": "^7.8.0",
+    "undici-types": "^7.8.0",
+    "webpack": "^5.99.8",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.1"
   }
 }

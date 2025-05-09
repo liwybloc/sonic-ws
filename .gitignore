@@ -132,3 +132,6 @@ test*
 
 # vscode shit
 .vscode/
+
+# browser output
+html*

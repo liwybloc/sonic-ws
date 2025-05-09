@@ -1,4 +1,6 @@
+dist/ws/client/browser/**/*
 src/**/*
+html/**/*
 .gitattributes
 tsconfig.json
 test*

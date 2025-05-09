@@ -1,7 +1,6 @@
 {
     "compilerOptions": {
-      "target": "es5",                          
-      "module": "commonjs",                     
+      "moduleResolution": "node",          
       "strict": true,                           
       "esModuleInterop": true,                  
       "skipLibCheck": true,                     
@@ -9,7 +8,7 @@
       "outDir": "./dist/",                       
       "declaration": true,
       "rootDir": "./src/",
-      "lib":["es2015","dom"],                
+      "lib":["es2015","dom"]   
     },
     "include": ["./src/**/*"],
     "exclude": ["node_modules"]

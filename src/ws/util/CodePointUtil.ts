@@ -91,3 +91,10 @@ export function deconvertINT_D(string: string): number {
         return c + fromSignedINT_C(n) * Math.pow(OVERFLOW, arr.length - i - 1);
     }, 0);
 }
+const encoder = new TextEncoder();
+export function getCharBytes(char: string) {
+    return encoder.encode(char).length;
+}
+export function getStringBytes(str: string) {
+    return str.split("").reduce((c, n) => c + getCharBytes(n), 0);
+}

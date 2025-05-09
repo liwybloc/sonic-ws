@@ -2,6 +2,7 @@ import * as WS from 'ws';
 import { SonicWSServer } from './SonicWSServer';
 import { PacketSendProcessors, PacketType } from '../packets/PacketType';
 import { PacketListener } from '../packets/PacketListener';
+import { getStringBytes } from '../util/CodePointUtil';
 
 export class SonicWSConnection {
     private socket: WS.WebSocket;
@@ -25,10 +26,10 @@ export class SonicWSConnection {
 
             const message = data.toString();
 
-            if(this.print) console.log(`\x1b[31m⬇\x1b[0m ${this.id} ${message}`);
+            if(this.print) console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${getStringBytes(message)})\x1b[0m ${message}`);
 
             if (message.length < 1) {
-                this.socket.close();
+                this.socket.close(4001);
                 return;
             }
 
@@ -36,8 +37,8 @@ export class SonicWSConnection {
             const value = message.substring(1);
 
             // not a key, bye bye
-            if(!this.listeners[key]) {
-                this.socket.close();
+            if(!this.host.clientKeys.has(key)) {
+                this.socket.close(4002);
                 return;
             }
 
@@ -45,7 +46,7 @@ export class SonicWSConnection {
                 const valid = listener.listen(value);
                 // if invalid then ignore it
                 if(!valid) {
-                    socket.close();
+                    socket.close(4003);
                     break;
                 }
             };
@@ -57,12 +58,12 @@ export class SonicWSConnection {
     }
 
     public raw_send(data: string): void {
-        if(this.print) console.log(`\x1b[32m⬆\x1b[0m ${this.id} ${data}`);
+        if(this.print) console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${getStringBytes(data)})\x1b[0m ${data}`);
         this.socket.send(data);
     }
 
     public close(): void {
-        this.socket.close();
+        this.socket.close(1000);
     }
 
     /**

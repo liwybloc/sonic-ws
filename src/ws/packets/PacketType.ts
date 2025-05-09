@@ -81,3 +81,25 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
     
     [PacketType.BOOLEAN]: (data) => data ? NULL : "",
 }
+
+export class Packet {
+    private tag: string;
+    private type: PacketType;
+    private dataCap: number;
+    private dontSpread: boolean;
+
+    constructor(tag: string, type: PacketType, dataCap: number, dontSpread: boolean) {
+        this.tag = tag;
+        this.type = type;
+        this.dataCap = dataCap;
+        this.dontSpread = dontSpread;
+    }
+
+    public serialize(): string {
+        return `${this.tag},${this.type},${this.dataCap},${this.dontSpread ? 1 : 0}`;
+    }
+}
+
+export function CreatePacket(tag: string, type: PacketType, dataCap: number = 1, dontSpread: boolean = true) {
+    return new Packet(tag, type, dataCap, dontSpread);
+}
