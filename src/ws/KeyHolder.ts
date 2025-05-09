@@ -1,14 +1,20 @@
-export class KeyHolder {
+import { Packet } from "./packets/PacketType";
+
+export class PacketHolder {
 
     private key: number;
-    public keys: Record<string, number>;
-    public tags: Record<number, string>;
+    private keys: Record<string, number>;
+    private tags: Record<number, string>;
+    private packetMap: Record<string, Packet>;
+    private packets: Packet[];
 
-    constructor(keys: string[]) {
+    constructor(packets: Packet[]) {
         this.key = 1;
         this.keys = {};
         this.tags = {};
-        this.createKeys(keys);
+        this.packets = packets;
+        this.packetMap = {};
+        this.createPackets(packets);
     }
 
     public createKey(tag: string): void {
@@ -21,23 +27,38 @@ export class KeyHolder {
         this.tags[this.key] = tag;
         this.key++;
     }
-    public createKeys(tags: string[]): void {
-        for (const tag of tags) this.createKey(tag);
+    public createPackets(packets: Packet[]): void {
+        for (const packet of packets) {
+            this.createKey(packet.tag);
+            this.packetMap[packet.tag] = packet;
+        }
     }
 
-    public get(key: string): number {
-        return this.keys[key];
+    public get(tag: string): number {
+        return this.keys[tag];
     }
-    public getChar(key: string): string {
-        return String.fromCharCode(this.get(key));
+    public getChar(tag: string): string {
+        return String.fromCharCode(this.get(tag));
+    }
+
+    public getPacket(tag: string): Packet {
+        return this.packetMap[tag];
     }
 
     public has(data: string): boolean {
         return this.tags[data.charCodeAt(0)] != null;
     }
 
-    public static empty(): KeyHolder {
-        return new KeyHolder([]);
+    public getKeys(): Record<string, number> {
+        return this.keys;
+    }
+
+    public serialize(): string {
+        return this.packets.map(p => p.serialize()).join(",");
+    }
+
+    public static empty(): PacketHolder {
+        return new PacketHolder([]);
     }
 
 }

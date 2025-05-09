@@ -83,10 +83,10 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
 }
 
 export class Packet {
-    private tag: string;
-    private type: PacketType;
-    private dataCap: number;
-    private dontSpread: boolean;
+    public tag: string;
+    public type: PacketType;
+    public dataCap: number;
+    public dontSpread: boolean;
 
     constructor(tag: string, type: PacketType, dataCap: number, dontSpread: boolean) {
         this.tag = tag;
@@ -96,10 +96,33 @@ export class Packet {
     }
 
     public serialize(): string {
-        return `${this.tag},${this.type},${this.dataCap},${this.dontSpread ? 1 : 0}`;
+        return `${this.dontSpread ? 1 : 0}${String.fromCharCode(this.dataCap + 1)}${String.fromCharCode(this.type + 1)}${String.fromCharCode(this.tag.length + 1)}${this.tag}`;
+    }
+
+    public static deserialize(text: string, offset: number): [packet: Packet, tagLength: number] {
+        const dontSpread: boolean = text[offset] == "1";
+        const dataCap: number = text.charCodeAt(offset + 1) - 1;
+        const type: PacketType = (text.charCodeAt(offset + 2) - 1) as PacketType;
+        
+        const tagLength: number = text.charCodeAt(offset + 3) - 1;
+        const tag: string = text.substring(offset + 4, offset + 4 + tagLength);
+
+        return [new Packet(tag, type, dataCap, dontSpread), tagLength];
+    }
+    
+    public static deserializeAll(text: string): Packet[] {
+        const arr: Packet[] = [];
+        let offset = 0;
+        while(offset < text.length) {
+            const [packet, len] = this.deserialize(text, offset);
+            arr.push(packet);
+            offset += 4 + len;
+        }
+
+        return arr;
     }
 }
 
-export function CreatePacket(tag: string, type: PacketType, dataCap: number = 1, dontSpread: boolean = true) {
+export function CreatePacket(tag: string, type: PacketType = PacketType.NONE, dataCap: number = 1, dontSpread: boolean = false) {
     return new Packet(tag, type, dataCap, dontSpread);
 }

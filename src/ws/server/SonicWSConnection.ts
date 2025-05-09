@@ -18,7 +18,7 @@ export class SonicWSConnection {
         this.id = id;
 
         this.listeners = {};
-        for (const key of Object.values(host.clientKeys.keys)) {
+        for (const key of Object.values(host.clientPackets.getKeys())) {
             this.listeners[String.fromCharCode(key)] = [];
         }
 
@@ -37,7 +37,7 @@ export class SonicWSConnection {
             const value = message.substring(1);
 
             // not a key, bye bye
-            if(!this.host.clientKeys.has(key)) {
+            if(!this.host.clientPackets.has(key)) {
                 this.socket.close(4002);
                 return;
             }
@@ -68,26 +68,25 @@ export class SonicWSConnection {
 
     /**
      * Listens for a packet
-     * @param key The tag of the key to listen for
-     * @param type The type of packet to listen for
+     * @param tag The tag of the key to listen for
      * @param listener A function to listen for it
-     * @param dataCap The amount of values that can pass through the function
-     * @param dontSpread If the values should be kept in an array instead of spread
      */
-    public on(key: string, type: PacketType, listener: (value: string) => void, dataCap: number, dontSpread: boolean = false): void {
-        const code = this.host.clientKeys.getChar(key);
-        if (code == null) throw new Error(`Key "${key}" has not been created!`);
+    public on(tag: string, listener: (value: any) => void): void {
+        const code = this.host.clientPackets.getChar(tag);
+        if (code == null) throw new Error(`Tag "${tag}" has not been created!`);
+        const packet = this.host.clientPackets.getPacket(tag);
 
         if (!this.listeners[code]) this.listeners[code] = [];
 
-        this.listeners[code].push(new PacketListener(type, listener, dataCap, dontSpread));
+        this.listeners[code].push(new PacketListener(packet, listener));
     }
 
-    public send(key: string, type: PacketType = PacketType.NONE, ...value: any[]) {
-        const code = this.host.serverKeys.getChar(key);
-        if(code == null) throw new Error(`Key "${key}" has not been created!`);
-        
-        this.raw_send(code + PacketSendProcessors[type](...value));
+    public send(tag: string, ...value: any[]) {
+        const code = this.host.serverPackets.getChar(tag);
+        if(code == null) throw new Error(`Tag "${tag}" has not been created!`);
+        const packet = this.host.serverPackets.getPacket(tag);
+
+        this.raw_send(code + PacketSendProcessors[packet.type](...value));
     }
 
     /** Toggles printing all sent and received messages */

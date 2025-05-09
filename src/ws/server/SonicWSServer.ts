@@ -1,6 +1,8 @@
 import * as WS from 'ws';
 import { SonicWSConnection } from './SonicWSConnection';
-import { KeyHolder } from '../KeyHolder';
+import { PacketHolder } from '../KeyHolder';
+import { Packet } from '../packets/PacketType';
+import { NULL } from '../util/CodePointUtil';
 
 export class SonicWSServer {
     private wss: WS.WebSocketServer;
@@ -8,22 +10,22 @@ export class SonicWSServer {
     
     private connectListeners: Array<(client: SonicWSConnection) => void> = [];
 
-    public clientKeys: KeyHolder;
-    public serverKeys: KeyHolder;
+    public clientPackets: PacketHolder;
+    public serverPackets: PacketHolder;
 
     public connections: SonicWSConnection[] = [];
 
-    constructor(ck: string[], sk: string[], options: WS.ServerOptions = {}) {
+    constructor(clientPackets: Packet[], serverPackets: Packet[], options: WS.ServerOptions = {}) {
         this.wss = new WS.WebSocketServer(options);
 
-        this.clientKeys = new KeyHolder(ck);
-        this.serverKeys = new KeyHolder(sk);
+        this.clientPackets = new PacketHolder(clientPackets);
+        this.serverPackets = new PacketHolder(serverPackets);
 
         this.wss.on('connection', (socket) => {
             const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID());
 
             // send tags to the client so it doesn't have to hard code them in
-            socket.send("SWS" + ck.join(",") + ";" + sk.join(","));
+            socket.send("SWS" + this.clientPackets.serialize() + NULL + this.serverPackets.serialize());
 
             this.connections.push(sonicConnection);
             this.connectListeners.forEach(l => l(sonicConnection));

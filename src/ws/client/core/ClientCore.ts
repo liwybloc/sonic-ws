@@ -1,7 +1,8 @@
-import { KeyHolder } from '../../KeyHolder';
-import { PacketSendProcessors, PacketType } from '../../packets/PacketType';
+import { PacketHolder } from '../../KeyHolder';
+import { Packet, PacketSendProcessors, PacketType } from '../../packets/PacketType';
 import { PacketListener } from '../../packets/PacketListener';
 import { NULL } from '../../util/CodePointUtil';
+import { splitArray } from '../../util/ArrayUtil';
 
 export abstract class SonicWSCore {
     protected ws: WebSocket;
@@ -10,9 +11,9 @@ export abstract class SonicWSCore {
         close: Array<(event: CloseEvent) => void>,
         event: { [key: string]: Array<PacketListener> }
     };
-    protected preListen: { [key: string]: Array<PacketListener> };
-    protected clientKeys: KeyHolder = KeyHolder.empty();
-    protected serverKeys: KeyHolder = KeyHolder.empty();
+    protected preListen: { [key: string]: Array<(value: string) => void> };
+    protected clientPackets: PacketHolder = PacketHolder.empty();
+    protected serverPackets: PacketHolder = PacketHolder.empty();
     private keyHandler: (event: MessageEvent) => undefined;
 
     constructor(ws: WebSocket) {
@@ -40,13 +41,15 @@ export abstract class SonicWSCore {
             return;
         }
 
-        const [ckData, skData] = data.substring(3).split(";");
-        this.clientKeys.createKeys(ckData.split(","));
-        this.serverKeys.createKeys(skData.split(","));
+        const [ckData, skData] = data.substring(3).split(NULL);
+        this.clientPackets.createPackets(Packet.deserializeAll(ckData));
+        this.serverPackets.createPackets(Packet.deserializeAll(skData));
 
-        Object.keys(this.preListen).forEach(key =>
-            this.preListen[key].forEach(listener => this.listen(key, listener))
-        );
+        Object.keys(this.preListen).forEach(tag => this.preListen[tag].forEach(listener => {
+            const packet = this.serverPackets.getPacket(tag);
+            const packetListener = new PacketListener(packet, listener);
+            this.listen(tag, packetListener);
+        }));
 
         this.ws.removeEventListener('message', this.keyHandler);
         this.ws.addEventListener('message', event => this.messageHandler(event)); // lambda to persist 'this'
@@ -67,7 +70,7 @@ export abstract class SonicWSCore {
     }
 
     protected listen(key: string, listener: PacketListener) {
-        const skey = this.serverKeys.get(key);
+        const skey = this.serverPackets.get(key);
         if (!skey) {
             console.log("Key is not available on server: " + key);
             return;
@@ -85,10 +88,12 @@ export abstract class SonicWSCore {
         this.ws.send(data);
     }
 
-    public send(key: string, type: PacketType = PacketType.NONE, ...value: any[]): void {
-        const code = this.clientKeys.getChar(key);
-        if (code == NULL) throw new Error(`Key "${key}" has not been created!`);
-        this.raw_send(code + PacketSendProcessors[type](...value));
+    public send(tag: string, ...value: any[]): void {
+        const code = this.clientPackets.getChar(tag);
+        if (code == NULL) throw new Error(`Tag "${tag}" has not been created!`);
+        const packet = this.clientPackets.getPacket(tag);
+
+        this.raw_send(code + PacketSendProcessors[packet.type](...value));
     }
 
     public on_ready(listener: () => void): void {
@@ -103,13 +108,14 @@ export abstract class SonicWSCore {
         this.listeners.close.push(listener);
     }
 
-    public on(key: string, type: PacketType, listener: (value: string) => void, dontSpread: boolean = false): void {
-        const packetListener = new PacketListener(type, listener, -1, dontSpread);
+    public on(tag: string, listener: (value: string) => void): void {
         if (this.ws.readyState !== WebSocket.OPEN) {
-            if (!this.preListen[key]) this.preListen[key] = [];
-            this.preListen[key].push(packetListener);
+            if (!this.preListen[tag]) this.preListen[tag] = [];
+            this.preListen[tag].push(listener);
             return;
         }
-        this.listen(key, packetListener);
+        const packet = this.serverPackets.getPacket(tag);
+        const packetListener = new PacketListener(packet, listener);
+        this.listen(tag, packetListener);
     }
 }

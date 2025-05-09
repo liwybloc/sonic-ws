@@ -7,10 +7,11 @@
   "scripts": {
     "webpack": "webpack --mode production",
     "build_web": "rimraf ./html && tsc --target ES5 --module ES6 --outdir ./html src/ws/client/browser/ClientBrowser.ts && npm run webpack",
-    "test_web": "npm run build_web && node test-site/server.mjs",
     "build_node": "rimraf ./dist && tsc -d",
-    "test_node": "npm run build_node && node test.mjs",
-    "build": "npm run build_node && npm run build_web"
+    "build": "npm run build_node && npm run build_web",
+
+    "test_web": "npm run build && node test-site/server.mjs",
+    "test_node": "npm run build_node && node test.mjs"
   },
   "repository": {
     "type": "git",
