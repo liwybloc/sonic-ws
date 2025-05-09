@@ -83,7 +83,7 @@ export class SonicWSConnection {
     }
 
     public send(tag: string, ...values: any[]) {
-        emitPacket(this.host.serverPackets, (d) => this.raw_send(d), tag, values);
+        emitPacket(this.host.serverPackets, (d) => this.raw_send(d), tag, ...values);
     }
 
     /** Toggles printing all sent and received messages */

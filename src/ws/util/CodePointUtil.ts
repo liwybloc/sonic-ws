@@ -13,8 +13,10 @@ export const NEGATIVE_C = Math.floor(MAX_C / 2);
 // we use this to reduce the number of characters needed to represent large numbers
 export const OVERFLOW = NEGATIVE_C + 1;
 
-// precomputed log(OVERFLOW) lets us calculate how many digits (characters) we need
-export const LOG_OVERFLOW = Math.log(OVERFLOW);
+const OVERFLOW_POWS: number[] = [];
+function overflowPow(num: number): number {
+    return OVERFLOW_POWS[num] ??= Math.pow(OVERFLOW, num);
+}
 
 export function processCharCodes(text: string): number[] {
     return text.split("").map(v => v.charCodeAt(0));
@@ -44,8 +46,15 @@ export function stringedINT_C(number: number): string {
 export function sectorSize(number: number): number {
     // 0 would make -Infinity;
     if(number == 0) return 1;
-    // we add 1 because log gives us a fractional digit count that needs to be rounded up
-    return Math.floor(Math.log(Math.abs(number)) / LOG_OVERFLOW) + 1;
+    
+    // iterative system because it's faster than log
+    let count = 1;
+    let num = OVERFLOW;
+    while(number > num) {
+        count++;
+        num *= OVERFLOW;
+    }
+    return count;
 }
 
 // encodes a signed integer into a unicode-safe string using a large base (OVERFLOW)
@@ -88,7 +97,7 @@ export function deconvertINT_D(string: string): number {
     // then multiply by the appropriate base power based on its position
     return processCharCodes(string).reduce((c, n, i, arr) => {
         // multiply by the positional weight based on its place (most-significant-digit first)
-        return c + fromSignedINT_C(n) * Math.pow(OVERFLOW, arr.length - i - 1);
+        return c + fromSignedINT_C(n) * overflowPow(arr.length - i - 1);
     }, 0);
 }
 const encoder = new TextEncoder();

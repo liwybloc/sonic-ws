@@ -90,7 +90,7 @@ export abstract class SonicWSCore {
     }
 
     public send(tag: string, ...values: any[]): void {
-        emitPacket(this.clientPackets, (d) => this.raw_send(d), tag, values);
+        emitPacket(this.clientPackets, (d) => this.raw_send(d), tag, ...values);
     }
 
     public on_ready(listener: () => void): void {
