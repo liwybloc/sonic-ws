@@ -26,6 +26,7 @@
   "author": "lily",
   "license": "ISC",
   "dependencies": {
+    "node-fetch": "^3.3.2",
     "ws": "^8.18.2"
   },
   "devDependencies": {
