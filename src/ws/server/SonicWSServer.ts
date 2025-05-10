@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 import * as WS from 'ws';
 import { SonicWSConnection } from './SonicWSConnection';
-import { PacketHolder } from '../KeyHolder';
+import { PacketHolder } from '../util/KeyHolder';
 import { NULL } from '../util/CodePointUtil';
 import { VERSION, VERSION_CHAR } from '../../version';
 import { Packet } from '../packets/Packets';

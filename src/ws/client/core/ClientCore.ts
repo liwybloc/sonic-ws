@@ -1,4 +1,4 @@
-import { PacketHolder } from '../../KeyHolder';
+import { PacketHolder } from '../../util/KeyHolder';
 import { PacketListener } from '../../packets/PacketListener';
 import { NULL } from '../../util/CodePointUtil';
 import { emitPacket } from '../../util/PacketUtils';

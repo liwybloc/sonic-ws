@@ -1,4 +1,4 @@
-import { PacketHolder } from "../KeyHolder";
+import { PacketHolder } from "./KeyHolder";
 import { Packet, PacketSchema } from "../packets/Packets";
 import { PacketType } from "../packets/PacketType";
 import { NULL } from "./CodePointUtil";

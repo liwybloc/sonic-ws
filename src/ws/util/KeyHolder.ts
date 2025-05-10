@@ -1,4 +1,4 @@
-import { Packet } from "./packets/Packets";
+import { Packet } from "../packets/Packets";
 
 export class PacketHolder {
 
