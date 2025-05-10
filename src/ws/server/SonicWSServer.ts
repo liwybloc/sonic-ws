@@ -36,6 +36,18 @@ export class SonicWSServer {
                 this.socketIDs.splice(this.socketIDs.indexOf(sonicConnection.id), 1);
             });
         });
+
+        fetch('https://raw.githubusercontent.com/cutelittlelily/sonic-ws/refs/heads/main/release/version')
+            .then(res => res.text())
+            .then(ver => {
+                if(parseInt(ver) != VERSION) {
+                    console.warn(`SonicWS is currently running on version ${VERSION}, but the latest is ${ver}! Update with "npm update sonic-ws"`)
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                console.warn(`Could not check version.`);
+            })
     }
 
     private generateSocketID(): number {
