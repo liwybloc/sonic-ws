@@ -11,7 +11,9 @@
     "build": "npm run build_node && npm run build_web",
 
     "test_web": "npm run build && node test-site/server.mjs",
-    "test_node": "npm run build_node && node test.mjs"
+    "test_node": "npm run build_node && node test.mjs",
+
+    "publish": "npm run build && copy ./bundled/SonicWS_bundle.js ./bundled/SonicWS_bundle_release.js && npm publish"
   },
   "repository": {
     "type": "git",
