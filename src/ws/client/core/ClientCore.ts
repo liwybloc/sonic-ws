@@ -1,8 +1,7 @@
 import { PacketHolder } from '../../KeyHolder';
-import { Packet, PacketSendProcessors, PacketType } from '../../packets/PacketType';
+import { Packet } from '../../packets/PacketType';
 import { PacketListener } from '../../packets/PacketListener';
 import { NULL } from '../../util/CodePointUtil';
-import { splitArray } from '../../util/ArrayUtil';
 import { emitPacket } from '../../util/PacketUtils';
 import { VERSION } from '../../../version';
 

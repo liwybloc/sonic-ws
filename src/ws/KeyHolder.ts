@@ -54,7 +54,7 @@ export class PacketHolder {
     }
 
     public serialize(): string {
-        return this.packets.map(p => p.serialize()).join(",");
+        return this.packets.map(p => p.serialize()).join("");
     }
 
     public static empty(): PacketHolder {
