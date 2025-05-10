@@ -1,16 +1,22 @@
-import { PacketReceiveProcessors, PacketValidityProcessors, Packet } from "./PacketType";
+import { PacketReceiveProcessors, PacketValidityProcessors, processReceiveObjPacket, validateObjPacket } from "./PacketProcessors";
+import { Packet, PacketType } from "./PacketType";
 
 export class PacketListener {
 
-    private processor: (data: string, cap: number) => any;
-    private validifier: (data: string, dataCap: number) => boolean;
+    private processor: (data: string, cap: any) => any;
+    private validifier: (data: string, dataCap: any) => boolean;
     private listener: (...data: any[]) => void;
     private dontSpread: boolean;
-    private dataCap: number;
+    private dataCap: number | number[];
 
     constructor(packet: Packet, listener: (...data: any[]) => void) {
-        this.processor = PacketReceiveProcessors[packet.type];
-        this.validifier = PacketValidityProcessors[packet.type];
+        if(packet.object) {
+            this.processor = processReceiveObjPacket;
+            this.validifier = validateObjPacket;
+        } else {
+            this.processor = PacketReceiveProcessors[packet.type as PacketType];
+            this.validifier = PacketValidityProcessors[packet.type as PacketType];
+        }
         this.listener = listener;
         this.dontSpread = packet.dontSpread;
         this.dataCap = packet.dataCap;

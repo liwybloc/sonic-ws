@@ -1,5 +1,4 @@
-import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertINT_D, decompressBools, deconvertINT_D, deconvertINT_DCodes, fromSignedINT_C, NULL, processCharCodes, sectorSize, stringedINT_C, STX } from "../util/CodePointUtil";
+import { ETX, NULL, processCharCodes, STX } from "../util/CodePointUtil";
 
 export enum PacketType {
  
@@ -29,165 +28,141 @@ export enum PacketType {
     
 }
 
-const STRINGIFY = (data: any) => data.toString();
-
-const LEN_DELIMIT = (data: string, cap: number) => {
-    let sectors = 0;
-    for(let index = 0; index < data.length; index++) {
-        sectors++;
-        if(sectors > cap) return false;
-        index += data.charCodeAt(index);
-        if(index + 1 > data.length) return false;
-    }
-    return true;
-}
-
-export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap: number) => boolean> = {
-    [PacketType.NONE]: (data) => data == "",
-    [PacketType.RAW]: () => true,
-
-    [PacketType.STRINGS]: LEN_DELIMIT,
-
-    [PacketType.INTS_C]: (data, cap) => data.length == cap,
-    [PacketType.INTS_D]: (data, cap) => data.length > 0 && (processCharCodes(data).length - 1) % data[0].charCodeAt(0)! <= cap,
-    [PacketType.INTS_A]: LEN_DELIMIT,
-     
-    [PacketType.DECIMALS]: (data, cap) => {
-        let sectors = 0;
-        for(let i = 0; i < data.length; i++) {
-            sectors++;
-            if(sectors > cap) return false;
-            i += data.charCodeAt(i++);
-            if(i > data.length) return false;
-            i += data.charCodeAt(i++);
-            if(i > data.length) return false;
-        }
-        return true;
-    },
-
-    [PacketType.BOOLEANS]: (data, cap) => {
-        const codes = processCharCodes(data);
-        return codes.length <= Math.floor(cap / 8) + 1 && codes.find(d => d > 255) == undefined;
-    }
-}
-
-export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: number) => "" | string | string[] | number | number[] | boolean[]> = {
-    [PacketType.NONE]: (_) => "",
-    [PacketType.RAW]: (data) => data,
-
-    [PacketType.STRINGS]: (data) => {
-        let strings: string[] = [];
-        for(let i = 0; i < data.length; i++) {
-            const stringSize = data.charCodeAt(i);
-            strings.push(data.substring(i + 1, i + 1 + stringSize));
-            i += stringSize;
-        }
-        return strings;
-    },
-
-    [PacketType.INTS_C]: (data) => processCharCodes(data).map(fromSignedINT_C),
-    [PacketType.INTS_D]: (data) => splitArray(processCharCodes(data.substring(1)), data[0].charCodeAt(0)!).map(arr => String.fromCharCode(...arr)).map(deconvertINT_D),
-    [PacketType.INTS_A]: (data) => {
-        let numbers: number[] = [];
-        for(let i = 0; i < data.length; i++) {
-            const sectSize = data.charCodeAt(i);
-            numbers.push(deconvertINT_D(data.substring(i + 1, i + 1 + sectSize)));
-            i += sectSize;
-        }
-        return numbers;
-    },
-
-    [PacketType.DECIMALS]: (data) => {
-        const points = processCharCodes(data);
-        let numbers: number[] = [];
-        for(let i = 0; i < points.length;) {
-            const wholeSS = points[i++];
-            const whole = deconvertINT_DCodes(points.slice(i, i + wholeSS));
-            i += wholeSS;
-
-            const decimalSS = points[i++];
-            const decimal = deconvertINT_DCodes(points.slice(i, i + decimalSS));
-            i += decimalSS;
-
-            numbers.push(parseFloat(whole + "." + decimal));
-        }
-
-        return numbers;
-    },
-
-    [PacketType.BOOLEANS]: (data, cap) => processCharCodes(data).map(d => decompressBools(d)).flat().splice(0, cap),
-};
-
-export const PacketSendProcessors: Record<PacketType, (...data: any) => string> = {
-    [PacketType.NONE]: (_) => "",
-    [PacketType.RAW]: STRINGIFY,
-
-    // todo: try some kind of string compression ig :p
-    [PacketType.STRINGS]: (...strings: any[]) => strings.map(string => String.fromCharCode(string.toString().length) + string).join(""),
-
-    [PacketType.INTS_C]: (...numbers: number[]) => numbers.map(stringedINT_C).join(""),
-    [PacketType.INTS_D]: (...numbers: number[]) => {
-        const sectSize = numbers.reduce((c, n) => Math.max(c, sectorSize(n)), 1);
-        const sects = numbers.map(n => convertINT_D(n, sectSize)).join("");
-        return String.fromCharCode(sectSize) + sects;
-    },
-    [PacketType.INTS_A]: (...numbers: number[]) => numbers.map(v => {
-        const sectSize = sectorSize(v);
-        return String.fromCharCode(sectSize) + convertINT_D(v, sectSize);
-    }).join(""),
-
-    [PacketType.DECIMALS]: (...numbers: number[]) => numbers.map(n => {
-        const split = n.toString().split(".");
-
-        const whole = parseFloat(split[0]) || 0;
-        const decimal = split.length > 1 ? parseFloat(split[1]) || 0 : 0;
-
-        const wholeSS = sectorSize(whole);
-        const decimalSS = sectorSize(decimal);
-
-        return String.fromCharCode(wholeSS) + convertINT_D(whole, wholeSS) + String.fromCharCode(decimalSS) + convertINT_D(decimal, decimalSS);
-    }).join(""),
-    
-    [PacketType.BOOLEANS]: (...bools: boolean[]) => splitArray(bools, 8).map(bools => String.fromCharCode(compressBools(bools))).join(""),
-}
-
 export class Packet {
     public tag: string;
-    public type: PacketType;
-    public dataCap: number;
+
+    public size: number;
+    public type: PacketType | PacketType[];
+    public dataCap: number | number[];
     public dontSpread: boolean;
 
-    constructor(tag: string, type: PacketType, dataCap: number, dontSpread: boolean) {
+    public object: boolean;
+
+    constructor(tag: string, schema: PacketSchema) {
         this.tag = tag;
-        this.type = type;
-        this.dataCap = dataCap;
-        this.dontSpread = dontSpread;
+
+        if(schema.object) {
+            this.type = schema.types;
+            this.dataCap = schema.dataCaps;
+            this.size = this.type.length;
+            this.object = true;
+        } else {
+            this.type = schema.type;
+            this.dataCap = schema.dataCap;
+            this.size = this.dataCap;
+            this.object = false;
+        }
+
+        this.dontSpread = schema.dontSpread;
     }
 
     public serialize(): string {
-        return `${this.dontSpread ? 1 : 0}${String.fromCharCode(this.dataCap + 1)}${String.fromCharCode(this.type + 1)}${String.fromCharCode(this.tag.length + 1)}${this.tag}`;
+        // spread flag; ETX for "2", STX for "1", avoid NULL for delimiting
+        const spreadFlag = this.dontSpread ? ETX : STX;
+
+        // single-value packet (not an object schema)
+        if (!this.object) {
+            return spreadFlag +
+                STX +                                                // Dummy size byte for consistent deserialization
+                String.fromCharCode((this.dataCap as number) + 1) +  // 1 byte: Data cap, offset by +1 to avoid NULL
+                String.fromCharCode((this.type as PacketType) + 1) + // 1 byte: Type, offset by +1
+                String.fromCharCode(this.tag.length + 1) +           // 1 byte: Tag length, offset by +1
+                this.tag;                                            // N bytes: Tag string
+        }
+
+        // object packet
+        return spreadFlag +
+            String.fromCharCode(this.size + 2) +                                  // size, and +2 because of NULL and STX (STX is for single)
+            String.fromCharCode(...(this.dataCap as number[]).map(x => x + 1)) +  // all data caps, offset by 1 for NULL
+            String.fromCharCode(...(this.type as PacketType[]).map(x => x + 1)) + // all types, offset by 1 for NULL
+            String.fromCharCode(this.tag.length + 1) +                            // tag length, offset by 1 for NULL
+            this.tag;                                                             // the tag
     }
 
-    public static deserialize(text: string, offset: number): [packet: Packet, tagLength: number] {
-        const dontSpread: boolean = text[offset] == "1";
-        const dataCap: number = text.charCodeAt(offset + 1) - 1;
-        const type: PacketType = (text.charCodeAt(offset + 2) - 1) as PacketType;
-        
-        const tagLength: number = text.charCodeAt(offset + 3) - 1;
-        const tag: string = text.substring(offset + 4, offset + 4 + tagLength);
+    public static deserialize(text: string, offset: number): [packet: Packet, offset: number] {
+        const dontSpread: boolean = text[offset] == ETX;
 
-        return [new Packet(tag, type, dataCap, dontSpread), tagLength];
+        const size: number = text.charCodeAt(offset + 1) - 2;
+
+        // objects
+        // the single packet is STX so STX - 2 = -1
+        if (size != -1) {
+            const dcStart = offset + 2;           // data caps section start
+            const dcEnd = dcStart + size;         // data caps section end
+            const tStart = dcEnd;                 // types section start
+            const tEnd = tStart + size;           // types section end
+            const tagStart = tEnd + 1;            // tag string starts after tag length byte
+
+            const dataCaps: number[]  = processCharCodes(text.substring(dcStart, dcEnd)).map(x => x - 1); // subtract 1 to reverse
+            const types: PacketType[] = processCharCodes(text.substring(tStart,   tEnd)).map(x => x - 1); // subtract 1 to reverse
+
+            const tagLength: number = text.charCodeAt(tagStart - 1) - 1; // tag length is right behind tag, subtracting 1 to reverse
+            const tag = text.substring(tagStart, tagStart + tagLength); // tag is tag length long. yeah
+
+            return [
+                new Packet(tag, PacketSchema.object(types, dataCaps, dontSpread)),
+                3 + size + size + tagLength // the length of spread flag + size flag + tag length flag, then the 2 sizes for data caps and types
+            ];
+        }
+
+        // single packet; subtracting 1 to revere.
+        const dataCap: number = text.charCodeAt(offset + 2) - 1;
+        const type: PacketType = (text.charCodeAt(offset + 3) - 1) as PacketType;
+
+        const tagStart = offset + 5;
+        const tagLength: number = text.charCodeAt(tagStart - 1) - 1;
+        const tag: string = text.substring(tagStart, tagStart + tagLength);
+
+        return [
+            new Packet(tag, PacketSchema.single(type, dataCap, dontSpread)),
+            5 + tagLength // the length of spread flag + single flag + data cap flag + type flag + tag flag + tag
+        ];
     }
     
     public static deserializeAll(text: string): Packet[] {
         const arr: Packet[] = [];
+
         let offset = 0;
         while(offset < text.length) {
             const [packet, len] = this.deserialize(text, offset);
             arr.push(packet);
-            offset += 4 + len;
+            offset += len;
         }
 
         return arr;
     }
+}
+
+export class PacketSchema {
+
+    public types: PacketType[] = [];
+    public dataCaps: number[] = [];
+
+    public type: PacketType = PacketType.NONE;
+    public dataCap: number = -1;
+
+    public dontSpread: boolean = false;
+    public object: boolean;
+
+    constructor(object: boolean) {
+        this.object = object;
+    }
+
+    public static single(type: PacketType, dataCap: number, dontSpread: boolean): PacketSchema {
+        const schema = new PacketSchema(false);
+        schema.type = type;
+        schema.dataCap = dataCap;
+        schema.dontSpread = dontSpread;
+        return schema;
+    }
+
+    public static object(types: PacketType[], dataCaps: number[], dontSpread: boolean): PacketSchema {
+        if(types.length != dataCaps.length) throw new Error("There is an inbalance between types and datacaps!");
+        const schema = new PacketSchema(true);
+        schema.types = types;
+        schema.dataCaps = dataCaps;
+        schema.dontSpread = dontSpread;
+        return schema;
+    }
+    
 }

@@ -1,7 +1,7 @@
 // this shit is so complex so i commented it...
 
 // char cache for easier code
-export const NULL = String.fromCharCode(0), STX = String.fromCharCode(1);
+export const NULL = String.fromCharCode(0), STX = String.fromCharCode(1), ETX = String.fromCharCode(2);
 
 // the highest usable character in utf8
 export const MAX_C = 55295;

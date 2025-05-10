@@ -1,6 +1,5 @@
 import * as WS from 'ws';
 import { SonicWSServer } from './SonicWSServer';
-import { PacketSendProcessors, PacketType } from '../packets/PacketType';
 import { PacketListener } from '../packets/PacketListener';
 import { getStringBytes } from '../util/CodePointUtil';
 import { emitPacket } from '../util/PacketUtils';
@@ -83,7 +82,7 @@ export class SonicWSConnection {
     }
 
     public send(tag: string, ...values: any[]) {
-        emitPacket(this.host.serverPackets, (d) => this.raw_send(d), tag, ...values);
+        emitPacket(this.host.serverPackets, (d) => this.raw_send(d), tag, ...values.flat());
     }
 
     /** Toggles printing all sent and received messages */
