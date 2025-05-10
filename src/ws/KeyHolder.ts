@@ -1,4 +1,5 @@
 import { Packet } from "./packets/PacketType";
+import { processCharCodes } from "./util/CodePointUtil";
 
 export class PacketHolder {
 
@@ -34,11 +35,11 @@ export class PacketHolder {
         }
     }
 
-    public get(tag: string): number | null {
-        return this.keys[tag] ?? null;
+    public get(tag: string): number {
+        return this.keys[tag];
     }
     public getChar(tag: string): string {
-        return String.fromCharCode(this.get(tag) || 0);
+        return String.fromCharCode(this.get(tag));
     }
 
     public getPacket(tag: string): Packet {

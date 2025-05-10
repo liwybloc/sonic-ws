@@ -15,6 +15,8 @@ export abstract class SonicWSCore {
     protected preListen: { [key: string]: Array<(value: string) => void> };
     protected clientPackets: PacketHolder = PacketHolder.empty();
     protected serverPackets: PacketHolder = PacketHolder.empty();
+    private pastKeys: boolean = false;
+    private readyListeners: Array<() => void> = [];
     private keyHandler: (event: MessageEvent) => undefined;
 
     constructor(ws: WebSocket) {
@@ -61,6 +63,9 @@ export abstract class SonicWSCore {
             
             this.listen(tag, packetListener);
         }));
+
+        this.pastKeys = true;
+        this.readyListeners.forEach(l => l());
 
         this.ws.removeEventListener('message', this.keyHandler);
         this.ws.addEventListener('message', event => this.messageHandler(event)); // lambda to persist 'this'
@@ -109,11 +114,8 @@ export abstract class SonicWSCore {
     }
 
     public on_ready(listener: () => void): void {
-        if (this.ws.readyState === WebSocket.OPEN) {
-            listener();
-        } else {
-            this.ws.addEventListener('open', listener);
-        }
+        if (this.pastKeys) listener();
+        else this.readyListeners.push(listener);
     }
 
     public on_close(listener: (event: CloseEvent) => void): void {

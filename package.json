@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "webpack": "webpack --mode production",
-    "build_web": "rimraf ./html && tsc --target ES5 --module ES6 --outdir ./html src/ws/client/browser/ClientBrowser.ts && npm run webpack",
+    "build_web": "rimraf ./html && tsc --target ES6 --module ES6 --outdir ./html src/ws/client/browser/ClientBrowser.ts && npm run webpack",
     "build_node": "rimraf ./dist && tsc -d",
     "build": "npm run build_node && npm run build_web",
     "test_web": "npm run build && node test-site/server.mjs",
@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.15.17",
+    "@types/node-fetch": "^2.6.12",
     "@types/ws": "^8.18.1",
     "cpy-cli": "^5.0.0",
     "ts-loader": "^9.5.2",
