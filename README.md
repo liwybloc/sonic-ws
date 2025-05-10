@@ -82,3 +82,4 @@ Booleans sometimes use extra bytes for some reason
 
 More data checking and better error handling
 Layered object packets
+JSDoc'ing stuff
