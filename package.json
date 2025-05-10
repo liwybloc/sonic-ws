@@ -1,6 +1,6 @@
 {
   "name": "sonic-ws",
-  "version": "1.0.0-beta.5",
+  "version": "1.0.0-beta.6-fix2",
   "description": "A bandwidth efficient websocket library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,11 +9,9 @@
     "build_web": "rimraf ./html && tsc --target ES5 --module ES6 --outdir ./html src/ws/client/browser/ClientBrowser.ts && npm run webpack",
     "build_node": "rimraf ./dist && tsc -d",
     "build": "npm run build_node && npm run build_web",
-
     "test_web": "npm run build && node test-site/server.mjs",
     "test_node": "npm run build_node && node test.mjs",
-    
-    "publish": "npm run build && copy .\\bundled\\SonicWS_bundle.js .\\release\\SonicWS_bundle.js && npm publish"
+    "publish": "npm run build && copy .\\bundled\\SonicWS_bundle.js .\\release\\SonicWS_bundle.js"
   },
   "repository": {
     "type": "git",
@@ -26,7 +24,7 @@
   "author": "lily",
   "license": "ISC",
   "dependencies": {
-    "node-fetch": "^3.3.2",
+    "node-fetch": "^2.7.0",
     "ws": "^8.18.2"
   },
   "devDependencies": {

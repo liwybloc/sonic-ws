@@ -1,3 +1,4 @@
+import fetch from 'node-fetch';
 import * as WS from 'ws';
 import { SonicWSConnection } from './SonicWSConnection';
 import { PacketHolder } from '../KeyHolder';
