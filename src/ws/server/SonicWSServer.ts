@@ -41,13 +41,13 @@ export class SonicWSServer {
             .then(res => res.text())
             .then(ver => {
                 if(parseInt(ver) != VERSION) {
-                    console.warn(`SonicWS is currently running on version ${VERSION}, but the latest is ${ver}! Update with "npm update sonic-ws"`)
+                    console.warn(`SonicWS is currently running outdated! (current: ${VERSION}, latest: ${ver}) Update with "npm update sonic-ws"`)
                 }
             })
             .catch(err => {
                 console.error(err);
-                console.warn(`Could not check version.`);
-            })
+                console.warn(`Could not check SonicWS version.`);
+            });
     }
 
     private generateSocketID(): number {
