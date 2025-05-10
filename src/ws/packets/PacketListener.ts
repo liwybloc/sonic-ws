@@ -1,34 +1,22 @@
-import { PacketReceiveProcessors, PacketValidityProcessors, processReceiveObjPacket, validateObjPacket } from "./PacketProcessors";
-import { Packet, PacketType } from "./PacketType";
+import { Packet } from "./Packets";
 
 export class PacketListener {
 
-    private processor: (data: string, cap: any) => any;
-    private validifier: (data: string, dataCap: any) => boolean;
     private listener: (...data: any[]) => void;
-    private dontSpread: boolean;
-    private dataCap: number | number[];
+    private packet: Packet;
 
     constructor(packet: Packet, listener: (...data: any[]) => void) {
-        if(packet.object) {
-            this.processor = processReceiveObjPacket;
-            this.validifier = validateObjPacket;
-        } else {
-            this.processor = PacketReceiveProcessors[packet.type as PacketType];
-            this.validifier = PacketValidityProcessors[packet.type as PacketType];
-        }
         this.listener = listener;
-        this.dontSpread = packet.dontSpread;
-        this.dataCap = packet.dataCap;
+        this.packet = packet;
     }
 
     listen(value: string): boolean {
         try {
-            if(!this.validifier(value, this.dataCap)) return false;
+            if(!this.packet.validate(value)) return false;
 
-            const processed = this.processor(value, this.dataCap);
+            const processed = this.packet.processReceive(value);
 
-            if(Array.isArray(processed) && !this.dontSpread) this.listener(...processed);
+            if(Array.isArray(processed) && !this.packet.dontSpread) this.listener(...processed);
             else this.listener(processed);
             return true;
         } catch (err) {

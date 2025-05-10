@@ -1,6 +1,6 @@
 import { splitArray } from "../util/ArrayUtil";
 import { compressBools, convertINT_D, decompressBools, deconvertINT_D, deconvertINT_DCodes, fromSignedINT_C, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
-import { Packet, PacketType } from "./PacketType";
+import { PacketType } from "./PacketType";
 
 const STRINGIFY = (data: any) => data.toString();
 
@@ -126,12 +126,31 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
     [PacketType.BOOLEANS]: (...bools: boolean[]) => splitArray(bools, 8).map(bools => String.fromCharCode(compressBools(bools))).join(""),
 }
 
-export function processSendObjPacket(packet: Packet): string {
-    return "";
+export function createObjSendProcessor(types: PacketType[]): (...data: any[]) => string {
+    const size = types.length;
+    const processors = types.map(t => PacketSendProcessors[t]);
+    return (...data: any[]) => {
+        let result = "";
+        for(let i=0;i<size;i++) {
+            const d = processors[i](...data[i]);
+            result += String.fromCharCode(d.length) + d;
+        }
+        return result;
+    };
 }
-export function processReceiveObjPacket(data: string, caps: number[]): any {
-    return null;
+export function createObjReceiveProcesor(types: PacketType[], dataCaps: number[]): (data: string, caps: number[]) => any {
+    const processors = types.map(t => PacketReceiveProcessors[t]);
+    return (data: string) => {
+        let result: any[] = [];
+        for(let i=0;i<data.length;) {
+            const sectionLength = data.charCodeAt(i++);
+            const sector = data.substring(i, i + sectionLength);
+            result.push(processors[result.length](sector, dataCaps[result.length]));
+            i += sectionLength;
+        }
+        return result;
+    };
 }
-export function validateObjPacket(data: string, caps: number[]): boolean {
-    return true;
+export function createObjValidator(types: PacketType[], dataCaps: number[]): (data: string, caps: number[]) => boolean {
+    return () => true;
 }

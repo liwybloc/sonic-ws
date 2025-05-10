@@ -2,9 +2,9 @@ import fetch from 'node-fetch';
 import * as WS from 'ws';
 import { SonicWSConnection } from './SonicWSConnection';
 import { PacketHolder } from '../KeyHolder';
-import { Packet } from '../packets/PacketType';
 import { NULL } from '../util/CodePointUtil';
 import { VERSION, VERSION_CHAR } from '../../version';
+import { Packet } from '../packets/Packets';
 
 export class SonicWSServer {
     private wss: WS.WebSocketServer;
@@ -15,7 +15,8 @@ export class SonicWSServer {
     public clientPackets: PacketHolder;
     public serverPackets: PacketHolder;
 
-    public connections: SonicWSConnection[] = [];
+    private connections: SonicWSConnection[] = [];
+    private connectionMap: Record<number, SonicWSConnection> = {};
 
     constructor(clientPackets: Packet[], serverPackets: Packet[], options: WS.ServerOptions = {}) {
         this.wss = new WS.WebSocketServer(options);
@@ -35,11 +36,13 @@ export class SonicWSServer {
             socket.send(keyData);
 
             this.connections.push(sonicConnection);
+            this.connectionMap[sonicConnection.id] = sonicConnection;
             this.connectListeners.forEach(l => l(sonicConnection));
 
             socket.on('close', () => {
                 this.connections.splice(this.connections.indexOf(sonicConnection), 1);
                 this.socketIDs.splice(this.socketIDs.indexOf(sonicConnection.id), 1);
+                delete this.connectionMap[sonicConnection.id];
             });
         });
 
@@ -71,8 +74,22 @@ export class SonicWSServer {
         this.wss.on('listening', runner);
     }
 
+    public shutdown(callback: (err?: Error) => void): void {
+        this.wss.close(callback);
+    }
+
     public broadcast(tag: string, ...values: any): void {
         this.connections.forEach(conn => conn.send(tag, ...values));
+    }
+
+    public getConnected(): SonicWSConnection[] {
+        return this.connections;
+    }
+    public getSocket(id: number): SonicWSConnection {
+        return this.connectionMap[id];
+    }
+    public closeSocket(id: number): void {
+        this.getSocket(id).close();
     }
 
 }

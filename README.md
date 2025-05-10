@@ -15,7 +15,7 @@ While still simple and efficient, SonicWS provides efficient packet transfers.
 ### Importing:
 Node (Client & Server):
 ```js
-import { PacketType, SonicWS, SonicWSServer, CreatePacket } from "sonic-ws";
+import { PacketType, SonicWS, SonicWSServer, CreatePacket, CreateObjPacket } from "sonic-ws";
 ```
 Browser (Client):
 ```html
@@ -27,7 +27,7 @@ Browser (Client):
 ```js
 const wss = new SonicWSServer(
     [CreatePacket("pong", PacketType.INTS_D, 1)], // client-sent packets
-    [CreatePacket("ping", PacketType.INTS_D, 1)], // server-sent packets
+    [CreatePacket("ping", PacketType.INTS_D, 1), CreateObjPacket("data", [PacketType.INTS_A, PacketTypes.STRING], [2, 3])], // server-sent packets
     { port: 1234 }
 );
 
@@ -37,6 +37,7 @@ wss.on_connect((socket) => {
 
     socket.on("pong", (num) => {
         console.log("Ponged!", num);
+        socket.send("data", [Math.floor(Math.random() * 1000), Math.floor(Math.random() * 1000)], ["hello", "from", "server"]);
     });
 
     setInterval(() => {
@@ -62,6 +63,10 @@ ws.on("ping", (num) => {
     console.log("Pinged!", num);
     ws.send("pong", Date.now());
 })
+ws.on("data", (i, s) => {
+    console.log("data: ", i);
+    console.log("message: " + s.join(" "));
+});
 
 ws.on_close((event) => {
     console.log("closed client: " + event.code);
@@ -75,4 +80,5 @@ Booleans sometimes use extra bytes for some reason
 
 ## PLANNED FEATURES
 
-Custom packet structures; ability to send x strings, y numbers, etc.
+More data checking and better error handling
+Layered object packets

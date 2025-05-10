@@ -1,9 +1,9 @@
 import { PacketHolder } from '../../KeyHolder';
-import { Packet } from '../../packets/PacketType';
 import { PacketListener } from '../../packets/PacketListener';
 import { NULL } from '../../util/CodePointUtil';
 import { emitPacket } from '../../util/PacketUtils';
 import { VERSION } from '../../../version';
+import { Packet } from '../../packets/Packets';
 
 export abstract class SonicWSCore {
     protected ws: WebSocket;
@@ -39,13 +39,13 @@ export abstract class SonicWSCore {
     private serverKeyHandler(event: MessageEvent): undefined {
         const data: string = event.data.toString();
         if(!data.startsWith("SWS")) {
-            this.ws.close();
+            this.ws.close(1003);
             throw new Error("The server requested is not a Sonic WS server.");
         }
 
         const version = data.charCodeAt(3);
         if(version != VERSION) {
-            this.ws.close();
+            this.ws.close(1003);
             throw new Error(`Version mismatch: ${version > VERSION ? "client" : "server"} is outdated (server: ${version}, client: ${VERSION})`);              
         }
 
@@ -110,7 +110,7 @@ export abstract class SonicWSCore {
     }
 
     public send(tag: string, ...values: any[]): void {
-        emitPacket(this.clientPackets, (d) => this.raw_send(d), tag, ...values);
+        emitPacket(this.clientPackets, (d) => this.raw_send(d), tag, values);
     }
 
     public on_ready(listener: () => void): void {

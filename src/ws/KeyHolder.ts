@@ -1,5 +1,4 @@
-import { Packet } from "./packets/PacketType";
-import { processCharCodes } from "./util/CodePointUtil";
+import { Packet } from "./packets/Packets";
 
 export class PacketHolder {
 
