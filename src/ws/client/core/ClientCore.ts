@@ -52,8 +52,13 @@ export abstract class SonicWSCore {
         this.serverPackets.createPackets(Packet.deserializeAll(skData));
 
         Object.keys(this.preListen).forEach(tag => this.preListen[tag].forEach(listener => {
+            const key = this.serverPackets.get(tag);
+            // print the error to console without halting execution
+            if(key == null) return console.error(new Error(`The server does not send the packet with tag "${tag}"!`));
+
             const packet = this.serverPackets.getPacket(tag);
             const packetListener = new PacketListener(packet, listener);
+            
             this.listen(tag, packetListener);
         }));
 
@@ -71,7 +76,12 @@ export abstract class SonicWSCore {
         const value = data.substring(1);
         const code = key.charCodeAt(0);
         if (code != null) {
-            this.listeners.event[code]?.forEach(l => l.listen(value));
+            this.listeners.event[code]?.forEach(l => {
+                const result = l.listen(value);
+                if(!result) {
+                    throw new Error("Received invalid data from server!! This is probably my fault.. make an issue at https://github.com/cutelittlelily/sonic-ws");
+                }
+            });
         }
     }
 

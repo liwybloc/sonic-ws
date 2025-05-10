@@ -34,11 +34,11 @@ export class PacketHolder {
         }
     }
 
-    public get(tag: string): number {
-        return this.keys[tag];
+    public get(tag: string): number | null {
+        return this.keys[tag] ?? null;
     }
     public getChar(tag: string): string {
-        return String.fromCharCode(this.get(tag));
+        return String.fromCharCode(this.get(tag) || 0);
     }
 
     public getPacket(tag: string): Packet {

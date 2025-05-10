@@ -6,50 +6,55 @@ export enum PacketType {
     /** No data */
     NONE = 0,
 
-    /** Raw string data */
+    /** Raw data */
     RAW = 1,
-    /** Raw string data (alias) */
-    STRING = 1,
+
+    /** Strings */
+    STRINGS = 2,
 
     /** One or more numbers from -27,648 to 27,647 */
-    INTS_C = 2,
+    INTS_C = 3,
 
     /** One or more numbers of any size. Similar maximum size will produce maximum efficiency */
-    INTS_D = 3,
+    INTS_D = 4,
 
     /** One or more numbers of any size. More efficient for differently sized numbers, worse than INTS_D for similar sized numbers. */
-    INTS_A = 4,
+    INTS_A = 5,
 
     /** One or more decimal numbers of any size */
-    DECIMALS = 5,
+    DECIMALS = 6,
 
     /** One or more true/false */
-    BOOLEANS = 6,
+    BOOLEANS = 7,
     
 }
 
 const STRINGIFY = (data: any) => data.toString();
 
+const LEN_DELIMIT = (data: string, cap: number) => {
+    let sectors = 0;
+    for(let index = 0; index < data.length; index++) {
+        sectors++;
+        if(sectors > cap) return false;
+        index += data.charCodeAt(index);
+        if(index + 1 > data.length) return false;
+    }
+    return true;
+}
+
 export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap: number) => boolean> = {
     [PacketType.NONE]: (data) => data == "",
     [PacketType.RAW]: () => true,
 
-    [PacketType.INTS_C]: (data, cap) => data.length == cap,// same here \/\/\/\/
+    [PacketType.STRINGS]: LEN_DELIMIT,
+
+    [PacketType.INTS_C]: (data, cap) => data.length == cap,
     [PacketType.INTS_D]: (data, cap) => data.length > 0 && (processCharCodes(data).length - 1) % data[0].charCodeAt(0)! <= cap,
-    [PacketType.INTS_A]: (data, cap) => {
-        let sectors = 0;
-        for(let index = 0; index < data.length; index++) {
-            sectors++;
-            if(sectors > cap) return false;
-            index += data.charCodeAt(index);
-            if(index + 1 > data.length) return false;
-        }
-        return true;
-    },
+    [PacketType.INTS_A]: LEN_DELIMIT,
      
     [PacketType.DECIMALS]: (data, cap) => {
         let sectors = 0;
-        for(let i = 0; i < data.length;) {
+        for(let i = 0; i < data.length; i++) {
             sectors++;
             if(sectors > cap) return false;
             i += data.charCodeAt(i++);
@@ -62,18 +67,28 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
 
     [PacketType.BOOLEANS]: (data, cap) => {
         const codes = processCharCodes(data);
-        return codes.length < Math.floor(cap / 8) + 1 && codes.find(d => d > 255) == undefined;
+        return codes.length <= Math.floor(cap / 8) + 1 && codes.find(d => d > 255) == undefined;
     }
 }
 
-export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: number) => "" | string | number | number[] | boolean[]> = {
+export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: number) => "" | string | string[] | number | number[] | boolean[]> = {
     [PacketType.NONE]: (_) => "",
     [PacketType.RAW]: (data) => data,
+
+    [PacketType.STRINGS]: (data) => {
+        let strings: string[] = [];
+        for(let i = 0; i < data.length; i++) {
+            const stringSize = data.charCodeAt(i);
+            strings.push(data.substring(i + 1, i + 1 + stringSize));
+            i += stringSize;
+        }
+        return strings;
+    },
 
     [PacketType.INTS_C]: (data) => processCharCodes(data).map(fromSignedINT_C),
     [PacketType.INTS_D]: (data) => splitArray(processCharCodes(data.substring(1)), data[0].charCodeAt(0)!).map(arr => String.fromCharCode(...arr)).map(deconvertINT_D),
     [PacketType.INTS_A]: (data) => {
-        let numbers = [];
+        let numbers: number[] = [];
         for(let i = 0; i < data.length; i++) {
             const sectSize = data.charCodeAt(i);
             numbers.push(deconvertINT_D(data.substring(i + 1, i + 1 + sectSize)));
@@ -106,6 +121,9 @@ export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: num
 export const PacketSendProcessors: Record<PacketType, (...data: any) => string> = {
     [PacketType.NONE]: (_) => "",
     [PacketType.RAW]: STRINGIFY,
+
+    // todo: try some kind of string compression ig :p
+    [PacketType.STRINGS]: (...strings: string[]) => strings.map(string => String.fromCharCode(string.length) + string).join(""),
 
     [PacketType.INTS_C]: (...numbers: number[]) => numbers.map(stringedINT_C).join(""),
     [PacketType.INTS_D]: (...numbers: number[]) => {
