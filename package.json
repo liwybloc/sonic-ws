@@ -13,7 +13,7 @@
     "test_web": "npm run build && node test-site/server.mjs",
     "test_node": "npm run build_node && node test.mjs",
     
-    "publish": "npm run build && cpy bundled/SonicWS_bundle.js copy .\\bundled\\SonicWS_bundle.js .\\release\\SonicWS_bundle.js --rename=SonicWS_bundle_release.js && npm publish"
+    "publish": "npm run build && copy .\\bundled\\SonicWS_bundle.js .\\release\\SonicWS_bundle.js && npm publish"
   },
   "repository": {
     "type": "git",

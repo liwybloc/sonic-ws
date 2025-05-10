@@ -2,6 +2,7 @@ dist/ws/client/browser/**/*
 src/**/*
 html/**/*
 bundled/**/*
+release/**/*
 .gitattributes
 tsconfig.json
 test*
