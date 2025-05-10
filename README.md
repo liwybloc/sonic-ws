@@ -76,10 +76,13 @@ ws.on_close((event) => {
 ## KNOWN ISSUES
 
 Can't send 0 values through stuff like STRINGS; processes as [""] instead of []
+
 Booleans sometimes use extra bytes for some reason
 
 ## PLANNED FEATURES
 
 More data checking and better error handling
+
 Layered object packets
+
 JSDoc'ing stuff

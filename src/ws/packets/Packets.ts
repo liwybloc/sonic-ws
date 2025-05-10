@@ -60,11 +60,11 @@ export class Packet {
         // single-value packet (not an object schema)
         if (!this.object) {
             return spreadFlag +
-                STX +                                                // Dummy size byte for consistent deserialization
-                String.fromCharCode((this.dataCap as number) + 1) +  // 1 byte: Data cap, offset by +1 to avoid NULL
-                String.fromCharCode((this.type as PacketType) + 1) + // 1 byte: Type, offset by +1
-                String.fromCharCode(this.tag.length + 1) +           // 1 byte: Tag length, offset by +1
-                this.tag;                                            // N bytes: Tag string
+                STX +                                                // dummy byte flag for consistent deserialization; becomes -1 to indicate single
+                String.fromCharCode((this.dataCap as number) + 1) +  // the data cap, offset by 1 for NULL
+                String.fromCharCode((this.type as PacketType) + 1) + // the type, offset by 1 for NULL
+                String.fromCharCode(this.tag.length + 1) +           // tag length, offset by 1 for NULL
+                this.tag;                                            // the tag
         }
 
         // object packet
