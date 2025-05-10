@@ -19,7 +19,7 @@ import { PacketType, SonicWS, SonicWSServer, CreatePacket } from "sonic-ws";
 ```
 Browser (Client):
 ```html
-<script src="https://raw.githubusercontent.com/cutelittlelily/sonic-ws/refs/heads/main/bundled/SonicWS_bundle_release.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/cutelittlelily/sonic-ws/release/SonicWS_bundle.js"></script>
 ```
 *This will always give the latest release build. I will add branches for each release if this project actually goes anywhere.
 
