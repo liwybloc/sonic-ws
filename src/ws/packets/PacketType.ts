@@ -123,7 +123,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
     [PacketType.RAW]: STRINGIFY,
 
     // todo: try some kind of string compression ig :p
-    [PacketType.STRINGS]: (...strings: string[]) => strings.map(string => String.fromCharCode(string.length) + string).join(""),
+    [PacketType.STRINGS]: (...strings: any[]) => strings.map(string => String.fromCharCode(string.toString().length) + string).join(""),
 
     [PacketType.INTS_C]: (...numbers: number[]) => numbers.map(stringedINT_C).join(""),
     [PacketType.INTS_D]: (...numbers: number[]) => {

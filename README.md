@@ -67,3 +67,11 @@ ws.on_close((event) => {
     console.log("closed client: " + event.code);
 });
 ```
+
+## KNOWN ISSUES
+
+Can't send 0 values through stuff like STRINGS; processes as [""] instead of []
+
+## PLANNED FEATURES
+
+Custom packet structures; ability to send x strings, y numbers, etc.

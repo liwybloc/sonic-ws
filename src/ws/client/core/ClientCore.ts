@@ -84,7 +84,7 @@ export abstract class SonicWSCore {
             this.listeners.event[code]?.forEach(l => {
                 const result = l.listen(value);
                 if(!result) {
-                    throw new Error("Received invalid data from server!! This is probably my fault.. make an issue at https://github.com/cutelittlelily/sonic-ws");
+                    throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/cutelittlelily/sonic-ws");
                 }
             });
         }

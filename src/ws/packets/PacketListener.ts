@@ -26,6 +26,7 @@ export class PacketListener {
             else this.listener(processed);
             return true;
         } catch (err) {
+            console.error(err);
             return false;
         }
     }
