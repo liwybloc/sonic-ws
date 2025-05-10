@@ -10,12 +10,16 @@ export class SonicWSConnection {
     private listeners: Record<string, Array<PacketListener>>;
     private print: boolean = false;
     
+    /** The index of the connection. Alternative, check `this.code` for a low bandwidth usage. */
     public id: number;
+    /** The indexed character of the connection. Smaller data packet in strings. */
+    public code: string;
 
     constructor(socket: WS.WebSocket, host: SonicWSServer, id: number) {
         this.socket = socket;
         this.host = host;
         this.id = id;
+        this.code = String.fromCharCode(id);
 
         this.listeners = {};
         for (const key of Object.values(host.clientPackets.getKeys())) {
@@ -88,6 +92,10 @@ export class SonicWSConnection {
     /** Toggles printing all sent and received messages */
     public togglePrint(): void {
         this.print = !this.print;
+    }
+
+    public broadcast(tag: string, ...values: any[]) {
+        this.host.getConnected().forEach(conn => conn != this && conn.send(tag, ...values));
     }
 
 }

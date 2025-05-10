@@ -8,7 +8,7 @@ import { Packet } from '../packets/Packets';
 
 export class SonicWSServer {
     private wss: WS.WebSocketServer;
-    private socketIDs: number[] = [];
+    private currentId: number = 0;
     
     private connectListeners: Array<(client: SonicWSConnection) => void> = [];
 
@@ -41,7 +41,6 @@ export class SonicWSServer {
 
             socket.on('close', () => {
                 this.connections.splice(this.connections.indexOf(sonicConnection), 1);
-                this.socketIDs.splice(this.socketIDs.indexOf(sonicConnection.id), 1);
                 delete this.connectionMap[sonicConnection.id];
             });
         });
@@ -60,10 +59,7 @@ export class SonicWSServer {
     }
 
     private generateSocketID(): number {
-        let id;
-        do id = Math.floor(Math.random() * 9999999);
-        while (this.socketIDs.includes(id));
-        return id;
+        return this.currentId++;
     }
 
     public on_connect(runner: (client: SonicWSConnection) => void): void {
