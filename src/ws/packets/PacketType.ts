@@ -1,5 +1,5 @@
 import { splitArray } from "../util/ArrayUtil";
-import { convertINT_D, deconvertINT_D, fromSignedINT_C, NULL, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
+import { compressBools, convertINT_D, decompressBools, deconvertINT_D, deconvertINT_DCodes, fromSignedINT_C, NULL, processCharCodes, sectorSize, stringedINT_C, STX } from "../util/CodePointUtil";
 
 export enum PacketType {
  
@@ -17,17 +17,18 @@ export enum PacketType {
     /** One or more numbers of any size. Similar maximum size will produce maximum efficiency */
     INTS_D = 3,
 
-    /** One decimal number; unoptimal */
-    DECIMAL = 4,
+    /** One or more numbers of any size. More efficient for differently sized numbers, worse than INTS_D for similar sized numbers. */
+    INTS_A = 4,
 
-    /** true/false */
-    BOOLEAN = 6,
+    /** One or more decimal numbers of any size */
+    DECIMALS = 5,
+
+    /** One or more true/false */
+    BOOLEANS = 6,
     
 }
 
 const STRINGIFY = (data: any) => data.toString();
-
-// todo: validity checks
 
 export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap: number) => boolean> = {
     [PacketType.NONE]: (data) => data == "",
@@ -35,28 +36,71 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
 
     [PacketType.INTS_C]: (data, cap) => data.length == cap,// same here \/\/\/\/
     [PacketType.INTS_D]: (data, cap) => data.length > 0 && (processCharCodes(data).length - 1) % data[0].charCodeAt(0)! <= cap,
+    [PacketType.INTS_A]: (data, cap) => {
+        let sectors = 0;
+        for(let index = 0; index < data.length; index++) {
+            sectors++;
+            if(sectors > cap) return false;
+            index += data.charCodeAt(index);
+            if(index + 1 > data.length) return false;
+        }
+        return true;
+    },
      
-    [PacketType.DECIMAL]: (data, cap) => data.length > 0 && (processCharCodes(data).length - 1) % data[0].charCodeAt(0)! * 2 <= cap,
+    [PacketType.DECIMALS]: (data, cap) => {
+        let sectors = 0;
+        for(let i = 0; i < data.length;) {
+            sectors++;
+            if(sectors > cap) return false;
+            i += data.charCodeAt(i++);
+            if(i > data.length) return false;
+            i += data.charCodeAt(i++);
+            if(i > data.length) return false;
+        }
+        return true;
+    },
 
-    [PacketType.BOOLEAN]: (data) => data == NULL || data == "",
+    [PacketType.BOOLEANS]: (data, cap) => {
+        const codes = processCharCodes(data);
+        return codes.length < Math.floor(cap / 8) + 1 && codes.find(d => d > 255) == undefined;
+    }
 }
 
-// todo: code points might make it need to substring(2) but idk if i need to care abt that-
-export const PacketReceiveProcessors: Record<PacketType, (data: string) => "" | string | number | number[] | boolean> = {
+export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: number) => "" | string | number | number[] | boolean[]> = {
     [PacketType.NONE]: (_) => "",
     [PacketType.RAW]: (data) => data,
 
     [PacketType.INTS_C]: (data) => processCharCodes(data).map(fromSignedINT_C),
     [PacketType.INTS_D]: (data) => splitArray(processCharCodes(data.substring(1)), data[0].charCodeAt(0)!).map(arr => String.fromCharCode(...arr)).map(deconvertINT_D),
-
-    [PacketType.DECIMAL]: (data) => {
-        const points = processCharCodes(data);
-        const sectSize = points.shift()!;
-        const sects = splitArray(points, sectSize).map(arr => String.fromCharCode(...arr)).map(deconvertINT_D);
-        return parseFloat(sects[0] + "." + sects[1]);
+    [PacketType.INTS_A]: (data) => {
+        let numbers = [];
+        for(let i = 0; i < data.length; i++) {
+            const sectSize = data.charCodeAt(i);
+            numbers.push(deconvertINT_D(data.substring(i + 1, i + 1 + sectSize)));
+            i += sectSize;
+        }
+        return numbers;
     },
 
-    [PacketType.BOOLEAN]: (data) => data == NULL,
+    [PacketType.DECIMALS]: (data) => {
+        const points = processCharCodes(data);
+        let numbers: number[] = [];
+        for(let i = 0; i < points.length;) {
+            const wholeSS = points[i++];
+            const whole = deconvertINT_DCodes(points.slice(i, i + wholeSS));
+            i += wholeSS;
+
+            const decimalSS = points[i++];
+            const decimal = deconvertINT_DCodes(points.slice(i, i + decimalSS));
+            i += decimalSS;
+
+            numbers.push(parseFloat(whole + "." + decimal));
+        }
+
+        return numbers;
+    },
+
+    [PacketType.BOOLEANS]: (data, cap) => processCharCodes(data).map(d => decompressBools(d)).flat().splice(0, cap),
 };
 
 export const PacketSendProcessors: Record<PacketType, (...data: any) => string> = {
@@ -69,17 +113,24 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
         const sects = numbers.map(n => convertINT_D(n, sectSize)).join("");
         return String.fromCharCode(sectSize) + sects;
     },
+    [PacketType.INTS_A]: (...numbers: number[]) => numbers.map(v => {
+        const sectSize = sectorSize(v);
+        return String.fromCharCode(sectSize) + convertINT_D(v, sectSize);
+    }).join(""),
 
-    [PacketType.DECIMAL]: (data) => {
-        const split = data.toString().split(".");
+    [PacketType.DECIMALS]: (...numbers: number[]) => numbers.map(n => {
+        const split = n.toString().split(".");
+
         const whole = parseFloat(split[0]) || 0;
         const decimal = split.length > 1 ? parseFloat(split[1]) || 0 : 0;
 
-        const sectSize = Math.max(sectorSize(whole), sectorSize(decimal));
-        return String.fromCharCode(sectSize) + convertINT_D(whole, sectSize) + convertINT_D(decimal, sectSize);
-    },
+        const wholeSS = sectorSize(whole);
+        const decimalSS = sectorSize(decimal);
+
+        return String.fromCharCode(wholeSS) + convertINT_D(whole, wholeSS) + String.fromCharCode(decimalSS) + convertINT_D(decimal, decimalSS);
+    }).join(""),
     
-    [PacketType.BOOLEAN]: (data) => data ? NULL : "",
+    [PacketType.BOOLEANS]: (...bools: boolean[]) => splitArray(bools, 8).map(bools => String.fromCharCode(compressBools(bools))).join(""),
 }
 
 export class Packet {

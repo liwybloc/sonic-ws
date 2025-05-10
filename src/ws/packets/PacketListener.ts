@@ -2,7 +2,7 @@ import { PacketReceiveProcessors, PacketValidityProcessors, Packet } from "./Pac
 
 export class PacketListener {
 
-    private processor: (data: string) => any;
+    private processor: (data: string, cap: number) => any;
     private validifier: (data: string, dataCap: number) => boolean;
     private listener: (...data: any[]) => void;
     private dontSpread: boolean;
@@ -20,7 +20,7 @@ export class PacketListener {
         try {
             if(!this.validifier(value, this.dataCap)) return false;
 
-            const processed = this.processor(value);
+            const processed = this.processor(value, this.dataCap);
 
             if(Array.isArray(processed) && !this.dontSpread) this.listener(...processed);
             else this.listener(processed);
