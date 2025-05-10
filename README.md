@@ -19,7 +19,7 @@ import { PacketType, SonicWS, SonicWSServer, CreatePacket } from "sonic-ws";
 ```
 Browser (Client):
 ```html
-<script src="https://raw.githubusercontent.com/cutelittlelily/sonic-ws/refs/heads/main/bundled/SonicWS_bundle.js"></script>
+<script src="https://raw.githubusercontent.com/cutelittlelily/sonic-ws/refs/heads/main/bundled/SonicWS_bundle_release.js"></script>
 ```
 
 ### Server:
