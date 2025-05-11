@@ -30,7 +30,7 @@ export class SonicWSConnection {
 
             const message = data.toString();
 
-            if(this.print) console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${getStringBytes(message)})\x1b[0m ${message}`);
+            if(this.print) console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${getStringBytes(message)})\x1b[0m ${this.hideNewLines(message)}`);
 
             if (message.length < 1) {
                 this.socket.close(4001);
@@ -57,12 +57,16 @@ export class SonicWSConnection {
         });
     }
 
+    private hideNewLines(str: string): string {
+        return str.split("\n").join("☺");
+    }
+
     public on_close(listener: (code: number, reason: Buffer) => void): void {
         this.socket.on('close', listener);
     }
 
     public raw_send(data: string): void {
-        if(this.print) console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${getStringBytes(data)})\x1b[0m ${data}`);
+        if(this.print) console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${getStringBytes(data)})\x1b[0m ${this.hideNewLines(data)}`);
         this.socket.send(data);
     }
 
