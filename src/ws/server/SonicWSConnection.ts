@@ -37,7 +37,7 @@ export class SonicWSConnection {
         this.socket.on('message', (data: WS.RawData) => this.messageHandler(data));
         this.socket.on('close', () => {
             clearInterval(this.rateLimitInterval);
-            this.timers.forEach(timeout => clearTimeout(timeout));
+            this.timers.forEach(clearTimeout);
         });
 
         this.rateLimitInterval = setInterval(() => this.received = 0, 1000) as unknown as number;
