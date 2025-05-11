@@ -7,10 +7,18 @@ import { emitPacket } from '../util/PacketUtils';
 export class SonicWSConnection {
     private socket: WS.WebSocket;
     private host: SonicWSServer;
+
     private listeners: Record<string, Array<PacketListener>>;
+
     private print: boolean = false;
+
+    private rateLimitInterval: number;
+    private rateLimit: number = 50;
+    private received: number = 0;
+
+    private timers: number[] = [];
     
-    /** The index of the connection. Alternative, check `this.code` for a low bandwidth usage. */
+    /** The index of the connection. Alternatively, check `this.code` for a low bandwidth character. */
     public id: number;
     /** The indexed character of the connection. Smaller data packet in strings. */
     public code: string;
@@ -26,52 +34,82 @@ export class SonicWSConnection {
             this.listeners[String.fromCharCode(key)] = [];
         }
 
-        this.socket.on('message', (data: WS.RawData) => {
-
-            const message = data.toString();
-
-            if(this.print) console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${getStringBytes(message)})\x1b[0m ${this.hideNewLines(message)}`);
-
-            if (message.length < 1) {
-                this.socket.close(4001);
-                return;
-            }
-
-            const key = message[0];
-            const value = message.substring(1);
-
-            // not a key, bye bye
-            if(!this.host.clientPackets.has(key)) {
-                this.socket.close(4002);
-                return;
-            }
-
-            for(const listener of this.listeners[key]) {
-                const valid = listener.listen(value);
-                // if invalid then ignore it
-                if(!valid) {
-                    socket.close(4003);
-                    break;
-                }
-            };
+        this.socket.on('message', (data: WS.RawData) => this.messageHandler(data));
+        this.socket.on('close', () => {
+            clearInterval(this.rateLimitInterval);
+            this.timers.forEach(timeout => clearTimeout(timeout));
         });
+
+        this.rateLimitInterval = setInterval(() => this.received = 0, 1000) as unknown as number;
+    }
+
+    private messageHandler(data: WS.RawData): void {
+        if(++this.received > this.rateLimit) {
+            this.socket.close(4000);
+            return;
+        }
+
+        const message = data.toString();
+
+        if(this.print) console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${getStringBytes(message)})\x1b[0m ${this.hideNewLines(message)}`);
+
+        if (message.length < 1) {
+            this.socket.close(4001);
+            return;
+        }
+
+        const key = message[0];
+        const value = message.substring(1);
+
+        // not a key, bye bye
+        if(!this.host.clientPackets.has(key)) {
+            this.socket.close(4002);
+            return;
+        }
+
+        for(const listener of this.listeners[key]) {
+            const valid = listener.listen(value);
+            // if invalid then ignore it
+            if(!valid) {
+                this.socket.close(4003);
+                break;
+            }
+        };
     }
 
     private hideNewLines(str: string): string {
         return str.split("\n").join("☺");
     }
 
-    public on_close(listener: (code: number, reason: Buffer) => void): void {
-        this.socket.on('close', listener);
-    }
-
+    /** Sends raw data to the user; will likely fail validity checks if used externally */
     public raw_send(data: string): void {
+        if(this.isClosed()) throw new Error("Connection is already closed!");
         if(this.print) console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${getStringBytes(data)})\x1b[0m ${this.hideNewLines(data)}`);
         this.socket.send(data);
     }
 
-    public close(): void {
-        this.socket.close(1000);
+    /**
+     * Checks if the connection is closed
+     * @returns If it's closed or not
+     */
+    public isClosed(): boolean {
+        return this.socket.readyState == WS.CLOSED;
+    }
+
+    /**
+     * Sets the rate limit of the client
+     * @param limit How many packets can be sent every second
+     */
+    public setRateLimit(limit: number): void {
+        this.rateLimit = limit;
+    }
+
+    /**
+     * Listens for when the connection closes
+     * @param listener Called when it closes
+     */
+    public on_close(listener: (code: number, reason: Buffer) => void): void {
+        this.socket.on('close', listener);
     }
 
     /**
@@ -89,17 +127,58 @@ export class SonicWSConnection {
         this.listeners[code].push(new PacketListener(packet, listener));
     }
 
+    /**
+     * Sends a packet with the tag and values
+     * @param tag The tag to send
+     * @param values The values to send
+     */
     public send(tag: string, ...values: any[]) {
         emitPacket(this.host.serverPackets, (d) => this.raw_send(d), tag, values);
     }
 
-    /** Toggles printing all sent and received messages */
+    /**
+     * Broadcasts a packet to all other users connected
+     * @param tag The tag to send
+     * @param values The values to send
+     */
+    public broadcast(tag: string, ...values: any[]) {
+        this.host.getConnected().forEach(conn => conn != this && conn.send(tag, ...values));
+    }
+
+    /**
+     * Toggles printing all sent and received messages
+     */
     public togglePrint(): void {
         this.print = !this.print;
     }
 
-    public broadcast(tag: string, ...values: any[]) {
-        this.host.getConnected().forEach(conn => conn != this && conn.send(tag, ...values));
+    /**
+     * Closes the socket
+     */
+    public close(): void {
+        this.socket.close(1000);
+    }
+
+    /**
+     * Sets a timeout that will automatically end when the socket closes
+     * @param call The function to call
+     * @param time The time between now and the call (ms)
+     */
+    public setTimeout(call: () => void, time: number): number {
+        const timeout = setTimeout(call, time) as unknown as number;
+        this.timers.push(timeout);
+        return timeout;
+    }
+
+    /**
+     * Sets an interval that will automatically end when the socket closes
+     * @param call The function to call
+     * @param time The time between calls (ms)
+     */
+    public setInterval(call: () => void, time: number): number {
+        const interval = setInterval(call, time) as unknown as number;
+        this.timers.push(interval);
+        return interval;
     }
 
 }

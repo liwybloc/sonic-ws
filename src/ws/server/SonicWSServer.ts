@@ -18,6 +18,15 @@ export class SonicWSServer {
     private connections: SonicWSConnection[] = [];
     private connectionMap: Record<number, SonicWSConnection> = {};
 
+    private rateLimit: number = 50;
+
+    /**
+     * Initializes and hosts a websocket with sonic protocol
+     * Rate limits can be set with wss.setRateLimit(x); it is defaulted at 50/second
+     * @param clientPackets The packets that the client can send; CreatePacket() etc..
+     * @param serverPackets The packets that the server can send; CreatePacket() etc..
+     * @param options Default websocket options, such as port and server
+     */
     constructor(clientPackets: Packet[], serverPackets: Packet[], options: WS.ServerOptions = {}) {
         this.wss = new WS.WebSocketServer(options);
 
@@ -31,6 +40,8 @@ export class SonicWSServer {
 
         this.wss.on('connection', (socket) => {
             const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID());
+
+            sonicConnection.setRateLimit(this.rateLimit);
 
             // send tags to the client so it doesn't have to hard code them in
             socket.send(keyData);
@@ -63,28 +74,67 @@ export class SonicWSServer {
         return this.availableIds.shift()!;
     }
 
+    /**
+     * Amount of packets the sockets can send every second
+     * @param limit 
+     */
+    public setRateLimit(limit: number) {
+        this.rateLimit = limit;
+        this.connections.forEach(conn => conn.setRateLimit(limit));
+    }
+
+    /**
+     * Listens for whenever a client connects
+     * @param runner Called when ready
+     */
     public on_connect(runner: (client: SonicWSConnection) => void): void {
         this.connectListeners.push(runner);
     }
 
+    /**
+     * Listens for whenever the server is ready
+     * @param runner Called when ready
+     */
     public on_ready(runner: () => void): void {
         this.wss.on('listening', runner);
     }
 
+    /**
+     * Closes the server
+     * @param callback Called when server closes
+     */
     public shutdown(callback: (err?: Error) => void): void {
         this.wss.close(callback);
     }
 
+    /**
+     * Broadcasts a packet to all users connected
+     * @param tag The tag to send
+     * @param values The values to send
+     */
     public broadcast(tag: string, ...values: any): void {
         this.connections.forEach(conn => conn.send(tag, ...values));
     }
 
+    /**
+     * @returns All users connected to the socket
+     */
     public getConnected(): SonicWSConnection[] {
         return this.connections;
     }
+
+    /**
+     * @param id The socket id
+     * @returns The socket
+     */
     public getSocket(id: number): SonicWSConnection {
         return this.connectionMap[id];
     }
+
+    /**
+     * Closes a socket by id
+     * @param id The socket id
+     */
     public closeSocket(id: number): void {
         this.getSocket(id).close();
     }
