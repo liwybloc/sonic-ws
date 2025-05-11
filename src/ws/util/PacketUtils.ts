@@ -1,7 +1,7 @@
 import { PacketHolder } from "./KeyHolder";
 import { Packet, PacketSchema } from "../packets/Packets";
 import { PacketType } from "../packets/PacketType";
-import { NULL } from "./CodePointUtil";
+import { NULL, MAX_C } from "./CodePointUtil";
 
 export function emitPacket(packets: PacketHolder, send: (data: string) => void, tag: string, values: any[]) {
     const code = packets.getChar(tag);
@@ -19,10 +19,12 @@ function isValidType(type: any): boolean {
 
 export function CreatePacket(tag: string, type: PacketType = PacketType.NONE, dataCap: number = 1, dontSpread: boolean = false) {
     if(!isValidType(type)) throw new Error("Invalid packet type: " + type);
+    dataCap = Math.min(dataCap, MAX_C);
     return new Packet(tag, PacketSchema.single(type, dataCap, dontSpread));
 }
 export function CreateObjPacket(tag: string, types: PacketType[], dataCaps: number[], dontSpread: boolean = false) {
     const invalid = types.find(type => !isValidType(type));
     if(invalid) throw new Error("Invalid packet type: " + invalid);
+    dataCaps = dataCaps.map(x => Math.min(x, MAX_C));
     return new Packet(tag, PacketSchema.object(types, dataCaps, dontSpread));
 }

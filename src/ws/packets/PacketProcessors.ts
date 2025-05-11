@@ -1,5 +1,5 @@
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertINT_D, decompressBools, deconvertINT_D, deconvertINT_DCodes, fromSignedINT_C, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
+import { compressBools, convertINT_D, decompressBools, deconvertINT_D, deconvertINT_DCodes, fromSignedINT_C, NULL, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
 import { PacketType } from "./PacketType";
 
 const STRINGIFY = (data: any) => data.toString();
@@ -61,7 +61,7 @@ export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: num
     },
 
     [PacketType.INTS_C]: (data) => processCharCodes(data).map(fromSignedINT_C),
-    [PacketType.INTS_D]: (data) => splitArray(processCharCodes(data.substring(1)), data[0].charCodeAt(0)!).map(arr => String.fromCharCode(...arr)).map(deconvertINT_D),
+    [PacketType.INTS_D]: (data) => splitArray(processCharCodes(data.substring(1)), data.charCodeAt(0)!).map(arr => String.fromCharCode(...arr)).map(deconvertINT_D),
     [PacketType.INTS_A]: (data) => {
         let numbers: number[] = [];
         for(let i = 0; i < data.length; i++) {
@@ -103,7 +103,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
     [PacketType.INTS_C]: (...numbers: number[]) => numbers.map(stringedINT_C).join(""),
     [PacketType.INTS_D]: (...numbers: number[]) => {
         const sectSize = numbers.reduce((c, n) => Math.max(c, sectorSize(n)), 1);
-        const sects = numbers.map(n => convertINT_D(n, sectSize)).join("");
+        const sects = numbers.map(n => convertINT_D(n, sectSize).padStart(sectSize, NULL)).join("");
         return String.fromCharCode(sectSize) + sects;
     },
     [PacketType.INTS_A]: (...numbers: number[]) => numbers.map(v => {
@@ -151,6 +151,7 @@ export function createObjReceiveProcesor(types: PacketType[], dataCaps: number[]
         return result;
     };
 }
+// todo
 export function createObjValidator(types: PacketType[], dataCaps: number[]): (data: string, caps: number[]) => boolean {
     return () => true;
 }

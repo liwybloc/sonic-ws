@@ -50,7 +50,7 @@ export function sectorSize(number: number): number {
     // iterative system because it's faster than log
     let count = 1;
     let num = OVERFLOW;
-    while(number > num) {
+    while(number >= num) {
         count++;
         num *= OVERFLOW;
     }
@@ -87,7 +87,7 @@ export function convertINT_D(number: number, chars: number): string {
                                     .map(part => String.fromCharCode(part > 0 ? part + NEGATIVE_C : part))
                                     .join("")
                                  : string;
-    
+
     return stringified;
 }
 
