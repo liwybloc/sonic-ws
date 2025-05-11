@@ -77,8 +77,6 @@ ws.on_close((event) => {
 
 Can't send 0 values through stuff like STRINGS; processes as [""] instead of []
 
-Booleans sometimes use extra bytes for some reason
-
 ## PLANNED FEATURES
 
 More data checking and better error handling

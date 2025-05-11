@@ -7,22 +7,25 @@ export enum PacketType {
     /** Raw data */
     RAW = 1,
 
-    /** Strings */
+    /** String data; use ENUMS if the values are constant  */
     STRINGS = 2,
 
+    /** Constant strings */
+    ENUMS = 3,
+
     /** One or more numbers from -27,648 to 27,647 */
-    INTS_C = 3,
+    INTS_C = 4,
 
     /** One or more numbers of any size. Similar maximum size will produce maximum efficiency */
-    INTS_D = 4,
+    INTS_D = 5,
 
     /** One or more numbers of any size. More efficient for differently sized numbers, worse than INTS_D for similar sized numbers. */
-    INTS_A = 5,
+    INTS_A = 6,
 
     /** One or more decimal numbers of any size */
-    DECIMALS = 6,
+    DECIMALS = 7,
 
     /** One or more true/false */
-    BOOLEANS = 7,
+    BOOLEANS = 8,
     
 }

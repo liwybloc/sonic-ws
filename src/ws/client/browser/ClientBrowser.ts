@@ -1,3 +1,4 @@
+import { WrapEnum } from "../../enums/EnumHandler";
 import { PacketType } from "../../packets/PacketType";
 import { SonicWSCore } from "../core/ClientCore";
 
@@ -7,6 +8,10 @@ w.SonicWS = class SonicWS extends SonicWSCore {
     constructor(url: string, protocols?: string | string[]) {
         const ws = new WebSocket(url, protocols);
         super(ws);
+    }
+
+    static WrapEnum(tag: string, value: string) {
+        return WrapEnum(tag, value);
     }
 
     static PacketType = PacketType;

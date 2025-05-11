@@ -26,7 +26,7 @@ export function processCharCodes(text: string): number[] {
 export function fromSignedINT_C(point: number): number {
     // if the code point is below NEGATIVE_C, it's a positive number and can be returned directly
     // if it's above or equal to NEGATIVE_C, it was originally negative, so we reverse the offset
-    return point < NEGATIVE_C ? point : -point + NEGATIVE_C;
+    return point <= NEGATIVE_C ? point : -point + NEGATIVE_C;
 }
 
 // this converts a signed number into a non-negative integer that fits in a code point
@@ -105,8 +105,8 @@ export function deconvertINT_DCodes(codes: number[]): number {
 }
 
 // boolean stuff
-export const compressBools = (array: boolean[]) => array.reduce((byte: number, val: any, i: number) => byte | (val << (7 - i)), 0);
-export const decompressBools = (byte: number) => [...Array(8)].map((_, i) => (byte & (1 << (7 - i))) !== 0);
+export const compressBools = (array: boolean[]) => array.reduce((byte: number, val: any, i: number) => byte | (val << (6 - i)), 0);
+export const decompressBools = (byte: number) => [...Array(7)].map((_, i) => (byte & (1 << (6 - i))) !== 0);
 
 // byte size stuff for debugging
 const encoder = new TextEncoder();

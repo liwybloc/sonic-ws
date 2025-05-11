@@ -1,5 +1,7 @@
+import { EnumPackage, EnumValue } from "../enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
 import { compressBools, convertINT_D, decompressBools, deconvertINT_D, deconvertINT_DCodes, fromSignedINT_C, NULL, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
+import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 
 const STRINGIFY = (data: any) => data.toString();
@@ -15,11 +17,19 @@ const LEN_DELIMIT = (data: string, cap: number) => {
     return true;
 }
 
-export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap: number) => boolean> = {
+export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap: number, packet: Packet, index: number) => boolean> = {
     [PacketType.NONE]: (data) => data == "",
     [PacketType.RAW]: () => true,
 
     [PacketType.STRINGS]: LEN_DELIMIT,
+    [PacketType.ENUMS]: (data, cap, packet, index) => {
+        if (data.length > cap || index >= packet.enumData.length) return false;
+        const pkg = packet.enumData[index];
+        for(let i=0;i<cap;i++) {
+            if(pkg.values.length <= data.charCodeAt(i)) return false;
+        }
+        return true;
+    },
 
     [PacketType.INTS_C]: (data, cap) => data.length == cap,
     [PacketType.INTS_D]: (data, cap) => data.length > 0 && (processCharCodes(data).length - 1) % data[0].charCodeAt(0)! <= cap,
@@ -46,7 +56,7 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
     }
 }
 
-export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: number) => "" | string | string[] | number | number[] | boolean[]> = {
+export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: number, packet: Packet, index: number) => "" | string | string[] | number | number[] | boolean[]> = {
     [PacketType.NONE]: (_) => "",
     [PacketType.RAW]: (data) => data,
 
@@ -58,6 +68,10 @@ export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: num
             i += stringSize;
         }
         return strings;
+    },
+    [PacketType.ENUMS]: (data, _, packet, index) => {
+        const pkg: EnumPackage = packet.enumData[index];
+        return processCharCodes(data).map(code => pkg.values[code]);
     },
 
     [PacketType.INTS_C]: (data) => processCharCodes(data).map(fromSignedINT_C),
@@ -99,6 +113,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
 
     // todo: try some kind of string compression ig :p
     [PacketType.STRINGS]: (...strings: any[]) => strings.map(string => String.fromCharCode(string.toString().length) + string).join(""),
+    [PacketType.ENUMS]: (...enums: EnumValue[]) => enums.map(v => v.encoded).join(""),
 
     [PacketType.INTS_C]: (...numbers: number[]) => numbers.map(stringedINT_C).join(""),
     [PacketType.INTS_D]: (...numbers: number[]) => {
@@ -123,7 +138,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
         return String.fromCharCode(wholeSS) + convertINT_D(whole, wholeSS) + String.fromCharCode(decimalSS) + convertINT_D(decimal, decimalSS);
     }).join(""),
     
-    [PacketType.BOOLEANS]: (...bools: boolean[]) => splitArray(bools, 8).map(bools => String.fromCharCode(compressBools(bools))).join(""),
+    [PacketType.BOOLEANS]: (...bools: boolean[]) => splitArray(bools, 7).map(bools => String.fromCharCode(compressBools(bools))).join(""),
 }
 
 export function createObjSendProcessor(types: PacketType[]): (...data: any[]) => string {
@@ -138,20 +153,32 @@ export function createObjSendProcessor(types: PacketType[]): (...data: any[]) =>
         return result;
     };
 }
-export function createObjReceiveProcesor(types: PacketType[], dataCaps: number[]): (data: string, caps: number[]) => any {
+export function createObjReceiveProcesor(types: PacketType[]): (data: string, dataCaps: number[], packet: Packet) => any {
     const processors = types.map(t => PacketReceiveProcessors[t]);
-    return (data: string) => {
+    return (data: string, dataCaps: number[], packet: Packet) => {
         let result: any[] = [];
+        let enums = 0;
         for(let i=0;i<data.length;) {
             const sectionLength = data.charCodeAt(i++);
             const sector = data.substring(i, i + sectionLength);
-            result.push(processors[result.length](sector, dataCaps[result.length]));
+            result.push(processors[result.length](sector, dataCaps[result.length], packet, types[result.length] == PacketType.ENUMS ? enums++ : 0));
             i += sectionLength;
         }
         return result;
     };
 }
 // todo
-export function createObjValidator(types: PacketType[], dataCaps: number[]): (data: string, caps: number[]) => boolean {
-    return () => true;
+export function createObjValidator(types: PacketType[]): (data: string, dataCaps: number[], packet: Packet) => boolean {
+    const validators = types.map(t => PacketValidityProcessors[t]);
+    return (data: string, dataCaps: number[], packet: Packet) => {
+        let sectors = 0, enums = 0;
+        for(let i=0;i<data.length;) {
+            const sectorLength = data.charCodeAt(i++);
+            if(sectorLength + i > data.length) return false;
+            const sector = data.slice(i, i += sectorLength);
+            if(!validators[sectors](sector, dataCaps[sectors], packet, types[sectors] == PacketType.ENUMS ? enums++ : 0)) return false;
+            if(++sectors > dataCaps.length) return false; // caps length is also the amount of values there are
+        }
+        return true;
+    };
 }
