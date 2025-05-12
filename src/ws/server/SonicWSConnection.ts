@@ -18,23 +18,46 @@ export class SonicWSConnection {
 
     private timers: number[] = [];
     
+    private handshakePacket: string | null;
+    private handshakeLambda!: (data: WS.MessageEvent) => void;
+
+    private messageLambda = (data: WS.MessageEvent) => this.messageHandler(this.parseData(data));
+    private handshakedMessageLambda = (data: WS.MessageEvent) => {
+        const parsed = this.parseData(data);
+        if(parsed == null) return;
+        if(parsed[0] == this.handshakePacket) return this.socket.close(4005);
+        this.messageHandler(parsed);
+    }
+
+    /** If the packet handshake has been completed; `wss.requireHandshake(packet)` */
+    public handshakeComplete: boolean = false;
+    
     /** The index of the connection. Alternatively, check `this.code` for a low bandwidth character. */
     public id: number;
     /** The indexed character of the connection. Smaller data packet in strings. */
     public code: string;
 
-    constructor(socket: WS.WebSocket, host: SonicWSServer, id: number) {
+    constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null) {
         this.socket = socket;
         this.host = host;
+
         this.id = id;
         this.code = String.fromCharCode(id);
+        
+        this.handshakePacket = handshakePacket;
 
         this.listeners = {};
-        for (const key of Object.values(host.clientPackets.getKeys())) {
-            this.listeners[String.fromCharCode(key)] = [];
+        for (const key of Object.values(host.clientPackets.getTags())) {
+            this.listeners[key] = [];
         }
 
-        this.socket.on('message', (data: WS.RawData) => this.messageHandler(data));
+        if(this.handshakePacket == null) {
+            this.socket.addEventListener('message', this.messageLambda);
+        } else {
+            this.handshakeLambda = (data: WS.MessageEvent) => this.handshakeHandler(data);
+            this.socket.addEventListener('message', this.handshakeLambda);
+        }
+
         this.socket.on('close', () => {
             clearInterval(this.rateLimitInterval);
             this.timers.forEach(clearTimeout);
@@ -43,19 +66,19 @@ export class SonicWSConnection {
         this.rateLimitInterval = setInterval(() => this.received = 0, 1000) as unknown as number;
     }
 
-    private messageHandler(data: WS.RawData): void {
+    private parseData(data: WS.MessageEvent): [key: string, value: string] | null {
         if(++this.received > this.rateLimit) {
             this.socket.close(4000);
-            return;
+            return null;
         }
 
-        const message = data.toString();
+        const message = data.data.toString();
 
         if(this.print) console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${getStringBytes(message)})\x1b[0m ${this.hideNewLines(message)}`);
 
         if (message.length < 1) {
             this.socket.close(4001);
-            return;
+            return null;
         }
 
         const key = message[0];
@@ -64,10 +87,34 @@ export class SonicWSConnection {
         // not a key, bye bye
         if(!this.host.clientPackets.has(key)) {
             this.socket.close(4002);
+            return null;
+        }
+
+        return [this.host.clientPackets.getTag(key), value];
+    }
+
+    private handshakeHandler(data: WS.MessageEvent): void {
+        const parsed = this.parseData(data);
+        if(parsed == null) return;
+
+        if(parsed[0] != this.handshakePacket) {
+            this.socket.close(4004);
             return;
         }
 
-        for(const listener of this.listeners[key]) {
+        this.messageHandler(parsed);
+
+        this.socket.removeEventListener('message', this.handshakeLambda);
+        this.socket.addEventListener('message', this.handshakedMessageLambda);
+
+        this.handshakeComplete = true;
+    }
+
+    private messageHandler(data: [tag: string, value: string] | null): void {
+        if(data == null) return;
+
+        const [tag, value] = data;
+        for(const listener of this.listeners[tag]) {
             const valid = listener.listen(value);
             // if invalid then ignore it
             if(!valid) {
@@ -122,9 +169,9 @@ export class SonicWSConnection {
         if (code == null) throw new Error(`Tag "${tag}" has not been created!`);
         const packet = this.host.clientPackets.getPacket(tag);
 
-        if (!this.listeners[code]) this.listeners[code] = [];
+        if (!this.listeners[tag]) this.listeners[tag] = [];
 
-        this.listeners[code].push(new PacketListener(packet, listener));
+        this.listeners[tag].push(new PacketListener(packet, listener));
     }
 
     /**

@@ -20,6 +20,8 @@ export class SonicWSServer {
 
     private rateLimit: number = 50;
 
+    private handshakePacket: string | null = null;
+
     /**
      * Initializes and hosts a websocket with sonic protocol
      * Rate limits can be set with wss.setRateLimit(x); it is defaulted at 50/second
@@ -39,7 +41,7 @@ export class SonicWSServer {
         const keyData = "SWS" + VERSION_CHAR + s_clientPackets + NULL + s_serverPackets;
 
         this.wss.on('connection', (socket) => {
-            const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID());
+            const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket);
 
             sonicConnection.setRateLimit(this.rateLimit);
 
@@ -72,6 +74,31 @@ export class SonicWSServer {
 
     private generateSocketID(): number {
         return this.availableIds.shift()!;
+    }
+    
+    /**
+     * Requires each client to send this packet upon initialization
+     * 
+     * Recreates this:
+     * ```js
+     * let initiated = false;
+     * socket.on('init', () => {
+     *  if(initiated) return socket.close();
+     *  initiated = true;
+     *  // process
+     * });
+     * 
+     * socket.on('otherPacket', () => {
+     *  if(!initiated) return socket.close();
+     *  // process
+     * })
+     * ```
+     * 
+     * @param packet The tag of the packet to require as a handshake
+     */
+    public requireHandshake(packet: string) {
+        if(!this.clientPackets.hasTag(packet)) throw new Error(`The client cannot send "${packet}" for handshake!`);
+        this.handshakePacket = packet;
     }
 
     /**

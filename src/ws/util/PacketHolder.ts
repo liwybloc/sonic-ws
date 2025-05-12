@@ -35,17 +35,25 @@ export class PacketHolder {
     public getChar(tag: string): string {
         return String.fromCharCode(this.get(tag));
     }
-
+    public getTag(key: string): string {
+        return this.tags[key.charCodeAt(0)!];
+    }
     public getPacket(tag: string): Packet {
         return this.packetMap[tag];
     }
 
-    public has(data: string): boolean {
-        return this.tags[data.charCodeAt(0)] != null;
+    public has(key: string): boolean {
+        return key.charCodeAt(0) in this.tags;
+    }
+    public hasTag(tag: string): boolean {
+        return tag in this.keys;
     }
 
     public getKeys(): Record<string, number> {
         return this.keys;
+    }
+    public getTags(): Record<number, string> {
+        return this.tags;
     }
 
     public serialize(): string {
