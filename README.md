@@ -8,7 +8,7 @@ It can reduce packet size by up to 70% or more and process large packets in micr
 
 It has low latency and optimized data transfer.
 
-While still simple and efficient, SonicWS provides efficient packet transfers.
+Helper functions for frequent cases are included to reduce dev boilerplate.
 
 ## SAMPLES
 
