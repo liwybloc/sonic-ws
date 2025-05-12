@@ -12,6 +12,8 @@ export function emitPacket(packets: PacketHolder, send: (data: string) => void, 
     const packet = packets.getPacket(tag);
     if(values.length > packet.size) throw new Error(`Packet "${tag}" only allows ${packet.size} values!`);
 
+    if(!packet.object && values.find(v => typeof v == 'object')) console.warn('Passing an array will result in undefined behavior. Spread the array with ...arr');
+
     send(code + packet.processSend(values));
 }
 
