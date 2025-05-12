@@ -1,5 +1,5 @@
 import { DefineEnum } from "../enums/EnumHandler";
-import { EnumPackage } from "../enums/EnumType";
+import { EnumPackage, TYPE_CONVERSION_MAP } from "../enums/EnumType";
 import { ETX, processCharCodes, STX } from "../util/CodePointUtil";
 import { createObjReceiveProcesor, createObjSendProcessor, createObjValidator, PacketReceiveProcessors, PacketSendProcessors, PacketValidityProcessors } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
@@ -66,11 +66,11 @@ export class Packet {
         // single-value packet (not an object schema)
         if (!this.object) {
             return spreadFlag + enumData +
-                STX +                                                                                // dummy byte flag for consistent deserialization; becomes -1 to indicate single
-                String.fromCharCode((this.dataCap as number) + 1) +                                  // the data cap, offset by 1 for NULL
-                String.fromCharCode((this.type as PacketType) + 1) +                                 // the type, offset by 1 for NULL
-                String.fromCharCode(this.tag.length + 1) +                                           // tag length, offset by 1 for NULL
-                this.tag;                                                                            // the tag
+                STX +                                                // dummy byte flag for consistent deserialization; becomes -1 to indicate single
+                String.fromCharCode((this.dataCap as number) + 1) +  // the data cap, offset by 1 for NULL
+                String.fromCharCode((this.type as PacketType) + 1) + // the type, offset by 1 for NULL
+                String.fromCharCode(this.tag.length + 1) +           // tag length, offset by 1 for NULL
+                this.tag;                                            // the tag
         }
 
         // object packet
@@ -99,9 +99,10 @@ export class Packet {
             const values = [];
             for (let j = 0; j < valueCount; j++) {
                 const valueLength = text.charCodeAt(++offset) - 1;
+                const valueType = text.charCodeAt(++offset) - 1;
                 const value = text.slice(++offset, offset += valueLength);
                 offset--;
-                values.push(value);
+                values.push(TYPE_CONVERSION_MAP[valueType](value));
             }
             enums.push(DefineEnum(enumTag, values));
         }
@@ -111,11 +112,11 @@ export class Packet {
         // objects
         // the single packet is STX so STX - 2 = -1
         if (size != -1) {
-            const dcStart = ++offset;           // data caps section start
-            const dcEnd = dcStart + size;         // data caps section end
-            const tStart = dcEnd;                 // types section start
-            const tEnd = tStart + size;           // types section end
-            const tagStart = tEnd + 1;            // tag string starts after tag length byte
+            const dcStart = ++offset;        // data caps section start
+            const dcEnd = dcStart + size;    // data caps section end
+            const tStart = dcEnd;            // types section start
+            const tEnd = tStart + size;      // types section end
+            const tagStart = tEnd + 1;       // tag string starts after tag length byte
 
             const dataCaps: number[]  = processCharCodes(text.substring(dcStart, dcEnd)).map(x => x - 1); // subtract 1 to reverse
             const types: PacketType[] = processCharCodes(text.substring(tStart,   tEnd)).map(x => x - 1); // subtract 1 to reverse

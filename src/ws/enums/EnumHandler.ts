@@ -2,8 +2,8 @@ import { EnumPackage, EnumValue } from "./EnumType";
 
 export const MAX_ENUM_SIZE = 0x80;
 
-export const ENUM_TAG_TO_KEY: Record<string, Record<string, number>> = {};
-export const ENUM_KEY_TO_TAG: Record<string, Record<number, string>> = {};
+export const ENUM_TAG_TO_KEY: Record<string, Record<any, number>> = {};
+export const ENUM_KEY_TO_TAG: Record<string, Record<number, any>> = {};
 
 /**
  * Defines an enum with its tag and values
@@ -11,7 +11,7 @@ export const ENUM_KEY_TO_TAG: Record<string, Record<number, string>> = {};
  * @param values The possible values of the enum
  * @returns A packaged enum
  */
-export function DefineEnum(tag: string, values: string[]): EnumPackage {
+export function DefineEnum(tag: string, values: any[]): EnumPackage {
     if(values.length > MAX_ENUM_SIZE) throw new Error(`An enum can only hold ${MAX_ENUM_SIZE} possible values.`);
     ENUM_TAG_TO_KEY[tag] = Object.fromEntries(values.map((v, i) => [v, i]));
     ENUM_KEY_TO_TAG[tag] = Object.fromEntries(values.map((v, i) => [i, v]));
@@ -24,7 +24,7 @@ export function DefineEnum(tag: string, values: string[]): EnumPackage {
  * @param value The value to send
  * @returns A transmittable enum value
  */
-export function WrapEnum(tag: string, value: string): EnumValue {
+export function WrapEnum(tag: string, value: any): EnumValue {
     if(!(value in ENUM_TAG_TO_KEY[tag])) throw new Error(`Value "${value}" does not exist in enum "${tag}"`);
     return new EnumValue(tag, ENUM_TAG_TO_KEY[tag][value]);
 }

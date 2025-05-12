@@ -18,11 +18,6 @@ export class PacketHolder {
     }
 
     public createKey(tag: string): void {
-        if(tag.includes(",")) {
-            console.log(`Tag "${tag}" is invalid; keys cannot contain commas.`);
-            return;
-        }
-
         this.keys[tag] = this.key;
         this.tags[this.key] = tag;
         this.key++;

@@ -1,4 +1,6 @@
 // separated file to allow imports
+
+/** All different packet types. Use ENUMS for any constant primitive data */
 export enum PacketType {
  
     /** No data */
@@ -10,7 +12,7 @@ export enum PacketType {
     /** String data; use ENUMS if the values are constant  */
     STRINGS = 2,
 
-    /** Constant strings */
+    /** Constant primitive data; strings, numbers, booleans, null, undefined */
     ENUMS = 3,
 
     /** One or more numbers from -27,648 to 27,647 */
