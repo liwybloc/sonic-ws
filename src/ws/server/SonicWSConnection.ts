@@ -1,7 +1,7 @@
 import * as WS from 'ws';
 import { SonicWSServer } from './SonicWSServer';
 import { PacketListener } from '../packets/PacketListener';
-import { getStringBytes } from '../util/CodePointUtil';
+import { getStringBytes, MAX_C } from '../util/CodePointUtil';
 import { emitPacket } from '../util/PacketUtils';
 
 export class SonicWSConnection {
@@ -12,7 +12,7 @@ export class SonicWSConnection {
 
     private print: boolean = false;
 
-    private rateLimitInterval: number;
+    private rateLimitInterval!: number;
     private rateLimit: number = 50;
     private received: number = 0;
 
@@ -59,15 +59,15 @@ export class SonicWSConnection {
         }
 
         this.socket.on('close', () => {
-            clearInterval(this.rateLimitInterval);
+            if(this.rateLimit != 0) clearInterval(this.rateLimitInterval);
             this.timers.forEach(clearTimeout);
         });
 
-        this.rateLimitInterval = setInterval(() => this.received = 0, 1000) as unknown as number;
+        if(this.rateLimit != 0) this.rateLimitInterval = setInterval(() => this.received = 0, 1000) as unknown as number;
     }
 
     private parseData(data: WS.MessageEvent): [key: string, value: string] | null {
-        if(++this.received > this.rateLimit) {
+        if(this.rateLimit != 0 && ++this.received > this.rateLimit) {
             this.socket.close(4000);
             return null;
         }
@@ -145,9 +145,14 @@ export class SonicWSConnection {
 
     /**
      * Sets the rate limit of the client
-     * @param limit How many packets can be sent every second
+     * @param limit How many packets can be sent every second, 0 for no limit
      */
     public setRateLimit(limit: number): void {
+        // so that i can store limits in 1 packet
+        if(limit > MAX_C) {
+            limit = 0;
+            console.warn(`A rate limit above ${MAX_C} is considered infinite.`);
+        }
         this.rateLimit = limit;
     }
 

@@ -12,12 +12,19 @@ export abstract class SonicWSCore {
         close: Array<(event: CloseEvent) => void>,
         event: { [key: string]: Array<PacketListener> }
     };
+
     protected preListen: { [key: string]: Array<(value: string) => void> };
     protected clientPackets: PacketHolder = PacketHolder.empty();
     protected serverPackets: PacketHolder = PacketHolder.empty();
+
     private pastKeys: boolean = false;
     private readyListeners: Array<() => void> = [];
     private keyHandler: (event: MessageEvent) => undefined;
+
+    private rateLimitTimeout: number = -1;
+    private rateLimit: number = -1;
+    private sentPackets: number = 0;
+    private sendQueue: string[] = [];
 
     constructor(ws: WebSocket) {
         this.ws = ws;
@@ -33,6 +40,7 @@ export abstract class SonicWSCore {
 
         this.ws.addEventListener('close', (event: CloseEvent) => {
             this.listeners.close.forEach(listener => listener(event));
+            if(this.rateLimit != 0 && this.rateLimitTimeout != -1) clearInterval(this.rateLimitTimeout);
         });
     }
 
@@ -49,9 +57,21 @@ export abstract class SonicWSCore {
             throw new Error(`Version mismatch: ${version > VERSION ? "client" : "server"} is outdated (server: ${version}, client: ${VERSION})`);              
         }
 
-        const [ckData, skData] = data.substring(4).split(NULL);
+        const [ckData, skData, rateLimit] = data.substring(4).split(NULL);
         this.clientPackets.createPackets(Packet.deserializeAll(ckData));
         this.serverPackets.createPackets(Packet.deserializeAll(skData));
+
+        this.rateLimit = rateLimit.charCodeAt(0);
+
+        if(this.rateLimit != 0) {
+            this.rateLimitTimeout = setInterval(() => {
+                this.sentPackets = 0;
+
+                const toSend = [...this.sendQueue];
+                this.sendQueue = [];
+                toSend.forEach(p => this.raw_send(p));
+            }, 1000) as unknown as number;
+        }
 
         Object.keys(this.preListen).forEach(tag => this.preListen[tag].forEach(listener => {
             const key = this.serverPackets.get(tag);
@@ -106,6 +126,11 @@ export abstract class SonicWSCore {
     }
 
     public raw_send(data: string): void {
+        if(this.rateLimit == -1) return console.error("A rate limit has not been received by the server!");
+        if(this.rateLimit != 0 && ++this.sentPackets > this.rateLimit) {
+            this.sendQueue.push(data);
+            return console.warn(`Client is emitting more packets than the rate limit! Current queue size: ${this.sendQueue.length}`);
+        }
         this.ws.send(data);
     }
 

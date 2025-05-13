@@ -2,7 +2,7 @@ import fetch from 'node-fetch';
 import * as WS from 'ws';
 import { SonicWSConnection } from './SonicWSConnection';
 import { PacketHolder } from '../util/PacketHolder';
-import { NULL } from '../util/CodePointUtil';
+import { MAX_C, NULL } from '../util/CodePointUtil';
 import { VERSION, VERSION_CHAR } from '../../version';
 import { Packet } from '../packets/Packets';
 
@@ -43,10 +43,8 @@ export class SonicWSServer {
         this.wss.on('connection', (socket) => {
             const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket);
 
-            sonicConnection.setRateLimit(this.rateLimit);
-
             // send tags to the client so it doesn't have to hard code them in
-            socket.send(keyData);
+            socket.send(keyData + NULL + String.fromCharCode(this.rateLimit));
 
             this.connections.push(sonicConnection);
             this.connectionMap[sonicConnection.id] = sonicConnection;
@@ -102,12 +100,16 @@ export class SonicWSServer {
     }
 
     /**
-     * Amount of packets the sockets can send every second
-     * @param limit 
+     * Sets the rate limit for all clients
+     * @param limit Amount of packets the sockets can send every second, or 0 for infinite
      */
     public setRateLimit(limit: number) {
+        // so that i can store limits in 1 packet
+        if(limit > MAX_C) {
+            limit = 0;
+            console.warn(`A rate limit above ${MAX_C} is considered infinite.`);
+        }
         this.rateLimit = limit;
-        this.connections.forEach(conn => conn.setRateLimit(limit));
     }
 
     /**
