@@ -13,12 +13,12 @@ export abstract class SonicWSCore {
         event: { [key: string]: Array<PacketListener> }
     };
 
-    protected preListen: { [key: string]: Array<(value: string) => void> };
+    protected preListen: { [key: string]: Array<(value: string) => void> } | null;
     protected clientPackets: PacketHolder = PacketHolder.empty();
     protected serverPackets: PacketHolder = PacketHolder.empty();
 
     private pastKeys: boolean = false;
-    private readyListeners: Array<() => void> = [];
+    private readyListeners: Array<() => void> | null = [];
     private keyHandler: (event: MessageEvent) => undefined;
 
     private rateLimitTimeout: number = -1;
@@ -73,7 +73,7 @@ export abstract class SonicWSCore {
             }, 1000) as unknown as number;
         }
 
-        Object.keys(this.preListen).forEach(tag => this.preListen[tag].forEach(listener => {
+        Object.keys(this.preListen!).forEach(tag => this.preListen![tag].forEach(listener => {
             const key = this.serverPackets.get(tag);
             // print the error to console without halting execution
             if(key == null) return console.error(new Error(`The server does not send the packet with tag "${tag}"!`));
@@ -83,9 +83,12 @@ export abstract class SonicWSCore {
             
             this.listen(tag, packetListener);
         }));
+        this.preListen = null; // clear
 
         this.pastKeys = true;
-        this.readyListeners.forEach(l => l());
+
+        this.readyListeners!.forEach(l => l());
+        this.readyListeners = null; // clear
 
         this.ws.removeEventListener('message', this.keyHandler);
         this.ws.addEventListener('message', event => this.messageHandler(event)); // lambda to persist 'this'
@@ -140,7 +143,7 @@ export abstract class SonicWSCore {
 
     public on_ready(listener: () => void): void {
         if (this.pastKeys) listener();
-        else this.readyListeners.push(listener);
+        else this.readyListeners!.push(listener);
     }
 
     public on_close(listener: (event: CloseEvent) => void): void {
@@ -149,8 +152,8 @@ export abstract class SonicWSCore {
 
     public on(tag: string, listener: (value: string) => void): void {
         if (this.ws.readyState !== WebSocket.OPEN) {
-            if (!this.preListen[tag]) this.preListen[tag] = [];
-            this.preListen[tag].push(listener);
+            if (!this.preListen![tag]) this.preListen![tag] = [];
+            this.preListen![tag].push(listener);
             return;
         }
         const packet = this.serverPackets.getPacket(tag);
