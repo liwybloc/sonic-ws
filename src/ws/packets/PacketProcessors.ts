@@ -37,13 +37,14 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
      
     [PacketType.DECIMALS]: (data, cap) => {
         let sectors = 0;
-        for(let i = 0; i < data.length; i++) {
+        for(let i = 0; i < data.length;) {
             sectors++;
             if(sectors > cap) return false;
-            const len = data.charCodeAt(i);
-            i += len + 1;
+            const sectorBits = data.charCodeAt(i++);
+            const len = sectorBits >> 7;
+            const len2 = sectorBits & 0x7F;
+            i += len;
             if(i > data.length) return false;
-            const len2 = data.charCodeAt(i);
             i += len2;
             if(i > data.length) return false;
         }
@@ -90,11 +91,14 @@ export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: num
         const points = processCharCodes(data);
         let numbers: number[] = [];
         for(let i = 0; i < points.length;) {
-            const wholeSS = points[i++];
+            const sectorBits = points[i++];
+
+            const wholeSS = sectorBits >> 7;
+            const decimalSS = sectorBits & 0x7F;
+
             const whole = deconvertINT_DCodes(points.slice(i, i + wholeSS));
             i += wholeSS;
 
-            const decimalSS = points[i++];
             const decimal = deconvertINT_DCodes(points.slice(i, i + decimalSS));
             i += decimalSS;
 
@@ -135,7 +139,9 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
         const wholeSS = sectorSize(whole);
         const decimalSS = sectorSize(decimal);
 
-        return String.fromCharCode(wholeSS) + convertINT_D(whole, wholeSS) + String.fromCharCode(decimalSS) + convertINT_D(decimal, decimalSS);
+        const num = (wholeSS << 7) | decimalSS;
+
+        return String.fromCharCode(num) + convertINT_D(whole, wholeSS) + convertINT_D(decimal, decimalSS);
     }).join(""),
     
     [PacketType.BOOLEANS]: (...bools: boolean[]) => splitArray(bools, 7).map(bools => String.fromCharCode(compressBools(bools))).join(""),
