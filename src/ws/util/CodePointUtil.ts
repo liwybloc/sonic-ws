@@ -17,9 +17,10 @@ const OVERFLOW_POWS: number[] = [];
 function overflowPow(num: number): number {
     return OVERFLOW_POWS[num] ??= Math.pow(OVERFLOW, num);
 }
+for(let i=0;i<3;i++) overflowPow(i);
 
 export function processCharCodes(text: string): number[] {
-    return text.split("").map(v => v.charCodeAt(0));
+    return Array.from(text, char => char.charCodeAt(0));
 }
 
 // this converts an encoded code point back to a signed number
@@ -68,27 +69,25 @@ export function convertINT_D(number: number, chars: number): string {
     const negative = number < 0;
     number = Math.abs(number);
 
-    let string = "";
+    let result = [];
 
     // for each character except the last, extract the digit at that position
     // this is similar to how base conversion works: divide by base^position
     for (let i = 0; i < chars - 1; i++) {
         const power = overflowPow(chars - i - 1);
         const based = Math.floor(number / power);
-        string += String.fromCharCode(based);
+        result.push(based);
         // remove it from the number so it doesnt effect future iterations
         number -= based * power;
     }
 
     // the last digit is just the remainder
-    string += String.fromCharCode(number % OVERFLOW);
+    result.push(number % OVERFLOW);
 
     // if the number was negative, we offset each character to indicate the sign
     // we only offset non-zero digits to avoid collisions with the null character
-    const stringified = negative ? processCharCodes(string)
-                                    .map(part => String.fromCharCode(part > 0 ? part + NEGATIVE_C : part))
-                                    .join("")
-                                 : string;
+    const stringified = negative ? result.map(part => String.fromCharCode(part > 0 ? part + NEGATIVE_C : part)).join("")
+                                 : String.fromCharCode(...result);
 
     return stringified;
 }
