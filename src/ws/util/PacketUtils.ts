@@ -3,7 +3,7 @@ import { Packet, PacketSchema } from "../packets/Packets";
 import { PacketType } from "../packets/PacketType";
 import { NULL, MAX_C } from "./CodePointUtil";
 import { DefineEnum } from "../enums/EnumHandler";
-import { EnumPackage, EnumValue } from "../enums/EnumType";
+import { EnumPackage } from "../enums/EnumType";
 
 export function emitPacket(packets: PacketHolder, send: (data: string) => void, tag: string, values: any[]) {
     const code = packets.getChar(tag);
@@ -13,7 +13,7 @@ export function emitPacket(packets: PacketHolder, send: (data: string) => void, 
     if(values.length > packet.size) throw new Error(`Packet "${tag}" only allows ${packet.size} values!`);
 
     if(!packet.object) {
-        const found = values.find(v => typeof v == 'object' && v != null && !(v instanceof EnumValue));
+        const found = values.find(v => typeof v == 'object' && v != null);
         if(found) console.warn(`Passing an array will result in undefined behavior (${JSON.stringify(found)}). Spread the array with ...arr`);
     }
 

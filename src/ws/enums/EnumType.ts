@@ -19,17 +19,6 @@ function getTypedIndex(data: any) {
     return TYPE_INDEX_MAP[type];
 }
 
-export class EnumValue {
-    public tag: string;
-    public index: number;
-    public encoded: string;
-
-    constructor(tag: string, index: number) {
-        this.tag = tag;
-        this.index = index;
-        this.encoded = String.fromCharCode(index);
-    }
-}
 export class EnumPackage {
     public tag: string;
     public values: any[];

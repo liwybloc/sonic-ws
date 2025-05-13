@@ -1,4 +1,4 @@
-import { EnumPackage, EnumValue } from "../enums/EnumType";
+import { EnumPackage } from "../enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
 import { compressBools, convertINT_D, decompressBools, deconvertINT_D, deconvertINT_DCodes, fromSignedINT_C, NULL, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
 import { Packet } from "./Packets";
@@ -117,7 +117,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
 
     // todo: try some kind of string compression ig :p
     [PacketType.STRINGS]: (...strings: any[]) => strings.map(string => String.fromCharCode(string.toString().length) + string).join(""),
-    [PacketType.ENUMS]: (...enums: EnumValue[]) => enums.map(v => v.encoded).join(""),
+    [PacketType.ENUMS]: (...enums: string[]) => enums.join(""),
 
     [PacketType.INTS_C]: (...numbers: number[]) => numbers.map(stringedINT_C).join(""),
     [PacketType.INTS_D]: (...numbers: number[]) => {
