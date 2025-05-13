@@ -46,13 +46,15 @@ export function stringedINT_C(number: number): string {
 export function sectorSize(number: number): number {
     // 0 would make -Infinity;
     if(number == 0) return 1;
+
+    number = Math.abs(number);
     
     // iterative system because it's faster than log
     let count = 1;
-    let num = OVERFLOW;
+    let num = overflowPow(1);
     while(number >= num) {
         count++;
-        num *= OVERFLOW;
+        num = overflowPow(count);
     }
     return count;
 }
@@ -71,7 +73,7 @@ export function convertINT_D(number: number, chars: number): string {
     // for each character except the last, extract the digit at that position
     // this is similar to how base conversion works: divide by base^position
     for (let i = 0; i < chars - 1; i++) {
-        const power = Math.pow(OVERFLOW, chars - i - 1);
+        const power = overflowPow(chars - i - 1);
         const based = Math.floor(number / power);
         string += String.fromCharCode(based);
         // remove it from the number so it doesnt effect future iterations

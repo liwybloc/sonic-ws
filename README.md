@@ -4,7 +4,7 @@
 
 WebSocket library focused on bandwidth efficiency and security.
 
-It can reduce packet size by up to 70% or more and process large packets in microseconds.
+It can reduce packet size by up to 70% or more and validate and process large packets in microseconds.
 
 It has low latency and optimized data transfer.
 
