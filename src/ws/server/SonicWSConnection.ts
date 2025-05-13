@@ -193,8 +193,17 @@ export class SonicWSConnection {
      * @param tag The tag to send
      * @param values The values to send
      */
+    public broadcastFiltered(tag: string, filter: (socket: SonicWSConnection) => boolean, ...values: any[]) {
+        this.host.broadcastFiltered(tag, (socket) => socket != this && filter(socket), ...values);
+    }
+
+    /**
+     * Broadcasts a packet to all other users connected
+     * @param tag The tag to send
+     * @param values The values to send
+     */
     public broadcast(tag: string, ...values: any[]) {
-        this.host.getConnected().forEach(conn => conn != this && conn.send(tag, ...values));
+        this.broadcastFiltered(tag, () => true, ...values);
     }
 
     /**
