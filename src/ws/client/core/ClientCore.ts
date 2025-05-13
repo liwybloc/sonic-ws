@@ -58,8 +58,8 @@ export abstract class SonicWSCore {
         }
 
         const [ckData, skData, rateLimit] = data.substring(4).split(NULL);
-        this.clientPackets.createPackets(Packet.deserializeAll(ckData));
-        this.serverPackets.createPackets(Packet.deserializeAll(skData));
+        this.clientPackets.createPackets(Packet.deserializeAll(ckData, true));
+        this.serverPackets.createPackets(Packet.deserializeAll(skData, true));
 
         this.rateLimit = rateLimit.charCodeAt(0);
 

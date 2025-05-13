@@ -42,7 +42,7 @@ function clampDataCap(dataCap: number) {
  */
 export function CreatePacket(tag: string, type: (PacketType | EnumPackage) = PacketType.NONE, dataCap: number = 1, dontSpread: boolean = false): Packet {
     if(!isValidType(type)) throw new Error("Invalid packet type: " + type);
-    return new Packet(tag, PacketSchema.single(type, clampDataCap(dataCap), dontSpread));
+    return new Packet(tag, PacketSchema.single(type, clampDataCap(dataCap), dontSpread), false);
 }
 
 /**
@@ -57,7 +57,7 @@ export function CreateObjPacket(tag: string, types: (PacketType | EnumPackage)[]
     const invalid = types.find(type => !isValidType(type));
     if(invalid) throw new Error("Invalid packet type: " + invalid);
     dataCaps = dataCaps.map(clampDataCap);
-    return new Packet(tag, PacketSchema.object(types, dataCaps, dontSpread));
+    return new Packet(tag, PacketSchema.object(types, dataCaps, dontSpread), false);
 }
 
 /**

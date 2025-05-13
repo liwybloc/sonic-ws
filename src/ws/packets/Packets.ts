@@ -23,7 +23,7 @@ export class Packet {
     public processSend: (data: any[]) => string;
     public validate: (data: string) => boolean;
 
-    constructor(tag: string, schema: PacketSchema) {
+    constructor(tag: string, schema: PacketSchema, client: boolean) {
         this.tag = tag;
 
         if(schema.object) {
@@ -51,7 +51,7 @@ export class Packet {
         }
         
         this.processReceive = (data: string) => this.receiveProcessor(data, this.dataCap, this, 0);
-        this.validate = (data: string) => this.validifier(data, this.dataCap, this, 0);
+        this.validate = client ? () => true : (data: string) => this.validifier(data, this.dataCap, this, 0);
 
         this.enumData = schema.enumData;
         this.dontSpread = schema.dontSpread;
@@ -83,7 +83,7 @@ export class Packet {
     }
 
     // i think i was high when i made these
-    public static deserialize(text: string, offset: number): [packet: Packet, offset: number] {
+    public static deserialize(text: string, offset: number, client: boolean): [packet: Packet, offset: number] {
         const beginningOffset = offset;
 
         const dontSpread: boolean = text[offset] == ETX;
@@ -128,7 +128,7 @@ export class Packet {
             const tag = text.substring(tagStart, tagStart + tagLength); // tag is tag length long. yeah
 
             return [
-                new Packet(tag, PacketSchema.object(finalTypes, dataCaps, dontSpread)),
+                new Packet(tag, PacketSchema.object(finalTypes, dataCaps, dontSpread), client),
                 (offset - beginningOffset) + 1 + size + size + tagLength
             ];
         }
@@ -144,17 +144,17 @@ export class Packet {
         const tag: string = text.substring(tagStart + 1, tagStart + 1 + tagLength);
 
         return [
-            new Packet(tag, PacketSchema.single(finalType, dataCap, dontSpread)),
+            new Packet(tag, PacketSchema.single(finalType, dataCap, dontSpread), client),
             (offset - beginningOffset) + 1 + tagLength
         ];
     }
     
-    public static deserializeAll(text: string): Packet[] {
+    public static deserializeAll(text: string, client: boolean): Packet[] {
         const arr: Packet[] = [];
 
         let offset = 0;
         while(offset < text.length) {
-            const [packet, len] = this.deserialize(text, offset);
+            const [packet, len] = this.deserialize(text, offset, client);
             arr.push(packet);
             offset += len;
         }
