@@ -10,9 +10,7 @@ w.SonicWS = class SonicWS extends SonicWSCore {
         super(ws);
     }
 
-    static WrapEnum(tag: string, value: string) {
+    WrapEnum(tag: string, value: string) {
         return WrapEnum(tag, value);
     }
-
-    static PacketType = PacketType;
 }
