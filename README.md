@@ -26,8 +26,8 @@ Browser (Client):
 ### Server:
 ```js
 const wss = new SonicWSServer(
-    [CreatePacket("pong", PacketType.INTS_D, 1)], // client-sent packets
-    [CreatePacket("ping", PacketType.INTS_D, 1), CreateObjPacket("data", [PacketType.INTS_A, PacketTypes.STRING], [2, 3])], // server-sent packets
+    [CreatePacket({tag: "pong", type: PacketType.INTS_D, dataMax: 1})], // client-sent packets
+    [CreatePacket({tag: "ping", type: PacketType.INTS_D, dataMax: 1}), CreateObjPacket({tag: "data", types: [PacketType.INTS_A, PacketTypes.STRING], dataMaxes: [2, 3]})], // server-sent packets
     { port: 1234 }
 );
 
@@ -74,8 +74,6 @@ ws.on_close((event) => {
 ```
 
 ## KNOWN ISSUES
-
-Can't send 0 values through stuff like STRINGS; processes as [""] instead of []
 
 ## PLANNED FEATURES
 
