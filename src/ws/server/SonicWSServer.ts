@@ -53,7 +53,7 @@ export class SonicWSServer {
         const keyData = "SWS" + VERSION_CHAR + s_clientPackets + NULL + s_serverPackets;
 
         this.wss.on('connection', (socket) => {
-            const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket);
+            const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket, this.rateLimit);
 
             // send tags to the client so it doesn't have to hard code them in
             socket.send(keyData + NULL + String.fromCharCode(this.rateLimit));

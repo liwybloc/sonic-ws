@@ -13,7 +13,7 @@ export class SonicWSConnection {
     private print: boolean = false;
 
     private rateLimitInterval!: number;
-    private rateLimit: number = 50;
+    private rateLimit: number;
     private received: number = 0;
 
     private timers: number[] = [];
@@ -37,7 +37,7 @@ export class SonicWSConnection {
     /** The indexed character of the connection. Smaller data packet in strings. */
     public code: string;
 
-    constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null) {
+    constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, rateLimit: number) {
         this.socket = socket;
         this.host = host;
 
@@ -63,6 +63,7 @@ export class SonicWSConnection {
             this.timers.forEach(clearTimeout);
         });
 
+        this.rateLimit = rateLimit;
         if(this.rateLimit != 0) this.rateLimitInterval = setInterval(() => this.received = 0, 1000) as unknown as number;
     }
 
