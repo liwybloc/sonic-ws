@@ -59,6 +59,8 @@ export type SinglePacketSettings = {
     dataMin?: number;
     /** If the values should be kept in an array or spread along the listener; defaults to false */
     dontSpread?: boolean;
+    /** A validation function that is called whenever data is received. Return true for success, return false to kick socket. */
+    validator?: ((values: any[]) => boolean) | null;
 };
 
 /** Settings for multi-typed packets */
@@ -73,6 +75,8 @@ export type MultiPacketSettings = {
     dataMins?: number[];
     /** If the values should be kept in an array or spread along the listener; defaults to false */
     dontSpread?: boolean;
+    /** A validation function that is called whenever data is received. Return true for success, return false to kick socket. */
+    validator?: ((values: any[]) => boolean) | null;
 };
 
 /** Settings for single-typed enum packets */
@@ -89,6 +93,8 @@ export type EnumPacketSettings = {
     dataMin?: number;
     /** If the values should be kept in an array or spread along the listener; defaults to false */
     dontSpread?: boolean;
+    /** A validation function that is called whenever data is received. Return true for success, return false to kick socket. */
+    validator?: ((values: any[]) => boolean) | null;
 }
 
 /**
@@ -99,7 +105,7 @@ export type EnumPacketSettings = {
  * @throws {Error} If the `type` is invalid.
  */
 export function CreatePacket(settings: SinglePacketSettings): Packet {
-    let { tag, type = PacketType.NONE, dataMax = 1, dataMin, dontSpread = false } = settings;
+    let { tag, type = PacketType.NONE, dataMax = 1, dataMin, dontSpread = false, validator = null } = settings;
 
     if(dataMin == undefined) dataMin = type == PacketType.NONE ? 0 : dataMax;
 
@@ -107,7 +113,7 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
         throw new Error(`Invalid packet type: ${type}`);
     }
 
-    return new Packet(tag, PacketSchema.single(type, clampDataMax(dataMax), clampDataMin(dataMin, dataMax), dontSpread), false);
+    return new Packet(tag, PacketSchema.single(type, clampDataMax(dataMax), clampDataMin(dataMin, dataMax), dontSpread), validator, false);
 }
 
 /**
@@ -118,7 +124,7 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
  * @throws {Error} If any type in `types` is invalid.
  */
 export function CreateObjPacket(settings: MultiPacketSettings): Packet {
-    let { tag, types, dataMaxes, dataMins, dontSpread = false } = settings;
+    let { tag, types, dataMaxes, dataMins, dontSpread = false, validator = null } = settings;
 
     const invalid = types.find((type) => !isValidType(type));
     if (invalid) {
@@ -131,7 +137,7 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     const clampedDataMaxes = dataMaxes.map(clampDataMax);
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
-    return new Packet(tag, PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread), false);
+    return new Packet(tag, PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread), validator, false);
 }
 
 /**
@@ -141,13 +147,14 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
  * @returns The constructed packet structure data.
  */
 export function CreateEnumPacket(settings: EnumPacketSettings): Packet {
-    const { packetTag, enumTag, values, dataMax = 1, dataMin = 0, dontSpread = false } = settings;
+    const { packetTag, enumTag, values, dataMax = 1, dataMin = 0, dontSpread = false, validator = null } = settings;
 
     return CreatePacket({
         tag: packetTag,
         type: DefineEnum(enumTag, values),
         dataMax,
         dataMin,
-        dontSpread
+        dontSpread,
+        validator
     });
 }

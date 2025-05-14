@@ -27,8 +27,9 @@ export class Packet {
     public processReceive: (data: string) => any;
     public processSend: (data: any[]) => string;
     public validate: (data: string) => boolean;
+    public customValidator: ((values: any[]) => boolean) | null;
 
-    constructor(tag: string, schema: PacketSchema, client: boolean) {
+    constructor(tag: string, schema: PacketSchema, customValidator: ((values: any[]) => boolean) | null, client: boolean) {
         this.tag = tag;
 
         if(schema.object) {
@@ -61,6 +62,7 @@ export class Packet {
         
         this.processReceive = (data: string) => this.receiveProcessor(data, this.dataMax, this, 0);
         this.validate = client ? () => true : (data: string) => this.validifier(data, this.dataMax, this, 0);
+        this.customValidator = customValidator;
 
         this.enumData = schema.enumData;
         this.dontSpread = schema.dontSpread;
@@ -75,6 +77,8 @@ export class Packet {
 
             isArray = Array.isArray(processed);
             if(isArray && processed.length < this.dataMin) return null;
+
+            if(this.customValidator != null && !this.customValidator(processed)) return null;
 
         } catch (err) {
             console.error("There was an error processing the packet! This is probably my fault... report at https://github.com/cutelittlelily/sonic-ws", err);
@@ -159,7 +163,7 @@ export class Packet {
             const tag = text.substring(tagStart, tagStart + tagLength); // tag is tag length long. yeah
 
             return [
-                new Packet(tag, PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread), client),
+                new Packet(tag, PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread), null, client),
                 (offset - beginningOffset) + 1 + size + size + size + tagLength
             ];
         }
@@ -176,7 +180,7 @@ export class Packet {
         const tag: string = text.substring(tagStart + 1, tagStart + 1 + tagLength);
 
         return [
-            new Packet(tag, PacketSchema.single(finalType, dataMax, dataMin, dontSpread), client),
+            new Packet(tag, PacketSchema.single(finalType, dataMax, dataMin, dontSpread), null, client),
             (offset - beginningOffset) + 1 + tagLength
         ];
     }
