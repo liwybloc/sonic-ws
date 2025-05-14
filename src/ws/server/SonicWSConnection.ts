@@ -114,13 +114,17 @@ export class SonicWSConnection {
         if(data == null) return;
 
         const [tag, value] = data;
+
+        const listened = this.host.clientPackets.getPacket(tag).listen(value);
+        // if invalid then ignore it
+        if(listened == null) {
+            this.socket.close(4003);
+            return;
+        }
+        const [processed, isArray] = listened;
+
         for(const listener of this.listeners[tag]) {
-            const valid = listener.listen(value);
-            // if invalid then ignore it
-            if(!valid) {
-                this.socket.close(4003);
-                break;
-            }
+            listener.listen(processed, isArray);
         };
     }
 
@@ -216,8 +220,8 @@ export class SonicWSConnection {
     /**
      * Closes the socket
      */
-    public close(): void {
-        this.socket.close(1000);
+    public close(code: number = 1000): void {
+        this.socket.close(code);
     }
 
     /**

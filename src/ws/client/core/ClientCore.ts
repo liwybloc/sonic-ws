@@ -19,7 +19,7 @@ export abstract class SonicWSCore {
 
     private pastKeys: boolean = false;
     private readyListeners: Array<() => void> | null = [];
-    private keyHandler: (event: MessageEvent) => undefined;
+    private keyHandler: ((event: MessageEvent) => undefined) | null;
 
     private rateLimitTimeout: number = -1;
     private rateLimit: number = -1;
@@ -90,8 +90,10 @@ export abstract class SonicWSCore {
         this.readyListeners!.forEach(l => l());
         this.readyListeners = null; // clear
 
-        this.ws.removeEventListener('message', this.keyHandler);
+        this.ws.removeEventListener('message', this.keyHandler!);
         this.ws.addEventListener('message', event => this.messageHandler(event)); // lambda to persist 'this'
+
+        this.keyHandler = null;
     }
 
     private messageHandler(event: MessageEvent) {
@@ -103,14 +105,15 @@ export abstract class SonicWSCore {
         const key = data.substring(0, 1);
         const value = data.substring(1);
         const code = key.charCodeAt(0);
-        if (code != null) {
-            this.listeners.event[code]?.forEach(l => {
-                const result = l.listen(value);
-                if(!result) {
-                    throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/cutelittlelily/sonic-ws");
-                }
-            });
+        if (code == null) return;
+
+        const result = this.serverPackets.getPacket(this.serverPackets.getTag(key)).listen(value);
+        if(result == null) {
+            throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/cutelittlelily/sonic-ws");
         }
+        const [processed, isArray] = result;
+
+        this.listeners.event[code]?.forEach(l => l.listen(processed, isArray));
     }
 
     protected listen(key: string, listener: PacketListener) {

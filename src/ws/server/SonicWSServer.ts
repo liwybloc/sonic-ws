@@ -6,6 +6,18 @@ import { MAX_C, NULL } from '../util/CodePointUtil';
 import { VERSION, VERSION_CHAR } from '../../version';
 import { Packet } from '../packets/Packets';
 
+/**
+ * Sonic WS Server Options
+ */
+export type SonicServerOptions = {
+    /** An array of packets the client can send and server can listen for; using CreatePacket(), CreateObjPacket(), and CreateEnumPacket() */
+    clientPackets?: Packet[],
+    /** An array of packets the server can send and client can listen for; using CreatePacket(), CreateObjPacket(), and CreateEnumPacket() */
+    serverPackets?: Packet[],
+    /** Default WS Options */
+    websocketOptions?: WS.ServerOptions;
+}
+
 export class SonicWSServer {
     private wss: WS.WebSocketServer;
     private availableIds: number[] = Array.from({ length: 501 }, (_, i) => i);
@@ -25,12 +37,12 @@ export class SonicWSServer {
     /**
      * Initializes and hosts a websocket with sonic protocol
      * Rate limits can be set with wss.setRateLimit(x); it is defaulted at 50/second
-     * @param clientPackets The packets that the client can send; CreatePacket() etc..
-     * @param serverPackets The packets that the server can send; CreatePacket() etc..
-     * @param options Default websocket options, such as port and server
+     * @param settings Sonic Server Options such as schema data for client and server packets, alongside websocket options
      */
-    constructor(clientPackets: Packet[], serverPackets: Packet[], options: WS.ServerOptions = {}) {
-        this.wss = new WS.WebSocketServer(options);
+    constructor(settings: SonicServerOptions) {
+        const { clientPackets = [], serverPackets = [], websocketOptions = {} } = settings;
+ 
+        this.wss = new WS.WebSocketServer(websocketOptions);
 
         this.clientPackets = new PacketHolder(clientPackets);
         this.serverPackets = new PacketHolder(serverPackets);

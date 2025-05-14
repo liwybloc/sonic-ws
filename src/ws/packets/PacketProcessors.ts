@@ -18,7 +18,7 @@ const LEN_DELIMIT = (data: string, cap: number) => {
 }
 
 export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap: number, packet: Packet, index: number) => boolean> = {
-    [PacketType.NONE]: (data) => data == "",
+    [PacketType.NONE]: (data) => data.length == 0,
     [PacketType.RAW]: () => true,
 
     [PacketType.STRINGS]: LEN_DELIMIT,
