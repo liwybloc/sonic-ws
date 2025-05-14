@@ -25,11 +25,16 @@ Browser (Client):
 
 ### Server:
 ```js
-const wss = new SonicWSServer(
-    [CreatePacket({tag: "pong", type: PacketType.INTS_D, dataMax: 1})], // client-sent packets
-    [CreatePacket({tag: "ping", type: PacketType.INTS_D, dataMax: 1}), CreateObjPacket({tag: "data", types: [PacketType.INTS_A, PacketTypes.STRING], dataMaxes: [2, 3]})], // server-sent packets
-    { port: 1234 }
-);
+const wss = new SonicWSServer({
+    clientPackets: [
+        CreatePacket({tag: "pong", type: PacketType.INTS_D, dataMax: 1})
+    ],
+    serverPackets: [
+        CreatePacket({tag: "ping", type: PacketType.INTS_D, dataMax: 1}),
+        CreateObjPacket({tag: "data", types: [PacketType.INTS_A, PacketTypes.STRING], dataMaxes: [2, 3]})
+    ],
+    websocketOptions: { port: 1234 }
+});
 
 wss.on_connect((socket) => {
 
