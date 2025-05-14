@@ -16,6 +16,9 @@ export function emitPacket(packets: PacketHolder, send: (data: string) => void, 
     if(!packet.object) {
         const found = values.find(v => typeof v == 'object' && v != null);
         if(found) console.warn(`Passing an array will result in undefined behavior (${JSON.stringify(found)}). Spread the array with ...arr`);
+    } else {
+        // also map non arrays to arrays to keep some code cleaner
+        values = values.map(x => !Array.isArray(x) ? [x] : x);
     }
 
     send(code + (values.length > 0 ? packet.processSend(values) : ""));
