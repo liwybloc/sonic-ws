@@ -33,7 +33,7 @@ export class EnumPackage {
                this.tag +                                      // tag
                String.fromCharCode(this.values.length + 1) +   // value count
                this.values.map(v =>                                    
-                   String.fromCharCode(String(v).length + 1) +         // value length
+                   String.fromCharCode(String(v).length + 1) + // value length
                    String.fromCharCode(getTypedIndex(v) + 1) + // value type
                    v                                           // value
                ).join("");

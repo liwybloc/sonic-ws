@@ -1,5 +1,4 @@
 import { PacketHolder } from '../../util/PacketHolder';
-import { PacketListener } from '../../packets/PacketListener';
 import { NULL } from '../../util/CodePointUtil';
 import { emitPacket } from '../../util/PacketUtils';
 import { VERSION } from '../../../version';
@@ -10,10 +9,10 @@ export abstract class SonicWSCore {
     protected listeners: {
         message: Array<(data: string) => void>,
         close: Array<(event: CloseEvent) => void>,
-        event: { [key: string]: Array<PacketListener> }
+        event: { [key: string]: Array<(...data: any[]) => void> }
     };
 
-    protected preListen: { [key: string]: Array<(value: string) => void> } | null;
+    protected preListen: { [key: string]: Array<(data: any[]) => void> } | null;
     protected clientPackets: PacketHolder = PacketHolder.empty();
     protected serverPackets: PacketHolder = PacketHolder.empty();
 
@@ -78,10 +77,7 @@ export abstract class SonicWSCore {
             // print the error to console without halting execution
             if(key == null) return console.error(new Error(`The server does not send the packet with tag "${tag}"!`));
 
-            const packet = this.serverPackets.getPacket(tag);
-            const packetListener = new PacketListener(packet, listener);
-            
-            this.listen(tag, packetListener);
+            this.listen(tag, listener);
         }));
         this.preListen = null; // clear
 
@@ -107,16 +103,18 @@ export abstract class SonicWSCore {
         const code = key.charCodeAt(0);
         if (code == null) return;
 
-        const result = this.serverPackets.getPacket(this.serverPackets.getTag(key)).listen(value);
+        const packet = this.serverPackets.getPacket(this.serverPackets.getTag(key));
+        const result = packet.listen(value);
         if(result == null) {
             throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/cutelittlelily/sonic-ws");
         }
-        const [processed, isArray] = result;
+        const [processed, flatten] = result;
 
-        this.listeners.event[code]?.forEach(l => l.listen(processed, isArray));
+        if(flatten) this.listeners.event[code]?.forEach(l => l(...processed));
+        else this.listeners.event[code]?.forEach(l => l(processed));
     }
 
-    protected listen(key: string, listener: PacketListener) {
+    protected listen(key: string, listener: (data: any[]) => void) {
         const skey = this.serverPackets.get(key);
         if (!skey) {
             console.log("Key is not available on server: " + key);
@@ -153,14 +151,13 @@ export abstract class SonicWSCore {
         this.listeners.close.push(listener);
     }
 
-    public on(tag: string, listener: (value: string) => void): void {
+    public on(tag: string, listener: (value: any[]) => void): void {
         if (this.ws.readyState !== WebSocket.OPEN) {
             if (!this.preListen![tag]) this.preListen![tag] = [];
             this.preListen![tag].push(listener);
             return;
         }
         const packet = this.serverPackets.getPacket(tag);
-        const packetListener = new PacketListener(packet, listener);
-        this.listen(tag, packetListener);
+        this.listen(tag, listener);
     }
 }

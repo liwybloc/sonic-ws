@@ -27,7 +27,7 @@ export class Packet {
     public processReceive: (data: string) => any;
     public processSend: (data: any[]) => string;
     public validate: (data: string) => boolean;
-    public customValidator: ((values: any[]) => boolean) | null;
+    public customValidator: ((...values: any[]) => boolean) | null;
 
     constructor(tag: string, schema: PacketSchema, customValidator: ((values: any[]) => boolean) | null, client: boolean) {
         this.tag = tag;
@@ -68,23 +68,29 @@ export class Packet {
         this.dontSpread = schema.dontSpread;
     }
 
-    public listen(value: string): [processed: any, isArray: boolean] | null {
-        let processed, isArray;
+    public listen(value: string): [processed: any, flatten: boolean] | null {
         try {
             if(!this.validate(value)) return null;
 
-            processed = this.processReceive(value);
+            const processed = this.processReceive(value);
 
-            isArray = Array.isArray(processed);
-            if(isArray && processed.length < this.dataMin) return null;
+            const isArray = Array.isArray(processed);
+            if(isArray && processed.length < (this.dataMin as number)) return null;
 
-            if(this.customValidator != null && !this.customValidator(processed)) return null;
+            const flatten = isArray && !this.dontSpread;
 
+            if(this.customValidator != null) {
+                if(flatten) {
+                    if(!this.customValidator(...processed)) return null;
+                } else {
+                    if(!this.customValidator(processed)) return null;
+                }
+            }
+            return [processed, flatten];
         } catch (err) {
             console.error("There was an error processing the packet! This is probably my fault... report at https://github.com/cutelittlelily/sonic-ws", err);
             return null;
         }
-        return [processed, isArray];
     }
 
     public serialize(): string {

@@ -1,6 +1,5 @@
 import * as WS from 'ws';
 import { SonicWSServer } from './SonicWSServer';
-import { PacketListener } from '../packets/PacketListener';
 import { getStringBytes, MAX_C } from '../util/CodePointUtil';
 import { emitPacket } from '../util/PacketUtils';
 
@@ -8,7 +7,7 @@ export class SonicWSConnection {
     private socket: WS.WebSocket;
     private host: SonicWSServer;
 
-    private listeners: Record<string, Array<PacketListener>>;
+    private listeners: Record<string, Array<(...data: any[]) => void>>;
 
     private print: boolean = false;
 
@@ -116,17 +115,17 @@ export class SonicWSConnection {
 
         const [tag, value] = data;
 
-        const listened = this.host.clientPackets.getPacket(tag).listen(value);
+        const packet = this.host.clientPackets.getPacket(tag);
+        const listened = packet.listen(value);
         // if invalid then ignore it
         if(listened == null) {
             this.socket.close(4003);
             return;
         }
-        const [processed, isArray] = listened;
+        const [processed, flatten] = listened;
 
-        for(const listener of this.listeners[tag]) {
-            listener.listen(processed, isArray);
-        };
+        if(flatten) this.listeners[tag].forEach(l => l(...processed));
+        else this.listeners[tag].forEach(l => l(processed));
     }
 
     private hideNewLines(str: string): string {
@@ -181,7 +180,7 @@ export class SonicWSConnection {
 
         if (!this.listeners[tag]) this.listeners[tag] = [];
 
-        this.listeners[tag].push(new PacketListener(packet, listener));
+        this.listeners[tag].push(listener);
     }
 
     /**
