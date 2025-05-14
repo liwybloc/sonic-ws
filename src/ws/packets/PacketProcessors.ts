@@ -31,7 +31,7 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
         return true;
     },
 
-    [PacketType.INTS_C]: (data, cap) => data.length == cap,
+    [PacketType.INTS_C]: (data, cap) => data.length <= cap,
     [PacketType.INTS_D]: (data, cap) => data.length > 0 && (processCharCodes(data).length - 1) % data[0].charCodeAt(0)! <= cap,
     [PacketType.INTS_A]: LEN_DELIMIT,
      
