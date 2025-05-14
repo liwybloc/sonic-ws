@@ -39,7 +39,7 @@ export function toSignedINT_C(number: number): number {
 
 // just conversion and checks lol
 export function stringedINT_C(number: number): string {
-    if(number >= NEGATIVE_C || number < -NEGATIVE_C - 1) throw new Error(`INT_C Numbers must be within range -${NEGATIVE_C + 1} and ${NEGATIVE_C}`);
+    if(number > NEGATIVE_C || number < -NEGATIVE_C - 1) throw new Error(`INT_C Numbers must be within range -${NEGATIVE_C + 1} and ${NEGATIVE_C}`);
     return String.fromCharCode(toSignedINT_C(number));
 }
 
