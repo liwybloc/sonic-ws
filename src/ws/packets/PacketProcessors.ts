@@ -32,6 +32,8 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
     },
 
     [PacketType.INTS_C]: (data, cap) => data.length <= cap,
+    [PacketType.UINTS_C]: (data, cap) => data.length <= cap,
+
     [PacketType.INTS_D]: (data, cap) => data.length > 0 && (processCharCodes(data).length - 1) % data[0].charCodeAt(0)! <= cap,
     [PacketType.INTS_A]: LEN_DELIMIT,
      
@@ -76,6 +78,8 @@ export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: num
     },
 
     [PacketType.INTS_C]: (data) => processCharCodes(data).map(fromSignedINT_C),
+    [PacketType.UINTS_C]: (data) => processCharCodes(data),
+
     [PacketType.INTS_D]: (data) => splitArray(processCharCodes(data.substring(1)), data.charCodeAt(0)!).map(arr => String.fromCharCode(...arr)).map(deconvertINT_D),
     [PacketType.INTS_A]: (data) => {
         let numbers: number[] = [];
@@ -120,6 +124,8 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
     [PacketType.ENUMS]: (...enums: string[]) => enums.join(""),
 
     [PacketType.INTS_C]: (...numbers: number[]) => numbers.map(stringedINT_C).join(""),
+    [PacketType.UINTS_C]: (...numbers: number[]) => String.fromCharCode(...numbers),
+
     [PacketType.INTS_D]: (...numbers: number[]) => {
         const sectSize = numbers.reduce((c, n) => Math.max(c, sectorSize(n)), 1);
         const sects = numbers.map(n => convertINT_D(n, sectSize).padStart(sectSize, NULL)).join("");

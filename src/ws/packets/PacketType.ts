@@ -17,17 +17,19 @@ export enum PacketType {
 
     /** One or more numbers from -27,648 to 27,647 */
     INTS_C = 4,
+    /** One or more positive numbers from 0 to 55,295 */
+    UINTS_C = 5,
 
     /** One or more numbers of any size. Similar maximum size will produce maximum efficiency */
-    INTS_D = 5,
+    INTS_D = 6,
 
     /** One or more numbers of any size. More efficient for differently sized numbers, worse than INTS_D for similar sized numbers. */
-    INTS_A = 6,
+    INTS_A = 7,
 
     /** One or more decimal numbers of any size */
-    DECIMALS = 7,
+    DECIMALS = 8,
 
     /** One or more true/false */
-    BOOLEANS = 8,
+    BOOLEANS = 9,
     
 }
