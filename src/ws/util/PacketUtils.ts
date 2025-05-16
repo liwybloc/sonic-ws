@@ -1,7 +1,7 @@
 import { PacketHolder } from "./PacketHolder";
 import { Packet, PacketSchema } from "../packets/Packets";
 import { PacketType } from "../packets/PacketType";
-import { NULL, MAX_C } from "./CodePointUtil";
+import { NULL, MAX_C, NEGATIVE_C } from "./CodePointUtil";
 import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage } from "../enums/EnumType";
 
@@ -45,9 +45,9 @@ function isValidType(type: any): boolean {
 }
 
 function clampDataMax(dataMax: number) {
-    if(dataMax > MAX_C) {
-        console.warn(`Only ${MAX_C} values can be sent in a single type! Use CreateObjPacket() if you want to send more.`);
-        return MAX_C;
+    if(dataMax > NEGATIVE_C) {
+        console.warn(`Only ${NEGATIVE_C} values can be sent in a single type! Use CreateObjPacket() / largePacket: true if you want to send more.`);
+        return NEGATIVE_C;
     }
     return dataMax;
 }
@@ -56,7 +56,7 @@ function clampDataMin(dataMin: number, dataMax: number) {
         console.warn(`Having a data minimum below 0 does not do anything!`);
         return 0;
     }
-    // also catches >MAX_C
+    // also catches >NEGATIVE_C
     if(dataMin > dataMax) {
         console.warn(`Data minimum can not be higher than the data maximum!`);
         return dataMax;
@@ -78,7 +78,7 @@ export type SinglePacketSettings = {
     dataMax?: number;
     /** The minimum amount of values that can be sent through this packet; defaults to the max */
     dataMin?: number;
-    /** If data minimum and data maximum is irrelevant; preferably shouldn't be used on client */
+    /** If data minimum and data maximum is irrelevant; preferrably shouldn't be used on client */
     noDataRange?: boolean;
 
     /** If the values should be kept in an array or spread along the listener; defaults to false */
@@ -107,6 +107,8 @@ export type MultiPacketSettings = {
     dontSpread?: boolean;
     /** Will automatically run FlattenData() and UnFlattenData() on values; this will optimize [[x,y,z],[x,y,z]...] for wire transfer */
     autoFlatten?: boolean;
+    /** If the packet will have values larger than 55,296 then this will allow up to 3,057,647,616 length for some minor bandwidth cost. */
+    largePacket?: boolean;
 
     /** A validation function that is called whenever data is received. Return true for success, return false to kick socket. */
     validator?: ((values: any[]) => boolean) | null;
@@ -148,7 +150,7 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
 
     if(noDataRange) {
         dataMin = 0;
-        dataMax = MAX_C;
+        dataMax = NEGATIVE_C;
     } else if(dataMin == undefined) dataMin = type == PacketType.NONE ? 0 : dataMax;
 
     if (!isValidType(type)) {
@@ -166,7 +168,7 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
  * @throws {Error} If any type in `types` is invalid.
  */
 export function CreateObjPacket(settings: MultiPacketSettings): Packet {
-    let { tag, types, dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false, validator = null } = settings;
+    let { tag, types, dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false, largePacket = false, validator = null } = settings;
 
     const invalid = types.find((type) => !isValidType(type));
     if (invalid) {
@@ -174,7 +176,7 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     }
 
     if(noDataRange) {
-        dataMaxes = Array.from({ length: types.length }).map(() => MAX_C);
+        dataMaxes = Array.from({ length: types.length }).map(() => NEGATIVE_C);
         dataMins = Array.from({ length: types.length }).map(() => 0);
     } else {
         if(dataMaxes == undefined) dataMaxes = Array.from({ length: types.length }).map(() => 1);
@@ -187,7 +189,8 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     const clampedDataMaxes = dataMaxes.map(clampDataMax);
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
-    return new Packet(tag, PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten), validator, false);
+    // largepacket could be turned bigger if i ever need it, and this'll be easier impl anyway
+    return new Packet(tag, PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten, largePacket ? 2 : 1), validator, false);
 }
 
 /**

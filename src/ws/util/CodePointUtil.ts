@@ -79,7 +79,7 @@ export function convertINT_D(number: number, chars: number) {
     // no nan/infinity
     if(!isFinite(number)) throw new Error("Cannot use a non-finite number in INT_E: " + number);
     // special case: zero is always encoded as a single null character
-    if (number == 0) return NULL;
+    if (number == 0) return NULL.repeat(chars);
 
     // store the sign and work with the absolute value
     const negative = number < 0;
@@ -161,7 +161,7 @@ export function convertINT_Es(numbers: number[]) {
 
     // one char for exp since it won't ever go above 1023,
     // and convert int d for the compressed part
-    return String.fromCharCode(highestSectSize) + scientificData.map(([man, exp]) => String.fromCharCode(exp) + convertINT_D(man, highestSectSize).padStart(highestSectSize, NULL)).join("");
+    return String.fromCharCode(highestSectSize) + scientificData.map(([man, exp]) => String.fromCharCode(exp) + convertINT_D(man, highestSectSize)).join("");
 }
 // deconverts INT_E
 export function deconvertINT_E(str: string) {

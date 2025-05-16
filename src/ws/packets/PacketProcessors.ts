@@ -151,7 +151,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
 
     [PacketType.INTS_D]: (...numbers: number[]) => {
         const sectSize = numbers.reduce((c, n) => Math.max(c, sectorSize(n)), 1);
-        const sects = numbers.map(n => convertINT_D(n, sectSize).padStart(sectSize, NULL));
+        const sects = numbers.map(n => convertINT_D(n, sectSize));
         return String.fromCharCode(sectSize) + sects.join("");
     },
     [PacketType.INTS_A]: (...numbers: number[]) => numbers.map(v => {
@@ -177,38 +177,38 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
     [PacketType.BOOLEANS]: (...bools: boolean[]) => splitArray(bools, 7).map((bools: boolean[]) => String.fromCharCode(compressBools(bools))).join(""),
 }
 
-export function createObjSendProcessor(types: PacketType[]): (...data: any[]) => string {
+// so uhm. it work. sorry-
+export function createObjSendProcessor(types: PacketType[], packetDelimitSize: number): (...data: any[]) => string {
     const size = types.length;
     const processors = types.map(t => PacketSendProcessors[t]);
     return (...data: any[]) => {
         let result = "";
         for(let i=0;i<size;i++) {
             const d = processors[i](...data[i]);
-            result += String.fromCharCode(d.length) + d;
+            result += convertINT_D(d.length, packetDelimitSize) + d;
         }
         return result;
     };
 }
-export function createObjReceiveProcesor(types: PacketType[]): (data: string, dataCaps: number[], packet: Packet) => any {
+export function createObjReceiveProcesor(types: PacketType[], packetDelimitSize: number): (data: string, dataCaps: number[], packet: Packet) => any {
     const processors = types.map(t => PacketReceiveProcessors[t]);
     return (data: string, dataCaps: number[], packet: Packet) => {
         let result: any[] = [];
         let enums = 0;
         for(let i=0;i<data.length;) {
-            const sectionLength = data.charCodeAt(i++);
-            const sector = data.substring(i, i + sectionLength);
+            const sectorLength = deconvertINT_D(data.slice(i, i += packetDelimitSize));
+            const sector = data.slice(i, i += sectorLength);
             result.push(processors[result.length](sector, dataCaps[result.length], packet, types[result.length] == PacketType.ENUMS ? enums++ : 0));
-            i += sectionLength;
         }
         return result;
     };
 }
-export function createObjValidator(types: PacketType[]): (data: string, dataCaps: number[], dataMins: number[], packet: Packet) => boolean {
+export function createObjValidator(types: PacketType[], packetDelimitSize: number): (data: string, dataCaps: number[], dataMins: number[], packet: Packet) => boolean {
     const validators = types.map(t => PacketValidityProcessors[t]);
     return (data: string, dataCaps: number[], dataMins: number[], packet: Packet) => {
         let sectors = 0, enums = 0;
         for(let i=0;i<data.length;) {
-            const sectorLength = data.charCodeAt(i++);
+            const sectorLength = deconvertINT_D(data.slice(i, i += packetDelimitSize));
             if(sectorLength + i > data.length) return false;
             const sector = data.slice(i, i += sectorLength);
             if(!validators[sectors](sector, dataCaps[sectors], dataMins[sectors], packet, types[sectors] == PacketType.ENUMS ? enums++ : 0)) return false;
