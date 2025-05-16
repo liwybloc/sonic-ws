@@ -10,6 +10,8 @@ It has low latency and optimized data transfer.
 
 Helper functions for frequent cases are included to reduce dev boilerplate.
 
+Can easily handle packets up to multiple megabytes long in milliseconds.
+
 ## SAMPLES
 
 ### Importing:
