@@ -34,19 +34,19 @@ for(let i=1;i<=3;i++) {
     tenPow(i);
 }
 
-export function processCharCodes(text: string): number[] {
+export function processCharCodes(text: string) {
     return Array.from(text, char => char.charCodeAt(0));
 }
 
 // this converts an encoded code point back to a signed number
-export function fromSignedINT_C(point: number): number {
+export function fromSignedINT_C(point: number) {
     // if the code point is below NEGATIVE_C, it's a positive number and can be returned directly
     // if it's above or equal to NEGATIVE_C, it was originally negative, so we reverse the offset
     return point <= NEGATIVE_C ? point : -point + NEGATIVE_C;
 }
 
 // this converts a signed number into a non-negative integer that fits in a code point
-export function toSignedINT_C(number: number): number {
+export function toSignedINT_C(number: number) {
     // positive numbers are returned as-is
     // negative numbers are made positive and offset above NEGATIVE_C to mark them
     return number < 0 ? -number + NEGATIVE_C : number;
@@ -77,7 +77,7 @@ export function sectorSize(number: number) {
 // encodes a signed integer into a unicode-safe string using a large base (OVERFLOW)
 export function convertINT_D(number: number, chars: number) {
     // no nan/infinity
-    if(!isFinite(number)) throw new Error("Cannot use NaN or Infinity in INT_D");
+    if(!isFinite(number)) throw new Error("Cannot use a non-finite number in INT_E: " + number);
     // special case: zero is always encoded as a single null character
     if (number == 0) return NULL;
 
@@ -86,7 +86,7 @@ export function convertINT_D(number: number, chars: number) {
     number = Math.abs(number);
 
     // limit range
-    if (number > MAX_INT_D) throw new Error(`INT_D Numbers must be within range -${MAX_INT_D.toLocaleString()} and ${MAX_INT_D.toLocaleString()}.`);
+    if (number > MAX_INT_D) throw new Error(`INT_D Numbers must be within range -${MAX_INT_D.toLocaleString()} and ${MAX_INT_D.toLocaleString()}: ${number}`);
 
     let result = [];
 
@@ -113,10 +113,10 @@ export function convertINT_D(number: number, chars: number) {
 }
 
 // decodes a string created by convertINT_D back into the original signed integer
-export function deconvertINT_D(string: string): number {
+export function deconvertINT_D(string: string) {
     return deconvertINT_DCodes(processCharCodes(string))
 }
-export function deconvertINT_DCodes(codes: number[]): number {
+export function deconvertINT_DCodes(codes: number[]) {
     // for each code point in the string, reverse the sign encoding if necessary,
     // multiply by the positional weight based on its place (most-significant-digit first)
     return codes.reduce((c, n, i, arr) => c + fromSignedINT_C(n) * overflowPow(arr.length - i - 1), 0);
@@ -129,19 +129,19 @@ export const decompressBools = (byte: number) => [...Array(7)].map((_, i) => (by
 // 512 to be safe
 const SIGNED_EXP = 512;
 // add signed for negative
-function toSignedExp(exp: number): number {
+function toSignedExp(exp: number) {
     return exp >= 0 ? exp : Math.abs(exp) + SIGNED_EXP;
 }
 // if above that, it's a negative, so turn it back
-function fromSignedExp(exp: number): number {
+function fromSignedExp(exp: number) {
     return exp > SIGNED_EXP ? -(exp - SIGNED_EXP) : exp;
 }
 
 // converts numbers larger than Number.MAX_SAFE_INTEGER
-export function convertINT_Es(numbers: number[]): string {
+export function convertINT_Es(numbers: number[]) {
     const scientificData = numbers.map(number => {
         // checks
-        if(!isFinite(number)) throw new Error("Cannot use NaN or Infinity in INT_E");
+        if(!isFinite(number)) throw new Error("Cannot use a non-finite number in INT_E: " + number);
 
         // 0 is simple
         if(number == 0) return [0, 0];
@@ -150,9 +150,11 @@ export function convertINT_Es(numbers: number[]): string {
         // + will be positive in Number(), and so - will be negative. simpler
         const [dec, exp] = number.toExponential().split("e").map(Number);
         // 𝑓𝑟𝑒𝑎𝑘𝑦 decimal remover to keep it integer
-        const man = +String(dec).replace('.', '');
+        const man = +String(dec).replace('.', '').substring(0, 15); // lose some precision but ensure it stays under MAX_SAFE_INTEGER
 
-        return [man, toSignedExp(exp) + (man < 0 ? 1 : 0)];
+        // why are you looking at me bro idfk
+        const manOff = (man < 0 ? 1 : 0);
+        return [man, toSignedExp(exp) + (exp < 0 ? -manOff : manOff)];
     });
 
     const highestSectSize = scientificData.reduce((c, n) => Math.max(c, sectorSize(n[0])), 1) + 1;
@@ -162,7 +164,7 @@ export function convertINT_Es(numbers: number[]): string {
     return String.fromCharCode(highestSectSize) + scientificData.map(([man, exp]) => String.fromCharCode(exp) + convertINT_D(man, highestSectSize).padStart(highestSectSize, NULL)).join("");
 }
 // deconverts INT_E
-export function deconvertINT_E(str: string): number {
+export function deconvertINT_E(str: string) {
     // exponent is stored at char 0
     const exp = fromSignedExp(str.charCodeAt(0));
     // deconvert the rest

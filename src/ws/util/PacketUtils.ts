@@ -6,12 +6,19 @@ import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage } from "../enums/EnumType";
 
 export function emitPacket(packets: PacketHolder, send: (data: string) => void, tag: string, values: any[]) {
+    const time = process.hrtime.bigint();
+
     const code = packets.getChar(tag);
     if(code == NULL) throw new Error(`Tag "${tag}" has not been created!`);
 
     const packet = packets.getPacket(tag);
-    if(values.length > packet.maxSize) throw new Error(`Packet "${tag}" only allows ${packet.maxSize} values!`);
-    if(values.length < packet.minSize) throw new Error(`Packet "${tag}" requires at least ${packet.minSize} values!`);
+
+    if(packet.autoFlatten) {
+        values = FlattenData(values[0]);
+    } else {
+        if(values.length > packet.maxSize) throw new Error(`Packet "${tag}" only allows ${packet.maxSize} values!`);
+        if(values.length < packet.minSize) throw new Error(`Packet "${tag}" requires at least ${packet.minSize} values!`);
+    }
 
     if(!packet.object) {
         const found = values.find(v => typeof v == 'object' && v != null);
@@ -30,6 +37,8 @@ export function emitPacket(packets: PacketHolder, send: (data: string) => void, 
     }
 
     send(code + (values.length > 0 ? packet.processSend(values) : ""));
+
+    console.log("Send processing time: " + (Number(process.hrtime.bigint() - time) / 1_000_000) + "ms");
 }
 
 function isValidType(type: any): boolean {
@@ -62,14 +71,20 @@ export type ArguableType = PacketType | EnumPackage;
 export type SinglePacketSettings = {
     /** The tag of the packet; used for on(tag) and send(tag) */
     tag: string;
+
     /** The data type of the packet; defaults to PacketType.NONE */
     type?: ArguableType;
+
     /** The maximum amount of values that can be sent through this packet; defaults to 1 */
     dataMax?: number;
     /** The minimum amount of values that can be sent through this packet; defaults to the max */
     dataMin?: number;
+    /** If data minimum and data maximum is irrelevant; preferably shouldn't be used on client */
+    noDataRange?: boolean;
+
     /** If the values should be kept in an array or spread along the listener; defaults to false */
     dontSpread?: boolean;
+
     /** A validation function that is called whenever data is received. Return true for success, return false to kick socket. */
     validator?: ((values: any[]) => boolean) | null;
 };
@@ -78,14 +93,22 @@ export type SinglePacketSettings = {
 export type MultiPacketSettings = {
     /** The tag of the packet; used for on(tag) and send(tag) */
     tag: string;
+
     /** The data types of the packet */
     types: ArguableType[];
-    /** The maximum amount of values that can be sent through each type of packet; defaults to 1 for each */
-    dataMaxes?: number[];
-    /** The minimum amount of values that can be sent through each type of packet; defaults to the max for each */
-    dataMins?: number[];
+
+    /** The maximum amount of values that can be sent through each type of packet; defaults to 1 for each. Non-array will fill all for that amount */
+    dataMaxes?: number[] | number;
+    /** The minimum amount of values that can be sent through each type of packet; defaults to the max for each Non-array will fill all for that amount */
+    dataMins?: number[] | number;
+    /** If data minimum and data maximum is irrelevant; preferably shouldn't be used on client */
+    noDataRange?: boolean;
+
     /** If the values should be kept in an array or spread along the listener; defaults to false */
     dontSpread?: boolean;
+    /** Will automatically run FlattenData() and UnFlattenData() on values; this will optimize [[x,y,z],[x,y,z]...] for wire transfer */
+    autoFlatten?: boolean;
+
     /** A validation function that is called whenever data is received. Return true for success, return false to kick socket. */
     validator?: ((values: any[]) => boolean) | null;
 };
@@ -96,14 +119,20 @@ export type EnumPacketSettings = {
     packetTag: string;
     /** The tag of the enum; used for WrapEnum(enumTag) */
     enumTag: string;
+
     /** The possible values of the enum */
     values: any[];
+
+    /** If data minimum and data maximum is irrelevant; preferably shouldn't be used on client */
+    noDataRange?: boolean;
     /** The maximum amount of values that can be sent through this packet; defaults to 1 */
     dataMax?: number;
     /** The minimum amount of values that can be sent through this packet; defaults to the max */
     dataMin?: number;
+
     /** If the values should be kept in an array or spread along the listener; defaults to false */
     dontSpread?: boolean;
+
     /** A validation function that is called whenever data is received. Return true for success, return false to kick socket. */
     validator?: ((values: any[]) => boolean) | null;
 }
@@ -116,9 +145,12 @@ export type EnumPacketSettings = {
  * @throws {Error} If the `type` is invalid.
  */
 export function CreatePacket(settings: SinglePacketSettings): Packet {
-    let { tag, type = PacketType.NONE, dataMax = 1, dataMin, dontSpread = false, validator = null } = settings;
+    let { tag, type = PacketType.NONE, dataMax = 1, dataMin, noDataRange = false, dontSpread = false, validator = null } = settings;
 
-    if(dataMin == undefined) dataMin = type == PacketType.NONE ? 0 : dataMax;
+    if(noDataRange) {
+        dataMin = 0;
+        dataMax = MAX_C;
+    } else if(dataMin == undefined) dataMin = type == PacketType.NONE ? 0 : dataMax;
 
     if (!isValidType(type)) {
         throw new Error(`Invalid packet type: ${type}`);
@@ -135,20 +167,28 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
  * @throws {Error} If any type in `types` is invalid.
  */
 export function CreateObjPacket(settings: MultiPacketSettings): Packet {
-    let { tag, types, dataMaxes, dataMins, dontSpread = false, validator = null } = settings;
+    let { tag, types, dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false, validator = null } = settings;
 
     const invalid = types.find((type) => !isValidType(type));
     if (invalid) {
         throw new Error(`Invalid packet type: ${invalid}`);
     }
 
-    if(dataMaxes == undefined) dataMaxes = Array.from({ length: types.length }).map(_ => 1);
-    if(dataMins == undefined) dataMins = Array.from({ length: types.length }).map((_, i) => dataMaxes[i]);
+    if(noDataRange) {
+        dataMaxes = Array.from({ length: types.length }).map(() => MAX_C);
+        dataMins = Array.from({ length: types.length }).map(() => 0);
+    } else {
+        if(dataMaxes == undefined) dataMaxes = Array.from({ length: types.length }).map(() => 1);
+        else if (!Array.isArray(dataMaxes)) dataMaxes = Array.from({ length: types.length }).map(() => dataMaxes as number);
+        
+        if(dataMins == undefined) dataMins = Array.from({ length: types.length }).map((_, i) => (dataMaxes as number[])[i]);
+        else if (!Array.isArray(dataMins)) dataMins = Array.from({ length: types.length }).map(() => dataMins as number);
+    }
 
     const clampedDataMaxes = dataMaxes.map(clampDataMax);
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
-    return new Packet(tag, PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread), validator, false);
+    return new Packet(tag, PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten), validator, false);
 }
 
 /**
@@ -158,14 +198,33 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
  * @returns The constructed packet structure data.
  */
 export function CreateEnumPacket(settings: EnumPacketSettings): Packet {
-    const { packetTag, enumTag, values, dataMax = 1, dataMin = 0, dontSpread = false, validator = null } = settings;
+    const { packetTag, enumTag, values, dataMax = 1, dataMin = 0, noDataRange = false, dontSpread = false, validator = null } = settings;
 
     return CreatePacket({
         tag: packetTag,
         type: DefineEnum(enumTag, values),
         dataMax,
         dataMin,
+        noDataRange,
         dontSpread,
         validator
     });
+}
+
+/**
+ * Flattens a 2-depth array for efficient wire transfer
+ * Turns [[x,y,z],[x,y,z]...] to [[x,x...],[y,y...],[z,z...]]
+ * @param array A 2-depth array of multi-valued
+ */
+export function FlattenData(arr: any[][]): any[][] {
+    return arr[0]?.map((_, i) => arr.map(row => row[i])) ?? [];
+}
+
+/**
+ * Unflattens an array into 2-depth; reverse of FlattenData()
+ * turns [[x,x...],[y,y...],[z,z...]] to [[x,y,z],[x,y,z]...]
+ * @param array A flattened array
+ */
+export function UnFlattenData(arr: any[][]): any[][] {
+    return arr[0]?.map((_, i) => arr.map(col => col[i])) ?? [];
 }

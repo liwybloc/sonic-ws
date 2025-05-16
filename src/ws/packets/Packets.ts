@@ -1,6 +1,7 @@
 import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../enums/EnumType";
 import { ETX, processCharCodes, STX } from "../util/CodePointUtil";
+import { UnFlattenData } from "../util/PacketUtils";
 import { createObjReceiveProcesor, createObjSendProcessor, createObjValidator, PacketReceiveProcessors, PacketSendProcessors, PacketValidityProcessors } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
 
@@ -17,6 +18,7 @@ export class Packet {
     public dataMin: number | number[];
 
     public dontSpread: boolean;
+    public autoFlatten: boolean;
 
     public object: boolean;
     
@@ -43,8 +45,6 @@ export class Packet {
             this.receiveProcessor = createObjReceiveProcesor(this.type);
             this.validifier = createObjValidator(this.type);
             this.sendProcessor = createObjSendProcessor(this.type);
-
-            this.processSend = (...data: any[]) => this.sendProcessor(...data.flat());
         } else {
             this.type = schema.type;
             this.dataMax = schema.dataMax;
@@ -56,36 +56,39 @@ export class Packet {
             this.receiveProcessor = PacketReceiveProcessors[this.type];
             this.validifier = PacketValidityProcessors[this.type];
             this.sendProcessor = PacketSendProcessors[this.type];
-
-            this.processSend = (...data: any[]) => this.sendProcessor(...data.flat());
         }
         
         this.processReceive = (data: string) => this.receiveProcessor(data, this.dataMax, this, 0);
+        this.processSend = (...data: any[]) => this.sendProcessor(...data.flat());
         this.validate = client ? () => true : (data: string) => this.validifier(data, this.dataMax, this.dataMin, this, 0);
         this.customValidator = customValidator;
 
         this.enumData = schema.enumData;
         this.dontSpread = schema.dontSpread;
+        this.autoFlatten = schema.autoFlatten;
     }
 
     public listen(value: string): [processed: any, flatten: boolean] | string {
         try {
+            const time = process.hrtime.bigint();
             if(!this.validate(value)) return "Invalid packet";
 
             const processed = this.processReceive(value);
 
             const isArray = Array.isArray(processed);
-
             const flatten = isArray && !this.dontSpread;
+
+            const useableData = this.autoFlatten ? UnFlattenData(processed) : processed;
 
             if(this.customValidator != null) {
                 if(flatten) {
-                    if(!this.customValidator(...processed)) return "Didn't pass custom validator";
+                    if(!this.customValidator(...useableData)) return "Didn't pass custom validator";
                 } else {
-                    if(!this.customValidator(processed)) return "Didn't pass custom validator";
+                    if(!this.customValidator(useableData)) return "Didn't pass custom validator";
                 }
             }
-            return [processed, flatten];
+            console.log("Receive processing time: " + (Number(process.hrtime.bigint() - time) / 1_000_000) + "ms");
+            return [useableData, flatten];
         } catch (err) {
             console.error("There was an error processing the packet! This is probably my fault... report at https://github.com/cutelittlelily/sonic-ws", err);
             return "Error: " + err;
@@ -111,7 +114,8 @@ export class Packet {
 
         // object packet
         return spreadFlag + enumData +
-            String.fromCharCode(this.maxSize + 2) +                                  // size, and +2 because of NULL and STX (STX is for single)
+            String.fromCharCode(this.maxSize + 2) +                               // size, and +2 because of NULL and STX (STX is for single)
+            (this.autoFlatten ? ETX : STX) +                                      // auto flatten flag
             String.fromCharCode(...(this.dataMax as number[]).map(x => x + 1)) +  // all data maxes, offset by 1 for NULL
             String.fromCharCode(...(this.dataMin as number[]).map(x => x + 1)) +  // all data mins, offset by 1 for NULL
             String.fromCharCode(...(this.type as PacketType[]).map(x => x + 1)) + // all types, offset by 1 for NULL
@@ -149,6 +153,8 @@ export class Packet {
         // objects
         // the single packet is STX so STX - 2 = -1
         if (size != -1) {
+            const autoFlatten: boolean = text[++offset] == ETX;
+
             const dcStart = ++offset;        // data maxes section start
             const dcEnd = dcStart + size;    // data maxes section end
             const dmStart = dcEnd;           // data mins section start
@@ -168,7 +174,7 @@ export class Packet {
             const tag = text.substring(tagStart, tagStart + tagLength); // tag is tag length long. yeah
 
             return [
-                new Packet(tag, PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread), null, client),
+                new Packet(tag, PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten), null, client),
                 (offset - beginningOffset) + 1 + size + size + size + tagLength
             ];
         }
@@ -217,6 +223,8 @@ export class PacketSchema {
     public enumData: EnumPackage[] = [];
 
     public dontSpread: boolean = false;
+    public autoFlatten: boolean = false;
+
     public object: boolean;
 
     constructor(object: boolean) {
@@ -240,7 +248,7 @@ export class PacketSchema {
         return schema;
     }
 
-    public static object(types: (PacketType | EnumPackage)[], dataMaxes: number[], dataMins: number[], dontSpread: boolean): PacketSchema {
+    public static object(types: (PacketType | EnumPackage)[], dataMaxes: number[], dataMins: number[], dontSpread: boolean, autoFlatten: boolean): PacketSchema {
         if(types.length != dataMaxes.length || types.length != dataMins.length)
             throw new Error("There is an inbalance between the amount of types, data maxes, and data mins!");
 
@@ -258,6 +266,7 @@ export class PacketSchema {
         schema.dataMaxes = dataMaxes;
         schema.dataMins = dataMins;
         schema.dontSpread = dontSpread;
+        schema.autoFlatten = autoFlatten;
 
         return schema;
     }
