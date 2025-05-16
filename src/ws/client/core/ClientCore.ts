@@ -46,13 +46,13 @@ export abstract class SonicWSCore {
     private serverKeyHandler(event: MessageEvent): undefined {
         const data: string = event.data.toString();
         if(!data.startsWith("SWS")) {
-            this.ws.close(1003);
+            this.ws.close(1000);
             throw new Error("The server requested is not a Sonic WS server.");
         }
 
         const version = data.charCodeAt(3);
         if(version != VERSION) {
-            this.ws.close(1003);
+            this.ws.close(1000);
             throw new Error(`Version mismatch: ${version > VERSION ? "client" : "server"} is outdated (server: ${version}, client: ${VERSION})`);              
         }
 
