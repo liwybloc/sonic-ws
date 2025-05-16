@@ -6,8 +6,6 @@ import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage } from "../enums/EnumType";
 
 export function emitPacket(packets: PacketHolder, send: (data: string) => void, tag: string, values: any[]) {
-    const time = process.hrtime.bigint();
-
     const code = packets.getChar(tag);
     if(code == NULL) throw new Error(`Tag "${tag}" has not been created!`);
 
@@ -37,8 +35,6 @@ export function emitPacket(packets: PacketHolder, send: (data: string) => void, 
     }
 
     send(code + (values.length > 0 ? packet.processSend(values) : ""));
-
-    console.log("Send processing time: " + (Number(process.hrtime.bigint() - time) / 1_000_000) + "ms");
 }
 
 function isValidType(type: any): boolean {

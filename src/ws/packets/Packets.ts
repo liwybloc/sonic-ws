@@ -70,7 +70,6 @@ export class Packet {
 
     public listen(value: string): [processed: any, flatten: boolean] | string {
         try {
-            const time = process.hrtime.bigint();
             if(!this.validate(value)) return "Invalid packet";
 
             const processed = this.processReceive(value);
@@ -87,7 +86,6 @@ export class Packet {
                     if(!this.customValidator(useableData)) return "Didn't pass custom validator";
                 }
             }
-            console.log("Receive processing time: " + (Number(process.hrtime.bigint() - time) / 1_000_000) + "ms");
             return [useableData, flatten];
         } catch (err) {
             console.error("There was an error processing the packet! This is probably my fault... report at https://github.com/cutelittlelily/sonic-ws", err);
