@@ -174,6 +174,18 @@ export function deconvertINT_E(str: string) {
     return mantissa * tenPow(exp - String(mantissa).length + 1);
 }
 
+// zig_zag
+export function mapZIG_ZAG(n: number) {
+    return (n << 1) // shifts left (multiply by 2 to get into zigzag)
+           ^
+           (n >> 15); // then xor the sign away
+}
+export function demapZIG_ZAG(n: number) {
+    return (n >>> 1) // shifts right unsigned to remove the sign & divide by 2
+           ^ 
+           -(n & 1); // flips bits to give negative back
+}
+
 // byte size stuff for debugging
 const encoder = new TextEncoder();
 export function getCharBytes(char: string) {

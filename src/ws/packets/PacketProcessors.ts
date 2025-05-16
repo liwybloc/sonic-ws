@@ -1,6 +1,6 @@
 import { EnumPackage } from "../enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertINT_D, convertINT_Es, decompressBools, deconvertINT_D, deconvertINT_DCodes, deconvertINT_E, fromSignedINT_C, NULL, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
+import { compressBools, convertINT_D, convertINT_Es, decompressBools, deconvertINT_D, deconvertINT_DCodes, deconvertINT_E, demapZIG_ZAG, fromSignedINT_C, mapZIG_ZAG, NULL, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 
@@ -50,6 +50,7 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
 
     [PacketType.INTS_C]: BY_LEN,
     [PacketType.UINTS_C]: BY_LEN,
+    [PacketType.ZIG_ZAG]: BY_LEN,
 
     [PacketType.INTS_D]: (raw, cap, min) => INT_D_LIKE(raw, cap, min, 0),
     [PacketType.INTS_A]: LEN_DELIMIT,
@@ -98,6 +99,7 @@ export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: num
 
     [PacketType.INTS_C]: (data) => processCharCodes(data).map(fromSignedINT_C),
     [PacketType.UINTS_C]: (data) => processCharCodes(data),
+    [PacketType.ZIG_ZAG]: (data) => processCharCodes(data).map(demapZIG_ZAG),
 
     [PacketType.INTS_D]: (data) => splitArray(data.substring(1), data.charCodeAt(0)!).map(deconvertINT_D),
     [PacketType.INTS_A]: (data) => {
@@ -145,6 +147,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
 
     [PacketType.INTS_C]: (...numbers: number[]) => numbers.map(stringedINT_C).join(""),
     [PacketType.UINTS_C]: (...numbers: number[]) => String.fromCharCode(...numbers),
+    [PacketType.ZIG_ZAG]: (...numbers: number[]) => String.fromCharCode(...numbers.map(mapZIG_ZAG)),
 
     [PacketType.INTS_D]: (...numbers: number[]) => {
         const sectSize = numbers.reduce((c, n) => Math.max(c, sectorSize(n)), 1);

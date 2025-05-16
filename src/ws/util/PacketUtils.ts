@@ -25,12 +25,15 @@ export function emitPacket(packets: PacketHolder, send: (data: string) => void, 
         // also map non arrays to arrays to keep some code cleaner
         values = values.map(x => !Array.isArray(x) ? [x] : x);
         
-        const dataMins = (packet.dataMin as number[]);
-        const dataMaxes = (packet.dataMax as number[]);
-        for(let i=0;i<dataMins.length;i++) {
-            // these will be the same length
-            if(values[i].length < dataMins[i]) throw new Error(`Section ${i + 1} of packet "${tag}" requires at least ${dataMins[i]} values!`);
-            if(values[i].length > dataMaxes[i]) throw new Error(`Section ${i + 1} of packet "${tag}" only allows ${dataMaxes[i]} values!`);
+        // something is weird with this
+        if(!packet.autoFlatten) {
+            const dataMins = (packet.dataMin as number[]);
+            const dataMaxes = (packet.dataMax as number[]);
+            for(let i=0;i<dataMins.length;i++) {
+                // these will be the same length
+                if(values[i].length < dataMins[i]) throw new Error(`Section ${i + 1} of packet "${tag}" requires at least ${dataMins[i]} values!`);
+                if(values[i].length > dataMaxes[i]) throw new Error(`Section ${i + 1} of packet "${tag}" only allows ${dataMaxes[i]} values!`);
+            }
         }
     }
 
