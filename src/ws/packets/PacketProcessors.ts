@@ -1,12 +1,12 @@
 import { EnumPackage } from "../enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertINT_D, decompressBools, deconvertINT_D, deconvertINT_DCodes, fromSignedINT_C, NULL, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
+import { compressBools, convertINT_D, convertINT_Es, decompressBools, deconvertINT_D, deconvertINT_DCodes, deconvertINT_E, fromSignedINT_C, NULL, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 
 const STRINGIFY = (data: any) => data.toString();
 
-const LEN_DELIMIT = (data: string, cap: number) => {
+const LEN_DELIMIT = (data: string, cap: number, min: number) => {
     let sectors = 0;
     for(let index = 0; index < data.length; index++) {
         sectors++;
@@ -14,30 +14,48 @@ const LEN_DELIMIT = (data: string, cap: number) => {
         index += data.charCodeAt(index);
         if(index + 1 > data.length) return false;
     }
+    if(sectors < min) return false;
     return true;
 }
 
-export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap: number, packet: Packet, index: number) => boolean> = {
+const BY_LEN = (data: string, cap: number, min: number) => data.length >= min && data.length <= cap;
+const INT_D_LIKE = (raw: string, cap: number, min: number, off: number) => {
+    if(raw.length == 0) return false;
+
+    const dataLength = raw.length - 1, sectSize = raw.charCodeAt(0)! + off;
+    if(dataLength % sectSize != 0) return false;
+
+    const valueAmount = dataLength / sectSize;
+    if(valueAmount < min || valueAmount > cap) return false;
+
+    return true;
+}
+
+// todo, instead of big array make this a function that creates functions, then i can include pre-defined data like Math.floor(min/8) and stuff
+export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap: number, dataMin: number, packet: Packet, index: number) => boolean> = {
     [PacketType.NONE]: (data) => data.length == 0,
     [PacketType.RAW]: () => true,
 
     [PacketType.STRINGS]: LEN_DELIMIT,
-    [PacketType.ENUMS]: (data, cap, packet, index) => {
-        if (data.length > cap || index >= packet.enumData.length) return false;
+    [PacketType.ENUMS]: (data, cap, min, packet, index) => {
+        if (data.length < min || data.length > cap || index >= packet.enumData.length) return false;
+        
         const pkg = packet.enumData[index];
-        for(let i=0;i<cap;i++) {
+        for(let i=0;i<data.length;i++) {
             if(pkg.values.length <= data.charCodeAt(i)) return false;
         }
+
         return true;
     },
 
-    [PacketType.INTS_C]: (data, cap) => data.length <= cap,
-    [PacketType.UINTS_C]: (data, cap) => data.length <= cap,
+    [PacketType.INTS_C]: BY_LEN,
+    [PacketType.UINTS_C]: BY_LEN,
 
-    [PacketType.INTS_D]: (data, cap) => data.length > 0 && (processCharCodes(data).length - 1) % data[0].charCodeAt(0)! <= cap,
+    [PacketType.INTS_D]: (raw, cap, min) => INT_D_LIKE(raw, cap, min, 0),
     [PacketType.INTS_A]: LEN_DELIMIT,
+    [PacketType.EXPONENTIAL]: (raw, cap, min) => INT_D_LIKE(raw, cap, min, 1),
      
-    [PacketType.DECIMALS]: (data, cap) => {
+    [PacketType.DECIMALS]: (data, cap, min) => {
         let sectors = 0;
         for(let i = 0; i < data.length;) {
             sectors++;
@@ -50,12 +68,13 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
             i += len2;
             if(i > data.length) return false;
         }
+        if(sectors < min) return false;
         return true;
     },
 
-    [PacketType.BOOLEANS]: (data, cap) => {
+    [PacketType.BOOLEANS]: (data, cap, min) => {
         const codes = processCharCodes(data);
-        return codes.length <= Math.floor(cap / 8) + 1 && codes.find(d => d > 255) == undefined;
+        return codes.length >= Math.floor(min / 8) + 1 && codes.length <= Math.floor(cap / 8) + 1 && codes.find(d => d > 255) == undefined;
     }
 }
 
@@ -80,7 +99,7 @@ export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: num
     [PacketType.INTS_C]: (data) => processCharCodes(data).map(fromSignedINT_C),
     [PacketType.UINTS_C]: (data) => processCharCodes(data),
 
-    [PacketType.INTS_D]: (data) => splitArray(processCharCodes(data.substring(1)), data.charCodeAt(0)!).map(arr => String.fromCharCode(...arr)).map(deconvertINT_D),
+    [PacketType.INTS_D]: (data) => splitArray(data.substring(1), data.charCodeAt(0)!).map(deconvertINT_D),
     [PacketType.INTS_A]: (data) => {
         let numbers: number[] = [];
         for(let i = 0; i < data.length; i++) {
@@ -90,6 +109,7 @@ export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: num
         }
         return numbers;
     },
+    [PacketType.EXPONENTIAL]: (data) => splitArray(data.substring(1), data.charCodeAt(0)! + 1).map(deconvertINT_E),
 
     [PacketType.DECIMALS]: (data) => {
         const points = processCharCodes(data);
@@ -128,13 +148,14 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
 
     [PacketType.INTS_D]: (...numbers: number[]) => {
         const sectSize = numbers.reduce((c, n) => Math.max(c, sectorSize(n)), 1);
-        const sects = numbers.map(n => convertINT_D(n, sectSize).padStart(sectSize, NULL)).join("");
-        return String.fromCharCode(sectSize) + sects;
+        const sects = numbers.map(n => convertINT_D(n, sectSize).padStart(sectSize, NULL));
+        return String.fromCharCode(sectSize) + sects.join("");
     },
     [PacketType.INTS_A]: (...numbers: number[]) => numbers.map(v => {
         const sectSize = sectorSize(v);
         return String.fromCharCode(sectSize) + convertINT_D(v, sectSize);
     }).join(""),
+    [PacketType.EXPONENTIAL]: (...numbers: number[]) => convertINT_Es(numbers),
 
     [PacketType.DECIMALS]: (...numbers: number[]) => numbers.map(n => {
         const split = n.toString().split(".");
@@ -150,7 +171,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
         return String.fromCharCode(num) + convertINT_D(whole, wholeSS) + convertINT_D(decimal, decimalSS);
     }).join(""),
     
-    [PacketType.BOOLEANS]: (...bools: boolean[]) => splitArray(bools, 7).map(bools => String.fromCharCode(compressBools(bools))).join(""),
+    [PacketType.BOOLEANS]: (...bools: boolean[]) => splitArray(bools, 7).map((bools: boolean[]) => String.fromCharCode(compressBools(bools))).join(""),
 }
 
 export function createObjSendProcessor(types: PacketType[]): (...data: any[]) => string {
@@ -179,16 +200,15 @@ export function createObjReceiveProcesor(types: PacketType[]): (data: string, da
         return result;
     };
 }
-// todo
-export function createObjValidator(types: PacketType[]): (data: string, dataCaps: number[], packet: Packet) => boolean {
+export function createObjValidator(types: PacketType[]): (data: string, dataCaps: number[], dataMins: number[], packet: Packet) => boolean {
     const validators = types.map(t => PacketValidityProcessors[t]);
-    return (data: string, dataCaps: number[], packet: Packet) => {
+    return (data: string, dataCaps: number[], dataMins: number[], packet: Packet) => {
         let sectors = 0, enums = 0;
         for(let i=0;i<data.length;) {
             const sectorLength = data.charCodeAt(i++);
             if(sectorLength + i > data.length) return false;
             const sector = data.slice(i, i += sectorLength);
-            if(!validators[sectors](sector, dataCaps[sectors], packet, types[sectors] == PacketType.ENUMS ? enums++ : 0)) return false;
+            if(!validators[sectors](sector, dataCaps[sectors], dataMins[sectors], packet, types[sectors] == PacketType.ENUMS ? enums++ : 0)) return false;
             if(++sectors > dataCaps.length) return false; // caps length is also the amount of values there are
         }
         return true;

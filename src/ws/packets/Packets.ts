@@ -22,7 +22,7 @@ export class Packet {
     
     private receiveProcessor: (data: string, cap: any, packet: Packet, index: number) => any;
     private sendProcessor: (...data: any[]) => string;
-    private validifier: (data: string, cap: any, packet: Packet, index: number) => boolean;
+    private validifier: (data: string, cap: any, min: any, packet: Packet, index: number) => boolean;
 
     public processReceive: (data: string) => any;
     public processSend: (data: any[]) => string;
@@ -61,35 +61,34 @@ export class Packet {
         }
         
         this.processReceive = (data: string) => this.receiveProcessor(data, this.dataMax, this, 0);
-        this.validate = client ? () => true : (data: string) => this.validifier(data, this.dataMax, this, 0);
+        this.validate = client ? () => true : (data: string) => this.validifier(data, this.dataMax, this.dataMin, this, 0);
         this.customValidator = customValidator;
 
         this.enumData = schema.enumData;
         this.dontSpread = schema.dontSpread;
     }
 
-    public listen(value: string): [processed: any, flatten: boolean] | null {
+    public listen(value: string): [processed: any, flatten: boolean] | string {
         try {
-            if(!this.validate(value)) return null;
+            if(!this.validate(value)) return "Invalid packet";
 
             const processed = this.processReceive(value);
 
             const isArray = Array.isArray(processed);
-            if(isArray && processed.length < (this.dataMin as number)) return null;
 
             const flatten = isArray && !this.dontSpread;
 
             if(this.customValidator != null) {
                 if(flatten) {
-                    if(!this.customValidator(...processed)) return null;
+                    if(!this.customValidator(...processed)) return "Didn't pass custom validator";
                 } else {
-                    if(!this.customValidator(processed)) return null;
+                    if(!this.customValidator(processed)) return "Didn't pass custom validator";
                 }
             }
             return [processed, flatten];
         } catch (err) {
             console.error("There was an error processing the packet! This is probably my fault... report at https://github.com/cutelittlelily/sonic-ws", err);
-            return null;
+            return "Error: " + err;
         }
     }
 

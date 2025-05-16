@@ -66,13 +66,13 @@ export class SonicWSConnection {
         if(this.rateLimit != 0) this.rateLimitInterval = setInterval(() => this.received = 0, 1000) as unknown as number;
     }
 
-    private parseData(data: WS.MessageEvent): [key: string, value: string] | null {
+    private parseData(event: WS.MessageEvent): [key: string, value: string] | null {
         if(this.rateLimit != 0 && ++this.received > this.rateLimit) {
             this.socket.close(4000);
             return null;
         }
 
-        const message = data.data.toString();
+        const message = event.data.toString();
 
         if(this.print) console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${getStringBytes(message)})\x1b[0m ${this.hideNewLines(message)}`);
 
@@ -118,8 +118,9 @@ export class SonicWSConnection {
         const packet = this.host.clientPackets.getPacket(tag);
         const listened = packet.listen(value);
         // if invalid then ignore it
-        if(listened == null) {
+        if(typeof listened == 'string') {
             this.socket.close(4003);
+            if(this.print) console.log("Closure cause:", + listened);
             return;
         }
         const [processed, flatten] = listened;

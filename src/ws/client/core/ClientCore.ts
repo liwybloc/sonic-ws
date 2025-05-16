@@ -105,7 +105,8 @@ export abstract class SonicWSCore {
 
         const packet = this.serverPackets.getPacket(this.serverPackets.getTag(key));
         const result = packet.listen(value);
-        if(result == null) {
+        if(typeof result == 'string') {
+            console.log(result);
             throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/cutelittlelily/sonic-ws");
         }
         const [processed, flatten] = result;

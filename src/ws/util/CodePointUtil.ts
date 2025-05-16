@@ -6,6 +6,9 @@ export const NULL = String.fromCharCode(0), STX = String.fromCharCode(1), ETX = 
 // the highest usable character in utf8
 export const MAX_C = 55295;
 
+// highest number INT_D can optimally support
+export const MAX_INT_D = Number.MAX_SAFE_INTEGER;
+
 // we split the usable range of code points in half to separate positive and negative encodings
 export const NEGATIVE_C = Math.floor(MAX_C / 2);
 
@@ -13,11 +16,23 @@ export const NEGATIVE_C = Math.floor(MAX_C / 2);
 // we use this to reduce the number of characters needed to represent large numbers
 export const OVERFLOW = NEGATIVE_C + 1;
 
+// precompute the overflow powers
 const OVERFLOW_POWS: number[] = [];
 function overflowPow(num: number): number {
+    // ??= will set it if undefined or just return it
     return OVERFLOW_POWS[num] ??= Math.pow(OVERFLOW, num);
 }
-for(let i=0;i<3;i++) overflowPow(i);
+// precompute the 10^x powers
+const TEN_POWS: number[] = [];
+function tenPow(num: number) {
+    // ??= will set it if undefined or just return it
+    return TEN_POWS[num] ??= Math.pow(10, num);
+}
+// precompute 1-3
+for(let i=1;i<=3;i++) {
+    overflowPow(i);
+    tenPow(i);
+}
 
 export function processCharCodes(text: string): number[] {
     return Array.from(text, char => char.charCodeAt(0));
@@ -38,30 +53,31 @@ export function toSignedINT_C(number: number): number {
 }
 
 // just conversion and checks lol
-export function stringedINT_C(number: number): string {
-    if(number > NEGATIVE_C || number < -NEGATIVE_C - 1) throw new Error(`INT_C Numbers must be within range -${NEGATIVE_C + 1} and ${NEGATIVE_C}`);
+export function stringedINT_C(number: number) {
+    // no nan/infinity
+    if(!isFinite(number)) throw new Error("Cannot use NaN or Infinity in INT_C");
+    // limit check
+    if (number > NEGATIVE_C || number < -NEGATIVE_C - 1) throw new Error(`INT_C Numbers must be within range -${NEGATIVE_C + 1} and ${NEGATIVE_C}`);
+    // stringify the sign with checks, nice helper
     return String.fromCharCode(toSignedINT_C(number));
 }
 
 // calculate how many characters (digits) are needed to store this number in OVERFLOW base
-export function sectorSize(number: number): number {
-    // 0 would make -Infinity;
-    if(number == 0) return 1;
-
+export function sectorSize(number: number) {
     number = Math.abs(number);
-    
+
     // iterative system because it's faster than log
     let count = 1;
-    let num = overflowPow(1);
-    while(number >= num) {
-        count++;
-        num = overflowPow(count);
-    }
+    // i like my code 𝑓𝑟𝑒𝑎𝑘𝑦
+    for (let num = overflowPow(1); number >= num; num = overflowPow(++count));
+
     return count;
 }
 
 // encodes a signed integer into a unicode-safe string using a large base (OVERFLOW)
-export function convertINT_D(number: number, chars: number): string {
+export function convertINT_D(number: number, chars: number) {
+    // no nan/infinity
+    if(!isFinite(number)) throw new Error("Cannot use NaN or Infinity in INT_D");
     // special case: zero is always encoded as a single null character
     if (number == 0) return NULL;
 
@@ -69,12 +85,16 @@ export function convertINT_D(number: number, chars: number): string {
     const negative = number < 0;
     number = Math.abs(number);
 
+    // limit range
+    if (number > MAX_INT_D) throw new Error(`INT_D Numbers must be within range -${MAX_INT_D.toLocaleString()} and ${MAX_INT_D.toLocaleString()}.`);
+
     let result = [];
 
     // for each character except the last, extract the digit at that position
     // this is similar to how base conversion works: divide by base^position
-    for (let i = 0; i < chars - 1; i++) {
-        const power = overflowPow(chars - i - 1);
+    const posPowerAmt = chars - 1;
+    for (let i = 0; i < posPowerAmt; i++) {
+        const power = overflowPow(posPowerAmt - i);
         const based = Math.floor(number / power);
         result.push(based);
         // remove it from the number so it doesnt effect future iterations
@@ -98,16 +118,59 @@ export function deconvertINT_D(string: string): number {
 }
 export function deconvertINT_DCodes(codes: number[]): number {
     // for each code point in the string, reverse the sign encoding if necessary,
-    // then multiply by the appropriate base power based on its position
-    return codes.reduce((c, n, i, arr) => {
-        // multiply by the positional weight based on its place (most-significant-digit first)
-        return c + fromSignedINT_C(n) * overflowPow(arr.length - i - 1);
-    }, 0);
+    // multiply by the positional weight based on its place (most-significant-digit first)
+    return codes.reduce((c, n, i, arr) => c + fromSignedINT_C(n) * overflowPow(arr.length - i - 1), 0);
 }
 
 // boolean stuff
 export const compressBools = (array: boolean[]) => array.reduce((byte: number, val: any, i: number) => byte | (val << (6 - i)), 0);
 export const decompressBools = (byte: number) => [...Array(7)].map((_, i) => (byte & (1 << (6 - i))) !== 0);
+
+// 512 to be safe
+const SIGNED_EXP = 512;
+// add signed for negative
+function toSignedExp(exp: number): number {
+    return exp >= 0 ? exp : Math.abs(exp) + SIGNED_EXP;
+}
+// if above that, it's a negative, so turn it back
+function fromSignedExp(exp: number): number {
+    return exp > SIGNED_EXP ? -(exp - SIGNED_EXP) : exp;
+}
+
+// converts numbers larger than Number.MAX_SAFE_INTEGER
+export function convertINT_Es(numbers: number[]): string {
+    const scientificData = numbers.map(number => {
+        // checks
+        if(!isFinite(number)) throw new Error("Cannot use NaN or Infinity in INT_E");
+
+        // 0 is simple
+        if(number == 0) return [0, 0];
+
+        // split the decimal and exponent of exponential,
+        // + will be positive in Number(), and so - will be negative. simpler
+        const [dec, exp] = number.toExponential().split("e").map(Number);
+        // 𝑓𝑟𝑒𝑎𝑘𝑦 decimal remover to keep it integer
+        const man = +String(dec).replace('.', '');
+
+        return [man, toSignedExp(exp) + (man < 0 ? 1 : 0)];
+    });
+
+    const highestSectSize = scientificData.reduce((c, n) => Math.max(c, sectorSize(n[0])), 1) + 1;
+
+    // one char for exp since it won't ever go above 1023,
+    // and convert int d for the compressed part
+    return String.fromCharCode(highestSectSize) + scientificData.map(([man, exp]) => String.fromCharCode(exp) + convertINT_D(man, highestSectSize).padStart(highestSectSize, NULL)).join("");
+}
+// deconverts INT_E
+export function deconvertINT_E(str: string): number {
+    // exponent is stored at char 0
+    const exp = fromSignedExp(str.charCodeAt(0));
+    // deconvert the rest
+    const mantissa = deconvertINT_D(str.substring(1));
+
+    // multiply by tenpow since it's E, and also subtract the length due to the decimal removal
+    return mantissa * tenPow(exp - String(mantissa).length + 1);
+}
 
 // byte size stuff for debugging
 const encoder = new TextEncoder();
