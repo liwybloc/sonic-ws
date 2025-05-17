@@ -20,6 +20,9 @@ import { emitPacket } from '../../util/PacketUtils';
 import { VERSION } from '../../../version';
 import { Packet } from '../../packets/Packets';
 
+// throttle at 95% of rate limit to avoid spikes
+const THRESHOLD_MULT = 0.95;
+
 export abstract class SonicWSCore {
     protected ws: WebSocket;
     protected listeners: {
@@ -38,8 +41,11 @@ export abstract class SonicWSCore {
 
     private rateLimitTimeout: number = -1;
     private rateLimit: number = -1;
+    private rateThreshold: number = -1;
     private sentPackets: number = 0;
     private sendQueue: string[] = [];
+
+    private id: number = -1;
 
     constructor(ws: WebSocket) {
         this.ws = ws;
@@ -72,13 +78,15 @@ export abstract class SonicWSCore {
             throw new Error(`Version mismatch: ${version > VERSION ? "client" : "server"} is outdated (server: ${version}, client: ${VERSION})`);              
         }
 
-        const [ckData, skData, rateLimit] = data.substring(4).split(NULL);
+        const [ckData, skData, uData] = data.substring(4).split(NULL);
         this.clientPackets.createPackets(Packet.deserializeAll(ckData, true));
         this.serverPackets.createPackets(Packet.deserializeAll(skData, true));
 
-        this.rateLimit = rateLimit.charCodeAt(0);
+        this.rateLimit = uData.charCodeAt(0);
+        this.id = uData.charCodeAt(1);
 
         if(this.rateLimit != 0) {
+            this.rateThreshold = Math.round(this.rateLimit * THRESHOLD_MULT);
             this.rateLimitTimeout = setInterval(() => {
                 this.sentPackets = 0;
 
@@ -148,7 +156,7 @@ export abstract class SonicWSCore {
 
     public raw_send(data: string): void {
         if(this.rateLimit == -1) return console.error("A rate limit has not been received by the server!");
-        if(this.rateLimit != 0 && ++this.sentPackets > this.rateLimit) {
+        if(this.rateLimit != 0 && ++this.sentPackets > this.rateThreshold) {
             this.sendQueue.push(data);
             return console.warn(`Client is emitting more packets than the rate limit! Current queue size: ${this.sendQueue.length}`);
         }

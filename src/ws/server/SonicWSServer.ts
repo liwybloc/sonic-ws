@@ -72,7 +72,7 @@ export class SonicWSServer {
             const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket, this.rateLimit);
 
             // send tags to the client so it doesn't have to hard code them in
-            socket.send(keyData + NULL + String.fromCharCode(this.rateLimit));
+            socket.send(keyData + NULL + String.fromCharCode(this.rateLimit) + sonicConnection.code);
 
             this.connections.push(sonicConnection);
             this.connectionMap[sonicConnection.id] = sonicConnection;
