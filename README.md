@@ -2,15 +2,33 @@
 
 ## INFO
 
-WebSocket library focused on bandwidth efficiency and security.
+Sonic WS is an ultra-lightweight, high-performance, and bandwidth efficienct websocket library.
 
-It can reduce packet size by up to 70% or more and validate and process large packets in microseconds.
+Compression:
+- Can reduce packet size by up to 70%+ (for example, 38kb -> 14kb)
+- Optimized bandwidth for many different types to fit special constraints
+- Automatic helpers to flatten nested arrays for maximum wire efficiency
 
-It has low latency and optimized data transfer.
+Developer Friendly:
+- Predefined data types of various sized integers, decimals, strings, enums, etc. and RAW for any special cases
+- Keys are automatically indexed before transfer, improving readability (for example, send("pixel") and send("p") become identical)
+- Data is validated and supports custom validation, ensuring only valid, safe, and untampered packets ever call your listeners
 
-Helper functions for frequent cases are included to reduce dev boilerplate.
+Security:
+- Tamper-proof; any invalid packet instantly causes closure, and tampering is very likely to as well
+- Built-in ability for handshake packets, preventing constant if(!init) checks and null checks in every listener
+- Built-in rate limiting
 
-Can easily handle packets up to multiple megabytes long in milliseconds.
+Performance & Scaling:
+- Can handle very large packets in microseconds
+- Can support megabytes of data with minimal latency
+- Can broadcast to a filtered list of connections such as all, except sender, or any other subset
+
+Developer Experience:
+- Minimal boilerplate code due to listeners only receiving valid data
+- Enums can map to any primitive value, such as numbers, strings, null, etc. in 1 byte
+- Debug tools for socket ids, byte size, data logging, etc. for troubleshooting
+- JSDoc's for understanding* (soon to be complete)
 
 ## SAMPLES
 
