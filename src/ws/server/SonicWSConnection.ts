@@ -19,6 +19,7 @@ import { SonicWSServer } from './SonicWSServer';
 import { getStringBytes, MAX_C } from '../util/CodePointUtil';
 import { listenPacket, processPacket } from '../util/PacketUtils';
 import { BatchHelper } from '../util/BatchHelper';
+import { Packet } from '../packets/Packets';
 
 export class SonicWSConnection {
     private socket: WS.WebSocket;
@@ -226,15 +227,18 @@ export class SonicWSConnection {
         this.listeners[tag].push(listener);
     }
 
+    public send_processed(code: string, data: string, packet: Packet) {
+        if(packet.dataBatching == 0) this.raw_send(code + data);
+        else this.batcher.batchPacket(code, data, packet.maxBatchSize, null);
+    }
+
     /**
      * Sends a packet with the tag and values
      * @param tag The tag to send
      * @param values The values to send
      */
     public send(tag: string, ...values: any[]) {
-        const [code, data, packet] = processPacket(this.host.serverPackets, tag, values);
-        if(packet.dataBatching == 0) this.raw_send(code + data);
-        else this.batcher.batchPacket(code, data, packet.maxBatchSize, null);
+        this.send_processed(...processPacket(this.host.serverPackets, tag, values));
     }
 
     /**

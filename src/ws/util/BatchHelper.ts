@@ -40,9 +40,9 @@ export class BatchHelper {
     }
 
     public batchPacket(code: string, data: string, maxBatchSize: number, processRate: any) {
-        if(this.batchedData[code].length == maxBatchSize) {
+        if(this.batchedData[code].length == maxBatchSize && processRate != null) {
             // hacky, update later
-            if(processRate != null) processRate(code + String.fromCharCode(data.length) + data);
+            processRate(code + String.fromCharCode(data.length) + data);
             return;
         }
         this.batchedData[code].push(data);

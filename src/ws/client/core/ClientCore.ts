@@ -158,12 +158,7 @@ export abstract class SonicWSCore {
         const batchData = BatchHelper.unravelBatch(packet, value);
         if(batchData == null) return this.invalidPacket("Broken batch packet.");
 
-        // count each value towards the rate limit.
-        this.sentPackets--;
-        batchData.forEach(data => {
-            this.listenPacket(data, code);
-            this.sentPackets++;
-        });
+        batchData.forEach(data => this.listenPacket(data, code));
         
     }
 

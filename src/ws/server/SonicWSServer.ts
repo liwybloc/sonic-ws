@@ -22,6 +22,7 @@ import { MAX_C, NULL } from '../util/CodePointUtil';
 import { VERSION, VERSION_CHAR } from '../../version';
 import { Packet } from '../packets/Packets';
 import { error } from 'console';
+import { processPacket } from '../util/PacketUtils';
 
 /**
  * Sonic WS Server Options
@@ -173,7 +174,8 @@ export class SonicWSServer {
      * @param values The values to send
      */
     public broadcastFiltered(tag: string, filter: (socket: SonicWSConnection) => boolean, ...values: any): void {
-        this.connections.filter(filter).forEach(conn => conn.send(tag, ...values));
+        const data = processPacket(this.serverPackets, tag, values);
+        this.connections.filter(filter).forEach(conn => conn.send_processed(...data));
     }
 
         /**
