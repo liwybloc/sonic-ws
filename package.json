@@ -1,6 +1,6 @@
 {
   "name": "sonic-ws",
-  "version": "1.0.0-rc.4",
+  "version": "1.0.0-rc.5",
   "description": "A bandwidth efficient websocket library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -22,7 +22,7 @@
   },
   "homepage": "https://github.com/cutelittlelily/sonic-ws#readme",
   "author": "lily",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
     "node-fetch": "^2.7.0",
     "ws": "^8.18.2"
