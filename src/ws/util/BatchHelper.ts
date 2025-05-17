@@ -14,49 +14,51 @@
  * limitations under the License.
  */
 
+import { SonicWSCore } from "../client/core/ClientCore";
 import { Packet } from "../packets/Packets";
+import { SonicWSConnection } from "../server/SonicWSConnection";
 import { PacketHolder } from "./PacketHolder";
 
 export class BatchHelper {
 
     public batchedData: Record<string, string[]> = {};
 
-    public registerSendPackets(packetHolder: PacketHolder, intervalFunc: any, sendFunc: any) {
+    public registerSendPackets(packetHolder: PacketHolder, clazz: SonicWSCore | SonicWSConnection) {
         packetHolder.getTags().forEach(tag => {
             const packet = packetHolder.getPacket(tag);
             if(packet.dataBatching == 0) return;
             const code = packetHolder.getChar(tag);
-            this.initiateBatch(code, packet.dataBatching, intervalFunc, sendFunc);
+            this.initiateBatch(code, packet.dataBatching, clazz);
         });
     }
 
-    public initiateBatch(code: string, time: number, intervalFunc: any, sendFunc: any) {
+    public initiateBatch(code: string, time: number, clazz: SonicWSCore | SonicWSConnection) {
         this.batchedData[code] = [];
-        intervalFunc(() => {
+        clazz.setInterval(() => {
             if(this.batchedData[code].length == 0) return;
-            sendFunc(code + this.batchedData[code].map(v => String.fromCharCode(v.length) + v).join(""));
+            clazz.raw_send(code + this.batchedData[code].join(""));
             this.batchedData[code] = [];
         }, time);
     }
 
     public batchPacket(code: string, data: string, maxBatchSize: number, processRate: any) {
         if(this.batchedData[code].length == maxBatchSize && processRate != null) {
-            // hacky, update later
+            // hacky, update later to store this data inside of an array here
             processRate(code + String.fromCharCode(data.length) + data);
             return;
         }
-        this.batchedData[code].push(data);
+        this.batchedData[code].push(String.fromCharCode(data.length) + data);
     }
 
-    public static unravelBatch(packet: Packet, data: string): any[] | null {
+    public static unravelBatch(packet: Packet, data: string, socket: SonicWSConnection | null): any[] | string {
         const result: any[] = [];
         for(let i=0;i<data.length;) {
-            if(result.length > packet.maxBatchSize) return null;
+            if(result.length > packet.maxBatchSize) return "Too big of batch";
             const len = data.charCodeAt(i++);
-            if(i + len > data.length) return null;
+            if(i + len > data.length) return "Tampered batch length";
             const sect = data.substring(i, i += len);
-            const listen = packet.listen(sect);
-            if(typeof listen == 'string') return null;
+            const listen = packet.listen(sect, socket);
+            if(typeof listen == 'string') return "Batched packet: " + listen;
             result.push([listen[0], !packet.dontSpread]);
         }
         return result;

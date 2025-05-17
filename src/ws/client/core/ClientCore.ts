@@ -21,8 +21,8 @@ import { VERSION } from '../../../version';
 import { Packet } from '../../packets/Packets';
 import { BatchHelper } from '../../util/BatchHelper';
 
-// throttle at 95% of rate limit to avoid spikes
-const THRESHOLD_MULT = 0.95;
+// throttle at 90% of rate limit to avoid spikes and kicks
+const THRESHOLD_MULT = 0.90;
 
 export abstract class SonicWSCore {
     protected ws: WebSocket;
@@ -92,7 +92,7 @@ export abstract class SonicWSCore {
         this.clientPackets.createPackets(Packet.deserializeAll(ckData, true));
         this.serverPackets.createPackets(Packet.deserializeAll(skData, true));
 
-        this.batcher.registerSendPackets(this.clientPackets, (a: () => void, b: number) => this.setInterval(a,b), (b: string) => this.raw_send(b));
+        this.batcher.registerSendPackets(this.clientPackets, this);
 
         this.rateLimit = uData.charCodeAt(0);
         this.id = uData.charCodeAt(1);
@@ -151,12 +151,12 @@ export abstract class SonicWSCore {
         const packet = this.serverPackets.getPacket(this.serverPackets.getTag(key));
         
         if(packet.dataBatching == 0) {
-            this.listenPacket(packet.listen(value), code);
+            this.listenPacket(packet.listen(value, null), code);
             return;
         }
 
-        const batchData = BatchHelper.unravelBatch(packet, value);
-        if(batchData == null) return this.invalidPacket("Broken batch packet.");
+        const batchData = BatchHelper.unravelBatch(packet, value, null);
+        if(typeof batchData == 'string') return this.invalidPacket(batchData);
 
         batchData.forEach(data => this.listenPacket(data, code));
         
@@ -182,9 +182,9 @@ export abstract class SonicWSCore {
             console.error("A rate limit has not been received by the server!");
             return true;
         }
-        if(this.rateLimit != 0 && ++this.sentPackets > this.rateThreshold) {
+        if(this.rateLimit != 0 && ++this.sentPackets >= this.rateThreshold) {
             this.sendQueue.push(data);
-            console.warn(`Client is emitting more packets than the rate limit! Current queue size: ${this.sendQueue.length}`);
+            console.warn(`Client is approaching the rate limit! Queued packets: ${this.sendQueue.length}`);
             return true;
         }
         return false;

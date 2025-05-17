@@ -71,7 +71,7 @@ export class SonicWSConnection {
         }
 
         this.batcher = new BatchHelper();
-        this.batcher.registerSendPackets(this.host.serverPackets, (a: () => void, b: number) => this.setInterval(a,b), (b: string) => this.raw_send(b));
+        this.batcher.registerSendPackets(this.host.serverPackets, this);
         this.invalidPacket = this.invalidPacket.bind(this);
 
         if(this.handshakePacket == null) {
@@ -141,7 +141,7 @@ export class SonicWSConnection {
 
     private invalidPacket(listened: string) {
         this.socket.close(4003);
-        if(this.print) console.log("Closure cause:", + listened);
+        if(this.print) console.log("Closure cause:", listened);
     }
 
     private listenPacket(data: string | [any[], boolean], tag: string) {
@@ -153,18 +153,16 @@ export class SonicWSConnection {
 
         const [tag, value] = data;
 
-        // eepy code... zzz...
-        // wait.. i like my code frea-
-
         const packet = this.host.clientPackets.getPacket(tag);
 
         if(packet.dataBatching == 0) {
-            this.listenPacket(packet.listen(value), tag);
+            const res = packet.listen(value, this);
+            this.listenPacket(res, tag);
             return;
         }
 
-        const batchData = BatchHelper.unravelBatch(packet, value);
-        if(batchData == null) return this.invalidPacket("Tampered batch packet.");
+        const batchData = BatchHelper.unravelBatch(packet, value, this);
+        if(typeof batchData == 'string') return this.invalidPacket(batchData);
 
         // count each value towards the rate limit.
         this.received--;

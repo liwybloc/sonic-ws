@@ -20,6 +20,7 @@ import { PacketType } from "../packets/PacketType";
 import { NULL, NEGATIVE_C } from "./CodePointUtil";
 import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage } from "../enums/EnumType";
+import { SonicWSConnection } from "../server/SonicWSConnection";
 
 export function processPacket(packets: PacketHolder, tag: string, values: any[]): [code: string, data: string, packet: Packet] {
     const code = packets.getChar(tag);
@@ -114,7 +115,7 @@ export type SharedPacketSettings = {
     maxBatchSize?: number;
 
     /** A validation function that is called whenever data is received. Return true for success, return false to kick socket. */
-    validator?: ((values: any[]) => boolean) | null;
+    validator?: ((socket: SonicWSConnection, values: any[]) => boolean) | null;
 };
 
 /** Settings for single-typed packets */

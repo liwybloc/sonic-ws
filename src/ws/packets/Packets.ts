@@ -16,6 +16,7 @@
 
 import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../enums/EnumType";
+import { SonicWSConnection } from "../server/SonicWSConnection";
 import { splitArray } from "../util/ArrayUtil";
 import { convertINT_D, deconvertINT_DCodes, ETX, processCharCodes, STX } from "../util/CodePointUtil";
 import { UnFlattenData } from "../util/PacketUtils";
@@ -51,9 +52,9 @@ export class Packet {
     public processReceive: (data: string) => any;
     public processSend: (data: any[]) => string;
     public validate: (data: string) => boolean;
-    public customValidator: ((...values: any[]) => boolean) | null;
+    public customValidator: ((socket: SonicWSConnection, ...values: any[]) => boolean) | null;
 
-    constructor(tag: string, schema: PacketSchema, customValidator: ((values: any[]) => boolean) | null, client: boolean) {
+    constructor(tag: string, schema: PacketSchema, customValidator: ((socket: SonicWSConnection, values: any[]) => boolean) | null, client: boolean) {
         this.tag = tag;
         
         this.enumData     = schema.enumData;
@@ -94,7 +95,7 @@ export class Packet {
         this.customValidator = customValidator;
     }
 
-    public listen(value: string): [processed: any, flatten: boolean] | string {
+    public listen(value: string, socket: SonicWSConnection | null): [processed: any, flatten: boolean] | string {
         try {
             if(!this.validate(value)) return "Invalid packet";
 
@@ -104,9 +105,9 @@ export class Packet {
 
             if(this.customValidator != null) {
                 if(!this.dontSpread) {
-                    if(!this.customValidator(...useableData)) return "Didn't pass custom validator";
+                    if(!this.customValidator(socket!, ...useableData)) return "Didn't pass custom validator";
                 } else {
-                    if(!this.customValidator(useableData)) return "Didn't pass custom validator";
+                    if(!this.customValidator(socket!, useableData)) return "Didn't pass custom validator";
                 }
             }
             return [useableData, !this.dontSpread];

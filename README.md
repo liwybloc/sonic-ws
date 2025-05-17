@@ -17,17 +17,18 @@ Developer Friendly:
 Security:
 - Tamper-proof; any invalid packet instantly causes closure, and tampering is very likely to as well
 - Built-in ability for handshake packets, preventing constant if(!init) checks and null checks in every listener
-- Built-in rate limiting
+- Built-in rate limiting for packets
 
 Performance & Scaling:
 - Can handle very large packets in microseconds
-- Can support megabytes of data with minimal latency
+- Can support megabytes of data with minimal latency`
 - Can broadcast to a filtered list of connections such as all, except sender, or any other subset
-- Built-in packet batching feature with no excess code required
+- Built-in packet batching feature with no boilerplate and with per-client queues and bandwidth efficiency
 
 Developer Experience:
 - Minimal boilerplate code due to listeners only receiving valid data
 - Enums can map to any primitive value, such as numbers, strings, null, etc. in 1 byte
+- Auto-closing timers and intervals for sockets
 - Debug tools for socket ids, byte size, data logging, etc. for troubleshooting
 - JSDoc's for understanding* (soon to be complete)
 
@@ -100,6 +101,8 @@ ws.on_close((event) => {
 ```
 
 ## KNOWN ISSUES
+
+some stack size things idkk
 
 ## PLANNED FEATURES
 
