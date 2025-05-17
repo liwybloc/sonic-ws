@@ -23,6 +23,7 @@ Performance & Scaling:
 - Can handle very large packets in microseconds
 - Can support megabytes of data with minimal latency
 - Can broadcast to a filtered list of connections such as all, except sender, or any other subset
+- Built-in packet batching feature with no excess code required
 
 Developer Experience:
 - Minimal boilerplate code due to listeners only receiving valid data
