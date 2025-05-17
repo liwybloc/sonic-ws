@@ -14,5 +14,5 @@
  * limitations under the License.
  */
 
-export const VERSION = 6;
+export const VERSION = 7;
 export const VERSION_CHAR = String.fromCharCode(VERSION);
