@@ -19,7 +19,7 @@ import { EnumPackage, TYPE_CONVERSION_MAP } from "../enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
 import { convertINT_D, deconvertINT_DCodes, ETX, processCharCodes, STX } from "../util/CodePointUtil";
 import { UnFlattenData } from "../util/PacketUtils";
-import { createObjReceiveProcesor, createObjSendProcessor, createObjValidator, PacketReceiveProcessors, PacketSendProcessors, PacketValidityProcessors } from "./PacketProcessors";
+import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, PacketReceiveProcessors, PacketSendProcessors, PacketValidityProcessors } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
 
 export class Packet {
@@ -35,6 +35,9 @@ export class Packet {
     public dataMin: number | number[];
 
     public packetDelimitSize: number;
+
+    public dataBatching: number;
+    public maxBatchSize: number;
 
     public dontSpread: boolean;
     public autoFlatten: boolean;
@@ -53,9 +56,11 @@ export class Packet {
     constructor(tag: string, schema: PacketSchema, customValidator: ((values: any[]) => boolean) | null, client: boolean) {
         this.tag = tag;
         
-        this.enumData    = schema.enumData;
-        this.dontSpread  = schema.dontSpread;
-        this.autoFlatten = schema.autoFlatten;
+        this.enumData     = schema.enumData;
+        this.dontSpread   = schema.dontSpread;
+        this.autoFlatten  = schema.autoFlatten;
+        this.dataBatching = schema.dataBatching;
+        this.maxBatchSize = client ? Infinity : schema.maxBatchSize;
 
         this.packetDelimitSize = schema.packetDelimitSize;
 
@@ -67,7 +72,7 @@ export class Packet {
             this.minSize = this.type.length;
             this.object  = true;
 
-            this.receiveProcessor = createObjReceiveProcesor(this.type, this.packetDelimitSize);
+            this.receiveProcessor = createObjReceiveProcessor(this.type, this.packetDelimitSize);
             this.validifier       = createObjValidator(this.type, this.packetDelimitSize);
             this.sendProcessor    = createObjSendProcessor(this.type, this.packetDelimitSize);
         } else {
@@ -95,19 +100,16 @@ export class Packet {
 
             const processed = this.processReceive(value);
 
-            const isArray = Array.isArray(processed);
-            const flatten = isArray && !this.dontSpread;
-
             const useableData = this.autoFlatten ? UnFlattenData(processed) : processed;
 
             if(this.customValidator != null) {
-                if(flatten) {
+                if(!this.dontSpread) {
                     if(!this.customValidator(...useableData)) return "Didn't pass custom validator";
                 } else {
                     if(!this.customValidator(useableData)) return "Didn't pass custom validator";
                 }
             }
-            return [useableData, flatten];
+            return [useableData, !this.dontSpread];
         } catch (err) {
             console.error("There was an error processing the packet! This is probably my fault... report at https://github.com/cutelittlelily/sonic-ws", err);
             return "Error: " + err;
@@ -123,10 +125,12 @@ export class Packet {
         const spreadFlag = this.dontSpread ? ETX : STX;
         // enum data, avoid null
         const enumData = String.fromCharCode(this.enumData.length + 1) + this.enumData.map(x => x.serialize()).join("");
+        // data batching, also avoid null
+        const dataBatching = String.fromCharCode(this.dataBatching + 1) + String.fromCharCode(this.maxBatchSize + 1);
 
         // single-value packet (not an object schema)
         if (!this.object) {
-            return spreadFlag + enumData +
+            return spreadFlag + dataBatching + enumData +
                 STX +                                                // dummy byte flag for consistent deserialization; becomes -1 to indicate single
                 String.fromCharCode((this.dataMax as number) + 1) +  // the data max, offset by 1 for NULL
                 String.fromCharCode((this.dataMin as number) + 1) +  // the data min, offset by 1 for NULL
@@ -136,7 +140,7 @@ export class Packet {
         }
 
         // object packet
-        return spreadFlag + enumData +
+        return spreadFlag + dataBatching + enumData +
             String.fromCharCode(this.maxSize + 2) +                                     // size, and +2 because of NULL and STX (STX is for single)
             (this.autoFlatten ? ETX : STX) +                                            // auto flatten flag
             String.fromCharCode(this.packetDelimitSize + 1) +                           // packet delimit size, offset by 1 for NULL
@@ -157,6 +161,9 @@ export class Packet {
         const beginningOffset = offset;
 
         const dontSpread: boolean = text[offset] == ETX;
+
+        const dataBatching: number = text.charCodeAt(++offset) - 1;
+        const maxBatchSize: number = text.charCodeAt(++offset) - 1;
 
         const enumLength = text.charCodeAt(++offset) - 1;
         const enums: EnumPackage[] = [];
@@ -209,7 +216,7 @@ export class Packet {
             const tag = text.substring(tagStart, tagStart + tagLength); // tag is tag length long. yeah
 
             return [
-                new Packet(tag, PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, packetDelimitSize), null, client),
+                new Packet(tag, PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, packetDelimitSize, dataBatching, maxBatchSize), null, client),
                 (offset - beginningOffset) + 1 + areaSize + areaSize + size + tagLength,
             ];
         }
@@ -226,7 +233,7 @@ export class Packet {
         const tag: string = text.substring(tagStart + 1, tagStart + 1 + tagLength);
 
         return [
-            new Packet(tag, PacketSchema.single(finalType, dataMax, dataMin, dontSpread), null, client),
+            new Packet(tag, PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, maxBatchSize), null, client),
             (offset - beginningOffset) + 1 + tagLength
         ];
     }
@@ -257,6 +264,9 @@ export class PacketSchema {
 
     public packetDelimitSize: number = 1;
 
+    public dataBatching: number = 0;
+    public maxBatchSize: number = 10;
+
     public enumData: EnumPackage[] = [];
 
     public dontSpread: boolean = false;
@@ -268,7 +278,7 @@ export class PacketSchema {
         this.object = object;
     }
 
-    public static single(type: PacketType | EnumPackage, dataMax: number, dataMin: number, dontSpread: boolean): PacketSchema {
+    public static single(type: PacketType | EnumPackage, dataMax: number, dataMin: number, dontSpread: boolean, dataBatching: number, maxBatchSize: number): PacketSchema {
         const schema = new PacketSchema(false);
 
         if(typeof type == 'number') {
@@ -281,11 +291,13 @@ export class PacketSchema {
         schema.dataMax = dataMax;
         schema.dataMin = dataMin;
         schema.dontSpread = dontSpread;
+        schema.dataBatching = dataBatching;
 
         return schema;
     }
 
-    public static object(types: (PacketType | EnumPackage)[], dataMaxes: number[], dataMins: number[], dontSpread: boolean, autoFlatten: boolean, packetDelimitSize: number): PacketSchema {
+    public static object(types: (PacketType | EnumPackage)[], dataMaxes: number[], dataMins: number[],
+                         dontSpread: boolean, autoFlatten: boolean, packetDelimitSize: number, dataBatching: number, maxBatchSize: number): PacketSchema {
         if(types.length != dataMaxes.length || types.length != dataMins.length)
             throw new Error("There is an inbalance between the amount of types, data maxes, and data mins!");
 
@@ -305,6 +317,8 @@ export class PacketSchema {
         schema.dontSpread = dontSpread;
         schema.autoFlatten = autoFlatten;
         schema.packetDelimitSize = packetDelimitSize;
+        schema.dataBatching = dataBatching;
+        schema.maxBatchSize = maxBatchSize;
 
         return schema;
     }

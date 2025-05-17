@@ -16,9 +16,10 @@
 
 import { PacketHolder } from '../../util/PacketHolder';
 import { NULL } from '../../util/CodePointUtil';
-import { emitPacket } from '../../util/PacketUtils';
+import { listenPacket, processPacket } from '../../util/PacketUtils';
 import { VERSION } from '../../../version';
 import { Packet } from '../../packets/Packets';
+import { BatchHelper } from '../../util/BatchHelper';
 
 // throttle at 95% of rate limit to avoid spikes
 const THRESHOLD_MULT = 0.95;
@@ -45,7 +46,11 @@ export abstract class SonicWSCore {
     private sentPackets: number = 0;
     private sendQueue: string[] = [];
 
-    private id: number = -1;
+    private timers: number[] = [];
+
+    private batcher: BatchHelper;
+
+    public id: number = -1;
 
     constructor(ws: WebSocket) {
         this.ws = ws;
@@ -56,12 +61,17 @@ export abstract class SonicWSCore {
         };
         this.preListen = {};
 
+        this.batcher = new BatchHelper();
+        this.invalidPacket = this.invalidPacket.bind(this);
+        this.processRate = this.processRate.bind(this);
+
         this.keyHandler = event => this.serverKeyHandler(event);
         this.ws.addEventListener('message', this.keyHandler); // lambda to persist 'this'
 
         this.ws.addEventListener('close', (event: CloseEvent) => {
             this.listeners.close.forEach(listener => listener(event));
             if(this.rateLimit != 0 && this.rateLimitTimeout != -1) clearInterval(this.rateLimitTimeout);
+            this.timers.forEach(clearTimeout);
         });
     }
 
@@ -81,6 +91,8 @@ export abstract class SonicWSCore {
         const [ckData, skData, uData] = data.substring(4).split(NULL);
         this.clientPackets.createPackets(Packet.deserializeAll(ckData, true));
         this.serverPackets.createPackets(Packet.deserializeAll(skData, true));
+
+        this.batcher.registerSendPackets(this.clientPackets, (a: () => void, b: number) => this.setInterval(a,b), (b: string) => this.raw_send(b));
 
         this.rateLimit = uData.charCodeAt(0);
         this.id = uData.charCodeAt(1);
@@ -116,6 +128,15 @@ export abstract class SonicWSCore {
         this.keyHandler = null;
     }
 
+    private invalidPacket(listened: string) {
+        console.log(listened);
+        throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/cutelittlelily/sonic-ws");
+    }
+
+    private listenPacket(data: string | [any[], boolean], code: string) {
+        listenPacket(data, this.listeners.event[code], this.invalidPacket);
+    }
+
     private messageHandler(event: MessageEvent) {
         let data = event.data.toString();
 
@@ -128,15 +149,22 @@ export abstract class SonicWSCore {
         if (code == null) return;
 
         const packet = this.serverPackets.getPacket(this.serverPackets.getTag(key));
-        const result = packet.listen(value);
-        if(typeof result == 'string') {
-            console.log(result);
-            throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/cutelittlelily/sonic-ws");
+        
+        if(packet.dataBatching == 0) {
+            this.listenPacket(packet.listen(value), code);
+            return;
         }
-        const [processed, flatten] = result;
 
-        if(flatten) this.listeners.event[code]?.forEach(l => l(...processed));
-        else this.listeners.event[code]?.forEach(l => l(processed));
+        const batchData = BatchHelper.unravelBatch(packet, value);
+        if(batchData == null) return this.invalidPacket("Broken batch packet.");
+
+        // count each value towards the rate limit.
+        this.sentPackets--;
+        batchData.forEach(data => {
+            this.listenPacket(data, code);
+            this.sentPackets++;
+        });
+        
     }
 
     protected listen(key: string, listener: (data: any[]) => void) {
@@ -153,18 +181,29 @@ export abstract class SonicWSCore {
     public raw_onmessage(listener: (data: string) => void): void {
         this.listeners.message.push(listener);
     }
-
-    public raw_send(data: string): void {
-        if(this.rateLimit == -1) return console.error("A rate limit has not been received by the server!");
+    
+    private processRate(data: string): boolean {
+        if(this.rateLimit == -1) {
+            console.error("A rate limit has not been received by the server!");
+            return true;
+        }
         if(this.rateLimit != 0 && ++this.sentPackets > this.rateThreshold) {
             this.sendQueue.push(data);
-            return console.warn(`Client is emitting more packets than the rate limit! Current queue size: ${this.sendQueue.length}`);
+            console.warn(`Client is emitting more packets than the rate limit! Current queue size: ${this.sendQueue.length}`);
+            return true;
         }
+        return false;
+    }
+
+    public raw_send(data: string): void {
+        if(this.processRate(data)) return;
         this.ws.send(data);
     }
 
     public send(tag: string, ...values: any[]): void {
-        emitPacket(this.clientPackets, (d) => this.raw_send(d), tag, values);
+        const [code, data, packet] = processPacket(this.clientPackets, tag, values);
+        if(packet.dataBatching == 0) this.raw_send(code + data);
+        else this.batcher.batchPacket(code, data, packet.maxBatchSize, this.processRate);
     }
 
     public on_ready(listener: () => void): void {
@@ -182,7 +221,29 @@ export abstract class SonicWSCore {
             this.preListen![tag].push(listener);
             return;
         }
-        const packet = this.serverPackets.getPacket(tag);
         this.listen(tag, listener);
     }
+
+    /**
+     * Sets a timeout that will automatically end when the socket closes
+     * @param call The function to call
+     * @param time The time between now and the call (ms)
+     */
+    public setTimeout(call: () => void, time: number): number {
+        const timeout = setTimeout(call, time) as unknown as number;
+        this.timers.push(timeout);
+        return timeout;
+    }
+
+    /**
+     * Sets an interval that will automatically end when the socket closes
+     * @param call The function to call
+     * @param time The time between calls (ms)
+     */
+    public setInterval(call: () => void, time: number): number {
+        const interval = setInterval(call, time) as unknown as number;
+        this.timers.push(interval);
+        return interval;
+    }
+
 }

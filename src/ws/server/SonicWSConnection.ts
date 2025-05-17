@@ -17,7 +17,8 @@
 import * as WS from 'ws';
 import { SonicWSServer } from './SonicWSServer';
 import { getStringBytes, MAX_C } from '../util/CodePointUtil';
-import { emitPacket } from '../util/PacketUtils';
+import { listenPacket, processPacket } from '../util/PacketUtils';
+import { BatchHelper } from '../util/BatchHelper';
 
 export class SonicWSConnection {
     private socket: WS.WebSocket;
@@ -44,6 +45,8 @@ export class SonicWSConnection {
         this.messageHandler(parsed);
     }
 
+    private batcher: BatchHelper;
+
     /** If the packet handshake has been completed; `wss.requireHandshake(packet)` */
     public handshakeComplete: boolean = false;
     
@@ -62,9 +65,13 @@ export class SonicWSConnection {
         this.handshakePacket = handshakePacket;
 
         this.listeners = {};
-        for (const key of Object.values(host.clientPackets.getTags())) {
+        for (const key of Object.values(host.clientPackets.getTagMap())) {
             this.listeners[key] = [];
         }
+
+        this.batcher = new BatchHelper();
+        this.batcher.registerSendPackets(this.host.serverPackets, (a: () => void, b: number) => this.setInterval(a,b), (b: string) => this.raw_send(b));
+        this.invalidPacket = this.invalidPacket.bind(this);
 
         if(this.handshakePacket == null) {
             this.socket.addEventListener('message', this.messageLambda);
@@ -82,11 +89,16 @@ export class SonicWSConnection {
         if(this.rateLimit != 0) this.rateLimitInterval = setInterval(() => this.received = 0, 1000) as unknown as number;
     }
 
-    private parseData(event: WS.MessageEvent): [key: string, value: string] | null {
+    private processRate(): boolean {
         if(this.rateLimit != 0 && ++this.received > this.rateLimit) {
             this.socket.close(4000);
-            return null;
+            return true;
         }
+        return false;
+    }
+
+    private parseData(event: WS.MessageEvent): [key: string, value: string] | null {
+        if(this.processRate()) return null;
 
         const message = event.data.toString();
 
@@ -126,23 +138,39 @@ export class SonicWSConnection {
         this.handshakeComplete = true;
     }
 
+    private invalidPacket(listened: string) {
+        this.socket.close(4003);
+        if(this.print) console.log("Closure cause:", + listened);
+    }
+
+    private listenPacket(data: string | [any[], boolean], tag: string) {
+        listenPacket(data, this.listeners[tag], this.invalidPacket);
+    }
+
     private messageHandler(data: [tag: string, value: string] | null): void {
         if(data == null) return;
 
         const [tag, value] = data;
 
+        // eepy code... zzz...
+        // wait.. i like my code frea-
+
         const packet = this.host.clientPackets.getPacket(tag);
-        const listened = packet.listen(value);
-        // if invalid then ignore it
-        if(typeof listened == 'string') {
-            this.socket.close(4003);
-            if(this.print) console.log("Closure cause:", + listened);
+
+        if(packet.dataBatching == 0) {
+            this.listenPacket(packet.listen(value), tag);
             return;
         }
-        const [processed, flatten] = listened;
 
-        if(flatten) this.listeners[tag].forEach(l => l(...processed));
-        else this.listeners[tag].forEach(l => l(processed));
+        const batchData = BatchHelper.unravelBatch(packet, value);
+        if(batchData == null) return this.invalidPacket("Tampered batch packet.");
+
+        // count each value towards the rate limit.
+        this.received--;
+        for(const data of batchData) {
+            this.listenPacket(data, tag);
+            if(this.processRate()) break;
+        }
     }
 
     private hideNewLines(str: string): string {
@@ -193,10 +221,8 @@ export class SonicWSConnection {
     public on(tag: string, listener: (...values: any) => void): void {
         const code = this.host.clientPackets.getChar(tag);
         if (code == null) throw new Error(`Tag "${tag}" has not been created!`);
-        const packet = this.host.clientPackets.getPacket(tag);
 
         if (!this.listeners[tag]) this.listeners[tag] = [];
-
         this.listeners[tag].push(listener);
     }
 
@@ -206,7 +232,9 @@ export class SonicWSConnection {
      * @param values The values to send
      */
     public send(tag: string, ...values: any[]) {
-        emitPacket(this.host.serverPackets, (d) => this.raw_send(d), tag, values);
+        const [code, data, packet] = processPacket(this.host.serverPackets, tag, values);
+        if(packet.dataBatching == 0) this.raw_send(code + data);
+        else this.batcher.batchPacket(code, data, packet.maxBatchSize, null);
     }
 
     /**

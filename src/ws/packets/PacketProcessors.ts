@@ -206,7 +206,7 @@ export function createObjSendProcessor(types: PacketType[], packetDelimitSize: n
         return result;
     };
 }
-export function createObjReceiveProcesor(types: PacketType[], packetDelimitSize: number): (data: string, dataCaps: number[], packet: Packet) => any {
+export function createObjReceiveProcessor(types: PacketType[], packetDelimitSize: number): (data: string, dataCaps: number[], packet: Packet) => any {
     const processors = types.map(t => PacketReceiveProcessors[t]);
     return (data: string, dataCaps: number[], packet: Packet) => {
         let result: any[] = [];

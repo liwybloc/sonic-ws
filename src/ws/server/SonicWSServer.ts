@@ -21,6 +21,7 @@ import { PacketHolder } from '../util/PacketHolder';
 import { MAX_C, NULL } from '../util/CodePointUtil';
 import { VERSION, VERSION_CHAR } from '../../version';
 import { Packet } from '../packets/Packets';
+import { error } from 'console';
 
 /**
  * Sonic WS Server Options
@@ -123,7 +124,8 @@ export class SonicWSServer {
      * @param packet The tag of the packet to require as a handshake
      */
     public requireHandshake(packet: string) {
-        if(!this.clientPackets.hasTag(packet)) throw new Error(`The client cannot send "${packet}" for handshake!`);
+        if(!this.clientPackets.hasTag(packet)) throw new Error(`The client does not send "${packet}" and so it cannot use it as a handshake!`);
+        if(this.clientPackets.getPacket(packet).dataBatching != 0) throw new Error(`The packet "${packet}" is a batched packet, and cannot be used as a handshake!`);
         this.handshakePacket = packet;
     }
 

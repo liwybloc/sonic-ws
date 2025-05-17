@@ -10,7 +10,7 @@
     "build_node": "rimraf ./dist && tsc -d",
     "build": "npm run build_node && npm run build_web",
     "test_web": "npm run build && node test-site/server.mjs",
-    "test_node": "npm run build_node && node test.mjs",
+    "test_node": "npm run build && node test.mjs",
     "publish": "npm run build && copy .\\bundled\\SonicWS_bundle.js .\\release\\SonicWS_bundle.js"
   },
   "repository": {

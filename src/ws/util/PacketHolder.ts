@@ -68,8 +68,14 @@ export class PacketHolder {
     public getKeys(): Record<string, number> {
         return this.keys;
     }
-    public getTags(): Record<number, string> {
+    public getTagMap(): Record<number, string> {
         return this.tags;
+    }
+    public getTags(): string[] {
+        return Object.values(this.tags);
+    }
+    public getPackets(): Packet[] {
+        return this.packets;
     }
 
     public serialize(): string {
