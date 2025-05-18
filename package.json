@@ -1,7 +1,7 @@
 {
   "name": "sonic-ws",
   "version": "1.0.0-rc.6",
-  "description": "Ultra-lightweight, high-performance, and bandwidth efficienct websocket library",
+  "description": "Ultra-lightweight, high-performance, and bandwidth efficient websocket library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
