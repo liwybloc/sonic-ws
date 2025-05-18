@@ -34,7 +34,7 @@ export const OVERFLOW = NEGATIVE_C + 1;
 
 // precompute the overflow powers
 const OVERFLOW_POWS: number[] = [];
-function overflowPow(num: number): number {
+export function overflowPow(num: number): number {
     // ??= will set it if undefined or just return it
     return OVERFLOW_POWS[num] ??= Math.pow(OVERFLOW, num);
 }

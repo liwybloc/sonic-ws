@@ -2,10 +2,10 @@
 
 ## INFO
 
-Sonic WS is an ultra-lightweight, high-performance, and bandwidth efficient websocket library.
+SonicWS is an ultra-lightweight, high-performance WebSocket library focused on maximum bandwidth efficiency, speed, and security.
 
 Compression:
-- Can reduce packet size by up to 70%+ (for example, 38kb -> 14kb)
+- Lossless compression up to 70% or more (for example, 38kb -> 14kb)
 - Optimized bandwidth for many different types to fit special constraints
 - Automatic helpers to flatten nested arrays for maximum wire efficiency
 
@@ -21,7 +21,7 @@ Security:
 
 Performance & Scaling:
 - Can handle very large packets in microseconds
-- Can support megabytes of data with minimal latency
+- Can support megabytes of data and millions of values with minimal latency
 - Can broadcast to a filtered list of connections such as all, except sender, or any other subset
 - Built-in packet batching feature with no boilerplate and with per-client queues and bandwidth efficiency
 
@@ -31,6 +31,8 @@ Developer Experience:
 - Timers and intervals for sockets that automatically clear upon closure
 - Debug tools for socket ids, byte size, data logging, etc. for troubleshooting
 - JSDoc's for understanding
+
+Whether you're making a real-time game, a dashboard, a distributed system, or anything else, SonicWS gets you safe, structured packets, fast.
 
 ## SAMPLES
 

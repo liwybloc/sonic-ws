@@ -90,7 +90,7 @@ export class Packet {
         }
         
         this.processReceive  = (data: string) => this.receiveProcessor(data, this.dataMax, this, 0);
-        this.processSend     = (...data: any[]) => this.sendProcessor(...data.flat());
+        this.processSend     = (data: any[]) => this.sendProcessor(data);
         this.validate        = client ? () => true : (data: string) => this.validifier(data, this.dataMax, this.dataMin, this, 0);
         this.customValidator = customValidator;
     }

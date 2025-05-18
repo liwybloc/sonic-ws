@@ -16,7 +16,7 @@
 
 import { EnumPackage } from "../enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertINT_D, convertINT_Es, decompressBools, deconvertINT_D, deconvertINT_DCodes, deconvertINT_E, demapZIG_ZAG, fromSignedINT_C, mapZIG_ZAG, MAX_C, NULL, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
+import { compressBools, convertINT_D, convertINT_Es, decompressBools, deconvertINT_D, deconvertINT_DCodes, deconvertINT_E, demapZIG_ZAG, fromSignedINT_C, mapZIG_ZAG, MAX_C, NULL, overflowPow, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 
@@ -152,29 +152,29 @@ export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: num
 };
 
 export const PacketSendProcessors: Record<PacketType, (...data: any) => string> = {
-    [PacketType.NONE]: (_) => "",
-    [PacketType.RAW]: (...data: any) => data.map(String).join(""),
+    [PacketType.NONE]: () => "",
+    [PacketType.RAW]: (data: any[]) => data.map(String).join(""),
 
     // todo: try some kind of string compression ig :p
-    [PacketType.STRINGS]: (...strings: any[]) => strings.map(string => String.fromCharCode(string.toString().length) + string).join(""),
-    [PacketType.ENUMS]: (...enums: string[]) => enums.join(""),
+    [PacketType.STRINGS]: (strings: any[]) => strings.map(string => String.fromCharCode(string.toString().length) + string).join(""),
+    [PacketType.ENUMS]: (enums: string[]) => enums.join(""),
 
-    [PacketType.INTS_C]: (...numbers: number[]) => numbers.map(stringedINT_C).join(""),
-    [PacketType.UINTS_C]: (...numbers: number[]) => String.fromCharCode(...numbers),
-    [PacketType.ZIG_ZAG]: (...numbers: number[]) => String.fromCharCode(...numbers.map(mapZIG_ZAG)),
+    [PacketType.INTS_C]: (numbers: number[]) => numbers.map(stringedINT_C).join(""),
+    [PacketType.UINTS_C]: (numbers: number[]) => String.fromCharCode(...numbers),
+    [PacketType.ZIG_ZAG]: (numbers: number[]) => String.fromCharCode(...numbers.map(mapZIG_ZAG)),
 
-    [PacketType.INTS_D]: (...numbers: number[]) => {
+    [PacketType.INTS_D]: (numbers: number[]) => {
         const sectSize = numbers.reduce((c, n) => Math.max(c, sectorSize(n)), 1);
         const sects = numbers.map(n => convertINT_D(n, sectSize));
         return String.fromCharCode(sectSize) + sects.join("");
     },
-    [PacketType.INTS_A]: (...numbers: number[]) => numbers.map(v => {
+    [PacketType.INTS_A]: (numbers: number[]) => numbers.map(v => {
         const sectSize = sectorSize(v);
         return String.fromCharCode(sectSize) + convertINT_D(v, sectSize);
     }).join(""),
-    [PacketType.EXPONENTIAL]: (...numbers: number[]) => convertINT_Es(numbers),
+    [PacketType.EXPONENTIAL]: (numbers: number[]) => convertINT_Es(numbers),
 
-    [PacketType.DECIMALS]: (...numbers: number[]) => numbers.map(n => {
+    [PacketType.DECIMALS]: (numbers: number[]) => numbers.map(n => {
         const split = n.toString().split(".");
 
         const whole = parseFloat(split[0]) || 0;
@@ -188,17 +188,19 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => string> 
         return String.fromCharCode(num) + convertINT_D(whole, wholeSS) + convertINT_D(decimal, decimalSS);
     }).join(""),
     
-    [PacketType.BOOLEANS]: (...bools: boolean[]) => splitArray(bools, 7).map((bools: boolean[]) => String.fromCharCode(compressBools(bools))).join(""),
+    [PacketType.BOOLEANS]: (bools: boolean[]) => splitArray(bools, 7).map((bools: boolean[]) => String.fromCharCode(compressBools(bools))).join(""),
 }
 
 // so uhm. it work. sorry-
-export function createObjSendProcessor(types: PacketType[], packetDelimitSize: number): (...data: any[]) => string {
+export function createObjSendProcessor(types: PacketType[], packetDelimitSize: number): (data: any[]) => string {
     const size = types.length;
     const processors = types.map(t => PacketSendProcessors[t]);
-    return (...data: any[]) => {
+    return (data: any[]) => {
         let result = "";
         for(let i=0;i<size;i++) {
-            const d = processors[i](...data[i]);
+            const sectorData = data[i];
+            const d = processors[i](Array.isArray(sectorData) ? sectorData : [sectorData]);
+            if(d.length > overflowPow(packetDelimitSize)) throw new Error(`Cannot store ${d.length} bytes of data! Set largePacket: true on the object!`);
             result += convertINT_D(d.length, packetDelimitSize) + d;
         }
         return result;
