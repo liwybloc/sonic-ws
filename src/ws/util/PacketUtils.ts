@@ -62,7 +62,7 @@ export function listenPacket(listened: string | [any[], boolean], listeners: ((.
     if(typeof listened == 'string') return errorCB(listened);
     const [processed, flatten] = listened;
 
-    if(flatten) listeners.forEach(l => l(...processed));
+    if(flatten && Array.isArray(processed)) listeners.forEach(l => l(...processed));
     else listeners.forEach(l => l(processed));
 }
 
