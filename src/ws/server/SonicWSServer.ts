@@ -167,7 +167,7 @@ export class SonicWSServer {
         this.wss.close(callback);
     }
 
-     /**
+    /**
      * Broadcasts a packet to all users connected, but with a filter
      * @param tag The tag to send
      * @param filter The filter for who to send to
@@ -178,7 +178,7 @@ export class SonicWSServer {
         this.connections.filter(filter).forEach(conn => conn.send_processed(...data));
     }
 
-        /**
+    /**
      * Broadcasts a packet to all users connected
      * @param tag The tag to send
      * @param values The values to send

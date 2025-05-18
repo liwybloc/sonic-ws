@@ -30,7 +30,7 @@ Developer Experience:
 - Enums can map to any primitive value, such as numbers, strings, null, etc. in 1 byte
 - Timers and intervals for sockets that automatically clear upon closure
 - Debug tools for socket ids, byte size, data logging, etc. for troubleshooting
-- JSDoc's for understanding* (soon to be complete)
+- JSDoc's for understanding
 
 ## SAMPLES
 

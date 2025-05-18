@@ -18,8 +18,9 @@ import { WrapEnum } from "../../enums/EnumHandler";
 import { FlattenData, UnFlattenData } from "../../util/PacketUtils";
 import { SonicWSCore } from "../core/ClientCore";
 
-const w = window as any;
+// Defines SonicWS class and gives the needed functions
 
+const w = window as any;
 w.SonicWS = class SonicWS extends SonicWSCore {
     constructor(url: string, protocols?: string | string[]) {
         const ws = new WebSocket(url, protocols);

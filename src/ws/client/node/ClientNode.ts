@@ -17,7 +17,13 @@
 import WS from 'ws';
 import { SonicWSCore } from '../core/ClientCore';
 
+/** Class to connect to a SonicWS server */
 export class SonicWS extends SonicWSCore {
+    /**
+     * Creates a connection to the url
+     * @param url The url to connect to
+     * @param options The websocket options
+     */
     constructor(url: string, options?: WS.ClientOptions) {
         const ws = new WS.WebSocket(url, options);
         super(ws as unknown as WebSocket);

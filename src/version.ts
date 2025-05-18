@@ -14,5 +14,7 @@
  * limitations under the License.
  */
 
+/** Current protocol version */
 export const VERSION = 8;
+/** Current protocol version as a character */
 export const VERSION_CHAR = String.fromCharCode(VERSION);

@@ -22,6 +22,13 @@ import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage } from "../enums/EnumType";
 import { SonicWSConnection } from "../server/SonicWSConnection";
 
+/**
+ * Processes and verifies values into a sendable format
+ * @param packets Packet holder
+ * @param tag The tag of the packet
+ * @param values The values
+ * @returns The indexed code, the data, and the packet schema
+ */
 export function processPacket(packets: PacketHolder, tag: string, values: any[]): [code: string, data: string, packet: Packet] {
     const code = packets.getChar(tag);
     if(code == NULL) throw new Error(`Tag "${tag}" has not been created!`);
@@ -57,20 +64,36 @@ export function processPacket(packets: PacketHolder, tag: string, values: any[])
     return [code, values.length > 0 ? packet.processSend(values) : "", packet];
 }
 
+/**
+ * Calls the listener for a packet with error callback
+ * @param listened The listened data
+ * @param listeners The listeners to run
+ * @param errorCB The callback if something goes wrong
+ */
 export function listenPacket(listened: string | [any[], boolean], listeners: ((...values: any) => void)[], errorCB: (data: string) => void) {
     // if invalid then ignore it and call back
     if(typeof listened == 'string') return errorCB(listened);
     const [processed, flatten] = listened;
 
-    if(flatten && Array.isArray(processed)) listeners.forEach(l => l(...processed));
-    else listeners.forEach(l => l(processed));
+    try {
+        if(flatten && Array.isArray(processed)) listeners.forEach(l => l(...processed));
+        else listeners.forEach(l => l(processed));
+    } catch(err) {
+        errorCB(err as string);
+    }
 }
 
+/** Determines if a type is a valid packet type */
 function isValidType(type: any): boolean {
     return (typeof type == 'number' && type in PacketType) || type instanceof EnumPackage;
 }
 
+/** Clamps data max between 0 and the NEGATIVE_C^packetDelimitSize */
 function clampDataMax(dataMax: number, packetDelimitSize: number = 1) {
+    if(dataMax < 0) {
+        console.warn(`Having a data maximum below 0 does not do anything!`);
+        return 0;
+    }
     const max = Math.pow(NEGATIVE_C, packetDelimitSize);
     if(dataMax > max) {
         console.warn(`Only ${max} values can be sent in a single type! Use CreateObjPacket() / largePacket: true if you want to send more.`);
@@ -78,6 +101,7 @@ function clampDataMax(dataMax: number, packetDelimitSize: number = 1) {
     }
     return dataMax;
 }
+/** Clamps data min between 0 and datamax */
 function clampDataMin(dataMin: number, dataMax: number) {
     if(dataMin < 0) {
         console.warn(`Having a data minimum below 0 does not do anything!`);
@@ -91,8 +115,10 @@ function clampDataMin(dataMin: number, dataMax: number) {
     return dataMin;
 }
 
+/** Valid packet type */
 export type ArguableType = PacketType | EnumPackage;
 
+/** Shared packet setting types */
 export type SharedPacketSettings = {
     /** The tag of the packet; used for on(tag) and send(tag) */
     tag: string;
@@ -157,7 +183,7 @@ export type EnumPacketSettings = SharedPacketSettings & {
 /**
  * Creates a structure for a simple single-typed packet.
  * This packet can be sent and received with the specified tag, type, and data cap.
- * @param settings The settings object containing `tag`, `type`, `dataMax`, `dataMin`, and `dontSpread`.
+ * @param settings The settings object containing `tag`, `type`, `dataMax`, `dataMin`, `noDataRange`, `dontSpread`, `validator`, `dataBatching`, and/or `maxBatchSize`.
  * @returns The constructed packet structure data.
  * @throws {Error} If the `type` is invalid.
  */
@@ -179,7 +205,7 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
 /**
  * Creates a structure for an object (multi-typed) packet.
  * This packet allows multiple types and their associated data caps.
- * @param settings The settings object containing `tag`, `types`, `dataMaxes`, `dataMins`, and `dontSpread`.
+ * @param settings The settings object containing `tag`, `types`, `dataMaxes`, `dataMins`, `noDataRange`, `dontSpread`, `autoFlatten`, `largePacket`, `validator`, `dataBatching`, and/or `maxBatchSize`.
  * @returns The constructed packet structure data.
  * @throws {Error} If any type in `types` is invalid.
  */
@@ -215,7 +241,7 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
 /**
  * Creates and defines an enum packet. This can be used to create an enum-based packet
  * with a specific tag and possible values.
- * @param settings The settings object containing `packetTag`, `enumTag`, `strings` (enum values), `dataMax`, `dataMin`, and `dontSpread`.
+ * @param settings The settings object containing `tag`, `enumTag`, `values`, `dataMax`, `dataMin`, `noDataRange`, `dontSpread`, `validator`, `dataBatching`, and/or `maxBatchSize`.
  * @returns The constructed packet structure data.
  */
 export function CreateEnumPacket(settings: EnumPacketSettings): Packet {

@@ -22,7 +22,10 @@ import { BatchHelper } from '../util/BatchHelper';
 import { Packet } from '../packets/Packets';
 
 export class SonicWSConnection {
-    private socket: WS.WebSocket;
+
+    /** Raw 'ws' library socket */
+    public socket: WS.WebSocket;
+
     private host: SonicWSServer;
 
     private listeners: Record<string, Array<(...data: any[]) => void>>;
@@ -225,6 +228,9 @@ export class SonicWSConnection {
         this.listeners[tag].push(listener);
     }
 
+    /**
+     * For internal use.
+     */
     public send_processed(code: string, data: string, packet: Packet) {
         if(packet.dataBatching == 0) this.raw_send(code + data);
         else this.batcher.batchPacket(code, data, packet.maxBatchSize, null);

@@ -25,7 +25,10 @@ import { BatchHelper } from '../../util/BatchHelper';
 const THRESHOLD_MULT = 0.90;
 
 export abstract class SonicWSCore {
-    protected ws: WebSocket;
+
+    /** Raw 'ws' library connection / webjs WebSocket class */
+    public ws: WebSocket;
+
     protected listeners: {
         message: Array<(data: string) => void>,
         close: Array<(event: CloseEvent) => void>,
@@ -173,10 +176,6 @@ export abstract class SonicWSCore {
         this.listeners.event[skey].push(listener);
     }
 
-    public raw_onmessage(listener: (data: string) => void): void {
-        this.listeners.message.push(listener);
-    }
-    
     private processRate(data: string): boolean {
         if(this.rateLimit == -1) {
             console.error("A rate limit has not been received by the server!");
@@ -190,26 +189,55 @@ export abstract class SonicWSCore {
         return false;
     }
 
+    /**
+     * Listens for all messages rawly
+     * @param listener Callback for when data is received
+     */
+    public raw_onmessage(listener: (data: string) => void): void {
+        this.listeners.message.push(listener);
+    }
+
+    /**
+     * Sends raw data
+     */
     public raw_send(data: string): void {
         if(this.processRate(data)) return;
         this.ws.send(data);
     }
 
+    /**
+     * Sends a packet to the server
+     * @param tag The tag of the packet
+     * @param values The values to send
+     */
     public send(tag: string, ...values: any[]): void {
         const [code, data, packet] = processPacket(this.clientPackets, tag, values);
         if(packet.dataBatching == 0) this.raw_send(code + data);
         else this.batcher.batchPacket(code, data, packet.maxBatchSize, this.processRate);
     }
 
+    /**
+     * Listens for when the client connects
+     * @param listener Callback on connection
+     */
     public on_ready(listener: () => void): void {
         if (this.pastKeys) listener();
         else this.readyListeners!.push(listener);
     }
 
+    /**
+     * Listens for when the client closes
+     * @param listener Callback on close with close event
+     */
     public on_close(listener: (event: CloseEvent) => void): void {
         this.listeners.close.push(listener);
     }
 
+    /**
+     * Listens to a packet from the server
+     * @param tag The tag to listen for
+     * @param listener The callback with the values
+     */
     public on(tag: string, listener: (value: any[]) => void): void {
         if (this.ws.readyState !== WebSocket.OPEN) {
             if (!this.preListen![tag]) this.preListen![tag] = [];
