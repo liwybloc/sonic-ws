@@ -20,8 +20,6 @@ import { compressBools, convertINT_D, convertINT_Es, decompressBools, deconvertI
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 
-const STRINGIFY = (data: any) => data.toString();
-
 const LEN_DELIMIT = (data: string, cap: number, min: number) => {
     let sectors = 0;
     for(let index = 0; index < data.length; index++) {
@@ -155,7 +153,7 @@ export const PacketReceiveProcessors: Record<PacketType, (data: string, cap: num
 
 export const PacketSendProcessors: Record<PacketType, (...data: any) => string> = {
     [PacketType.NONE]: (_) => "",
-    [PacketType.RAW]: STRINGIFY,
+    [PacketType.RAW]: (...data: any) => data.map(String).join(""),
 
     // todo: try some kind of string compression ig :p
     [PacketType.STRINGS]: (...strings: any[]) => strings.map(string => String.fromCharCode(string.toString().length) + string).join(""),
