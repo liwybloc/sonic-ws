@@ -16,7 +16,7 @@
 
 import { EnumPackage } from "../enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertINT_D, convertINT_Es, decompressBools, deconvertINT_D, deconvertINT_DCodes, deconvertINT_E, demapZIG_ZAG, fromSignedINT_C, mapZIG_ZAG, NULL, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
+import { compressBools, convertINT_D, convertINT_Es, decompressBools, deconvertINT_D, deconvertINT_DCodes, deconvertINT_E, demapZIG_ZAG, fromSignedINT_C, mapZIG_ZAG, MAX_C, NULL, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 
@@ -34,7 +34,7 @@ const LEN_DELIMIT = (data: string, cap: number, min: number) => {
     return true;
 }
 
-const BY_LEN = (data: string, cap: number, min: number) => data.length >= min && data.length <= cap;
+const INT_C_LEN = (data: string, cap: number, min: number) => data.length >= min && data.length <= cap && processCharCodes(data).find(v => v > MAX_C) == null;
 const INT_D_LIKE = (raw: string, cap: number, min: number, off: number) => {
     if(raw.length == 0) return false;
 
@@ -64,9 +64,9 @@ export const PacketValidityProcessors: Record<PacketType, (data: string, dataCap
         return true;
     },
 
-    [PacketType.INTS_C]: BY_LEN,
-    [PacketType.UINTS_C]: BY_LEN,
-    [PacketType.ZIG_ZAG]: BY_LEN,
+    [PacketType.INTS_C]: INT_C_LEN,
+    [PacketType.UINTS_C]: INT_C_LEN,
+    [PacketType.ZIG_ZAG]: INT_C_LEN,
 
     [PacketType.INTS_D]: (raw, cap, min) => INT_D_LIKE(raw, cap, min, 0),
     [PacketType.INTS_A]: LEN_DELIMIT,
