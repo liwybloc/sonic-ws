@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import { EnumPackage } from "../enums/EnumType";
+import { EnumPackage } from "../util/enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertINT_D, convertINT_Es, decompressBools, deconvertINT_D, deconvertINT_DCodes, deconvertINT_E, demapZIG_ZAG, fromSignedINT_C, mapZIG_ZAG, MAX_C, NULL, overflowPow, processCharCodes, sectorSize, stringedINT_C } from "../util/CodePointUtil";
+import { compressBools, convertINT_D, convertINT_Es, decompressBools, deconvertINT_D, deconvertINT_DCodes, deconvertINT_E, demapZIG_ZAG, fromSignedINT_C, mapZIG_ZAG, MAX_C, NULL, overflowPow, processCharCodes, sectorSize, stringedINT_C } from "../util/packets/CodePointUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 

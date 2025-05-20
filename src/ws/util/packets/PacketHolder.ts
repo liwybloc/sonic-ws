@@ -1,4 +1,4 @@
-import { Packet } from "../packets/Packets";
+import { Packet } from "../../packets/Packets";
 
 /**
  * Holds and maps packets to indexed keys and tags for serialization and lookup
@@ -14,19 +14,22 @@ export class PacketHolder {
     /** Maps tags to packet instances */
     private packetMap: Record<string, Packet>;
     /** List of all packet instances */
-    private packets: Packet[];
+    private packets!: Packet[];
 
     /**
      * Creates a new PacketHolder with an array of packets
      * @param packets Array of packets to register
      */
-    constructor(packets: Packet[]) {
+    constructor(packets?: Packet[]) {
         this.key = 1;
+
         this.keys = {};
         this.tags = {};
-        this.packets = packets;
         this.packetMap = {};
-        this.createPackets(packets);
+
+        if(!packets) return;
+        this.packets = packets;
+        this.holdPackets(packets);
     }
 
     /** Assigns a new unique key to a tag */
@@ -40,7 +43,7 @@ export class PacketHolder {
      * Registers an array of packets and assigns them keys
      * @param packets Array of packets to register
      */
-    public createPackets(packets: Packet[]): void {
+    public holdPackets(packets: Packet[]): void {
         for (const packet of packets)
             this.createKey(packet.tag), this.packetMap[packet.tag] = packet;
     }
@@ -116,11 +119,6 @@ export class PacketHolder {
     /** Serializes all registered packets into a string */
     public serialize(): string {
         return this.packets.map(p => p.serialize()).join("");
-    }
-
-    /** Returns an empty PacketHolder instance */
-    public static empty(): PacketHolder {
-        return new PacketHolder([]);
     }
 
 }

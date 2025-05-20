@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-import { DefineEnum } from "../enums/EnumHandler";
-import { EnumPackage, TYPE_CONVERSION_MAP } from "../enums/EnumType";
+import { DefineEnum } from "../util/enums/EnumHandler";
+import { EnumPackage, TYPE_CONVERSION_MAP } from "../util/enums/EnumType";
 import { SonicWSConnection } from "../server/SonicWSConnection";
 import { splitArray } from "../util/ArrayUtil";
-import { convertINT_D, deconvertINT_DCodes, ETX, processCharCodes, STX } from "../util/CodePointUtil";
-import { UnFlattenData } from "../util/PacketUtils";
+import { convertINT_D, deconvertINT_DCodes, ETX, processCharCodes, STX } from "../util/packets/CodePointUtil";
+import { UnFlattenData } from "../util/packets/PacketUtils";
 import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, PacketReceiveProcessors, PacketSendProcessors, PacketValidityProcessors } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
 

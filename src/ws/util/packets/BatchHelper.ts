@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import { SonicWSCore } from "../client/core/ClientCore";
-import { Packet } from "../packets/Packets";
-import { SonicWSConnection } from "../server/SonicWSConnection";
+import { SonicWSCore } from "../../client/core/ClientCore";
+import { Packet } from "../../packets/Packets";
+import { SonicWSConnection } from "../../server/SonicWSConnection";
 import { PacketHolder } from "./PacketHolder";
 
 export class BatchHelper {

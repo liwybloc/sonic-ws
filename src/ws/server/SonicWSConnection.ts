@@ -16,9 +16,9 @@
 
 import * as WS from 'ws';
 import { SonicWSServer } from './SonicWSServer';
-import { getStringBytes, MAX_C } from '../util/CodePointUtil';
-import { listenPacket, processPacket } from '../util/PacketUtils';
-import { BatchHelper } from '../util/BatchHelper';
+import { getStringBytes, MAX_C } from '../util/packets/CodePointUtil';
+import { listenPacket, processPacket } from '../util/packets/PacketUtils';
+import { BatchHelper } from '../util/packets/BatchHelper';
 import { Packet } from '../packets/Packets';
 
 export class SonicWSConnection {
@@ -54,7 +54,7 @@ export class SonicWSConnection {
     /** If the packet handshake has been completed; `wss.requireHandshake(packet)` */
     public handshakeComplete: boolean = false;
     
-    /** The index of the connection. Alternatively, check `this.code` for a low bandwidth character. */
+    /** The index of the connection; unique for all connected, recycles old disconnected ids. Should be safe for INTS_C unless you have more than 27,647 connected at once. */
     public id: number;
     /** The indexed character of the connection. Smaller data packet in strings. */
     public code: string;
@@ -144,7 +144,7 @@ export class SonicWSConnection {
 
     private invalidPacket(listened: string) {
         this.socket.close(4003);
-        if(this.print) console.log("Closure cause:", listened);
+        console.log("Closure cause:", listened);
     }
 
     private listenPacket(data: string | [any[], boolean], tag: string) {

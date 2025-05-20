@@ -15,12 +15,12 @@
  */
 
 import { PacketHolder } from "./PacketHolder";
-import { Packet, PacketSchema } from "../packets/Packets";
-import { PacketType } from "../packets/PacketType";
+import { Packet, PacketSchema } from "../../packets/Packets";
+import { PacketType } from "../../packets/PacketType";
 import { NULL, NEGATIVE_C } from "./CodePointUtil";
 import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage } from "../enums/EnumType";
-import { SonicWSConnection } from "../server/SonicWSConnection";
+import { SonicWSConnection } from "../../server/SonicWSConnection";
 
 /**
  * Processes and verifies values into a sendable format

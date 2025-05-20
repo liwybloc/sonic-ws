@@ -17,12 +17,11 @@
 import fetch from 'node-fetch';
 import * as WS from 'ws';
 import { SonicWSConnection } from './SonicWSConnection';
-import { PacketHolder } from '../util/PacketHolder';
-import { MAX_C, NULL } from '../util/CodePointUtil';
+import { PacketHolder } from '../util/packets/PacketHolder';
+import { MAX_C, NULL } from '../util/packets/CodePointUtil';
 import { VERSION, VERSION_CHAR } from '../../version';
+import { processPacket } from '../util/packets/PacketUtils';
 import { Packet } from '../packets/Packets';
-import { error } from 'console';
-import { processPacket } from '../util/PacketUtils';
 
 /**
  * Sonic WS Server Options
@@ -38,7 +37,9 @@ export type SonicServerOptions = {
 
 export class SonicWSServer {
     private wss: WS.WebSocketServer;
-    private availableIds: number[] = Array.from({ length: 501 }, (_, i) => i);
+
+    private availableIds: number[] = [];
+    private lastId: number = 0;
     
     private connectListeners: Array<(client: SonicWSConnection) => void> = [];
 
@@ -101,7 +102,9 @@ export class SonicWSServer {
     }
 
     private generateSocketID(): number {
-        return this.availableIds.shift()!;
+        if(this.availableIds.length == 0) this.availableIds.push(this.lastId + 1);
+        this.lastId = this.availableIds.shift()!;
+        return this.lastId;
     }
     
     /**

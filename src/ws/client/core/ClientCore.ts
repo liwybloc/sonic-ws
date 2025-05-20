@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-import { PacketHolder } from '../../util/PacketHolder';
-import { NULL } from '../../util/CodePointUtil';
-import { listenPacket, processPacket } from '../../util/PacketUtils';
+import { PacketHolder } from '../../util/packets/PacketHolder';
+import { NULL } from '../../util/packets/CodePointUtil';
+import { listenPacket, processPacket } from '../../util/packets/PacketUtils';
 import { VERSION } from '../../../version';
 import { Packet } from '../../packets/Packets';
-import { BatchHelper } from '../../util/BatchHelper';
+import { BatchHelper } from '../../util/packets/BatchHelper';
 
 // throttle at 90% of rate limit to avoid spikes and kicks
 const THRESHOLD_MULT = 0.90;
@@ -36,8 +36,8 @@ export abstract class SonicWSCore {
     };
 
     protected preListen: { [key: string]: Array<(data: any[]) => void> } | null;
-    protected clientPackets: PacketHolder = PacketHolder.empty();
-    protected serverPackets: PacketHolder = PacketHolder.empty();
+    protected clientPackets: PacketHolder = new PacketHolder();
+    protected serverPackets: PacketHolder = new PacketHolder();
 
     private pastKeys: boolean = false;
     private readyListeners: Array<() => void> | null = [];
@@ -92,8 +92,8 @@ export abstract class SonicWSCore {
         }
 
         const [ckData, skData, uData] = data.substring(4).split(NULL);
-        this.clientPackets.createPackets(Packet.deserializeAll(ckData, true));
-        this.serverPackets.createPackets(Packet.deserializeAll(skData, true));
+        this.clientPackets.holdPackets(Packet.deserializeAll(ckData, true));
+        this.serverPackets.holdPackets(Packet.deserializeAll(skData, true));
 
         this.batcher.registerSendPackets(this.clientPackets, this);
 

@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import { WrapEnum } from "../../enums/EnumHandler";
-import { FlattenData, UnFlattenData } from "../../util/PacketUtils";
+import { WrapEnum } from "../../util/enums/EnumHandler";
+import { FlattenData, UnFlattenData } from "../../util/packets/PacketUtils";
 import { SonicWSCore } from "../core/ClientCore";
 
 // Defines SonicWS class and gives the needed functions
