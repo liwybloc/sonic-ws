@@ -17,7 +17,7 @@ Developer Friendly:
 Security:
 - Tamper-proof; any invalid packet instantly causes closure, and tampering is very likely to as well
 - Built-in ability for handshake packets, preventing constant if(!init) checks and null checks in every listener
-- Built-in rate limiting for packets
+- Built-in rate limiting for packets; ability for global send & receive, alongside per-packet rate limiting
 
 Performance & Scaling:
 - Can handle very large packets in microseconds
