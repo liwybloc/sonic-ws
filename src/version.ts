@@ -15,6 +15,6 @@
  */
 
 /** Current protocol version */
-export const VERSION = 8;
+export const VERSION = 9;
 /** Current protocol version as a character */
 export const VERSION_CHAR = String.fromCharCode(VERSION);
