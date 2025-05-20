@@ -17,6 +17,7 @@
 import { SonicWSCore } from "../../client/core/ClientCore";
 import { Packet } from "../../packets/Packets";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
+import { convertINT_D, deconvertINT_D } from "./CodePointUtil";
 import { PacketHolder } from "./PacketHolder";
 
 export class BatchHelper {
@@ -41,15 +42,15 @@ export class BatchHelper {
         }, time);
     }
 
-    public batchPacket(code: string, data: string) {
-        this.batchedData[code].push(String.fromCharCode(data.length) + data);
+    public batchPacket(packet: Packet, code: string, data: string) {
+        this.batchedData[code].push(convertINT_D(data.length, packet.packetDelimitSize) + data);
     }
 
     public static unravelBatch(packet: Packet, data: string, socket: SonicWSConnection | null): any[] | string {
         const result: any[] = [];
         for(let i=0;i<data.length;) {
             if(result.length > packet.maxBatchSize) return "Too big of batch";
-            const len = data.charCodeAt(i++);
+            const len = deconvertINT_D(data.slice(i, i += packet.packetDelimitSize));
             if(i + len > data.length) return "Tampered batch length";
             const sect = data.substring(i, i += len);
             const listen = packet.listen(sect, socket);

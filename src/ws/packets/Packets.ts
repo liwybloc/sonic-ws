@@ -23,8 +23,11 @@ import { UnFlattenData } from "../util/packets/PacketUtils";
 import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, PacketReceiveProcessors, PacketSendProcessors, PacketValidityProcessors } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
 
+export type ValidatorFunction = ((socket: SonicWSConnection, values: any[]) => boolean) | null;
+
 export class Packet {
     public tag: string;
+    public defaultEnabled: boolean;
 
     public maxSize: number;
     public minSize: number;
@@ -56,8 +59,9 @@ export class Packet {
     public validate: (data: string) => boolean;
     public customValidator: ((socket: SonicWSConnection, ...values: any[]) => boolean) | null;
 
-    constructor(tag: string, schema: PacketSchema, customValidator: ((socket: SonicWSConnection, values: any[]) => boolean) | null, client: boolean) {
+    constructor(tag: string, schema: PacketSchema, customValidator: ValidatorFunction, enabled: boolean, client: boolean) {
         this.tag = tag;
+        this.defaultEnabled = enabled;
         
         this.enumData     = schema.enumData;
         this.rateLimit    = schema.rateLimit;
@@ -223,8 +227,9 @@ export class Packet {
             const tagLength: number = text.charCodeAt(tagStart - 1) - 1; // tag length is right behind tag, subtracting 1 to reverse
             const tag = text.substring(tagStart, tagStart + tagLength); // tag is tag length long. yeah
 
+            const schema = PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, packetDelimitSize, dataBatching, maxBatchSize, rateLimit);
             return [
-                new Packet(tag, PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, packetDelimitSize, dataBatching, maxBatchSize, rateLimit), null, client),
+                new Packet(tag, schema, null, false, client),
                 (offset - beginningOffset) + 1 + areaSize + areaSize + size + tagLength,
             ];
         }
@@ -240,8 +245,9 @@ export class Packet {
         const tagLength: number = text.charCodeAt(tagStart) - 1;
         const tag: string = text.substring(tagStart + 1, tagStart + 1 + tagLength);
 
+        const schema = PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, maxBatchSize, rateLimit);
         return [
-            new Packet(tag, PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, maxBatchSize, rateLimit), null, client),
+            new Packet(tag, schema, null, false, client),
             (offset - beginningOffset) + 1 + tagLength
         ];
     }

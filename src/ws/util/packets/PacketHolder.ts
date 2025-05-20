@@ -77,6 +77,7 @@ export class PacketHolder {
      * @param tag The packet tag
      */
     public getPacket(tag: string): Packet {
+        if(!(tag in this.packetMap)) throw new Error("Unknown packet tag: " + tag);
         return this.packetMap[tag];
     }
 

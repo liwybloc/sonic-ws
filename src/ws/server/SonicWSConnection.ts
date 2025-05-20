@@ -51,6 +51,8 @@ export class SonicWSConnection {
     private batcher: BatchHelper;
     private rater: RateHandler;
 
+    private enabledPackets: Record<string, boolean> = {};
+
     /** If the packet handshake has been completed; `wss.requireHandshake(packet)` */
     public handshakeComplete: boolean = false;
     
@@ -69,8 +71,9 @@ export class SonicWSConnection {
         this.handshakePacket = handshakePacket;
 
         this.listeners = {};
-        for (const key of Object.values(host.clientPackets.getTagMap())) {
+        for (const key of host.clientPackets.getTags()) {
             this.listeners[key] = [];
+            this.enabledPackets[key] = host.clientPackets.getPacket(key).defaultEnabled;
         }
 
         this.setInterval = this.setInterval.bind(this);
@@ -122,9 +125,17 @@ export class SonicWSConnection {
             return null;
         }
 
+        const tag = this.host.clientPackets.getTag(key);
+
+        // disabled, bye bye
+        if(!this.enabledPackets[tag]) {
+            this.socket.close(4006);
+            return null;
+        }
+
         if(this.rater.trigger("client" + key)) return null;
 
-        return [this.host.clientPackets.getTag(key), value];
+        return [tag, value];
     }
 
     private handshakeHandler(data: WS.MessageEvent): void {
@@ -190,6 +201,21 @@ export class SonicWSConnection {
     }
 
     /**
+     * Enables a packet for the client.
+     * @param tag The tag of the packet
+     */
+    public enablePacket(tag: string) {
+        this.enabledPackets[tag] = true;
+    }
+    /**
+     * Disables a packet for the client.
+     * @param tag The tag of the packet
+     */
+    public disablePacket(tag: string) {
+        this.enabledPackets[tag] = false;
+    }
+
+    /**
      * Checks if the connection is closed
      * @returns If it's closed or not
      */
@@ -222,10 +248,10 @@ export class SonicWSConnection {
      * For internal use.
      */
     public send_processed(code: string, data: string, packet: Packet) {
-        if(this.rater.trigger("client" + code)) return;
+        if(this.rater.trigger("server" + code)) return;
 
         if(packet.dataBatching == 0) this.raw_send(code + data);
-        else this.batcher.batchPacket(code, data);
+        else this.batcher.batchPacket(packet, code, data);
     }
 
     /**

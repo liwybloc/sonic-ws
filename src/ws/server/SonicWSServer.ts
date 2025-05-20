@@ -161,6 +161,24 @@ export class SonicWSServer {
     }
 
     /**
+     * Enables a packet for all current & new clients.
+     * @param tag The tag of the packet
+     */
+    public enablePacket(tag: string) {
+        this.clientPackets.getPacket(tag).defaultEnabled = true;
+        this.connections.forEach(socket => socket.enablePacket(tag));
+    }
+
+    /**
+     * Disables a packet for all current & new clients.
+     * @param tag The tag of the packet
+     */
+    public disablePacket(tag: string) {
+        this.clientPackets.getPacket(tag).defaultEnabled = false;
+        this.connections.forEach(socket => socket.disablePacket(tag));
+    }
+
+    /**
      * Listens for whenever a client connects
      * @param runner Called when ready
      */

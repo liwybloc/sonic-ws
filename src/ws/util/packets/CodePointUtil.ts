@@ -44,8 +44,8 @@ function tenPow(num: number) {
     // ??= will set it if undefined or just return it
     return TEN_POWS[num] ??= Math.pow(10, num);
 }
-// precompute 1-3
-for(let i=1;i<=3;i++) {
+// precompute 0-3
+for(let i=0;i<=3;i++) {
     overflowPow(i);
     tenPow(i);
 }
@@ -91,11 +91,13 @@ export function sectorSize(number: number) {
 }
 
 // encodes a signed integer into a unicode-safe string using a large base (OVERFLOW)
-export function convertINT_D(number: number, chars: number) {
+export function convertINT_D(number: number, chars: number): string {
     // no nan/infinity
     if(!isFinite(number)) throw new Error("Cannot use a non-finite number in INT_E: " + number);
-    // special case: zero is always encoded as a single null character
-    if (number == 0) return NULL.repeat(chars);
+    // zero is just null
+    if(number == 0) return NULL.repeat(chars);
+    // any 1 char will just be INT_C anyway
+    if(chars == 1) return stringedINT_C(number);
 
     // store the sign and work with the absolute value
     const negative = number < 0;
@@ -133,6 +135,7 @@ export function deconvertINT_D(string: string) {
     return deconvertINT_DCodes(processCharCodes(string))
 }
 export function deconvertINT_DCodes(codes: number[]) {
+    if(codes.length == 0) return fromSignedINT_C(codes[0]);
     // for each code point in the string, reverse the sign encoding if necessary,
     // multiply by the positional weight based on its place (most-significant-digit first)
     return codes.reduce((c, n, i, arr) => c + fromSignedINT_C(n) * overflowPow(arr.length - i - 1), 0);

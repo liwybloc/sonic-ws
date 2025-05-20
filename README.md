@@ -7,17 +7,18 @@ SonicWS is an ultra-lightweight, high-performance WebSocket library focused on m
 Compression:
 - Lossless compression up to 70% or more (for example, 38kb -> 14kb)
 - Optimized bandwidth for many different types to fit special constraints
-- Automatic helpers to flatten nested arrays for maximum wire efficiency
+- Automatic helpers to flatten typed nested arrays for maximum wire efficiency (for example, [[1,2,3],[4,5,6]] to [[1,4],[2,5],[3,6]])
 
 Developer Friendly:
 - Predefined data types of various sized integers, decimals, strings, enums, etc. and RAW for any special cases
-- Keys are automatically indexed before transfer, improving readability (for example, send("pixel") and send("p") become identical)
+- Keys are automatically indexed before transfer, improving readability and efficiency (for example, send("pixel") and send("p") use the same bandwidth)
 - Data is validated and supports custom validation, ensuring only valid, safe, and untampered packets ever call your listeners
 
 Security:
-- Tamper-proof; any invalid packet instantly causes closure, and tampering is very likely to as well
-- Built-in ability for handshake packets, preventing constant if(!init) checks and null checks in every listener
+- Tamper-proof; any invalid packet instantly causes closure, and tampering becomes incredibly difficult
+- Built-in ability for handshake packets, preventing repetitive initiation checks in listeners (for example, removes if(!init) everywhere)
 - Built-in rate limiting for packets; ability for global send & receive, alongside per-packet rate limiting
+- Built-in disabling & enabling of packets to prevent abuse
 
 Performance & Scaling:
 - Can handle very large packets in microseconds
@@ -27,7 +28,7 @@ Performance & Scaling:
 
 Developer Experience:
 - Minimal boilerplate code due to listeners only receiving valid data
-- Enums can map to any primitive value, such as numbers, strings, null, etc. in 1 byte
+- Enums can map to any primitive value (e.g. number, string, boolean, null) and transmits in 1 byte
 - Timers and intervals for sockets that automatically clear upon closure
 - Debug tools for socket ids, byte size, data logging, etc. for troubleshooting
 - JSDoc's for understanding

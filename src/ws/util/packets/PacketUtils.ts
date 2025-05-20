@@ -15,7 +15,7 @@
  */
 
 import { PacketHolder } from "./PacketHolder";
-import { Packet, PacketSchema } from "../../packets/Packets";
+import { Packet, PacketSchema, ValidatorFunction } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
 import { NULL, NEGATIVE_C } from "./CodePointUtil";
 import { DefineEnum } from "../enums/EnumHandler";
@@ -140,11 +140,18 @@ export type SharedPacketSettings = {
     /** If data batching is on, this will limit the amount of packets that can be batched into one (only effects the client). Defaults to 10. */
     maxBatchSize?: number;
 
-    /** The amount of times this packet can be sent every second, or 0 for infinite */
+    /** The amount of times this packet can be sent every second, or 0 for infinite. */
     rateLimit?: number;
 
+    /**
+     * If the packet should be enabled by default. Defaults to true. Will kick the client if they send a disabled packet. Does not effect server.
+     * 
+     * Changeable with socket.enablePacket("tag") | socket.disablePacket("tag") (you can also do wss.enablePacket/disablePacket).
+     */
+    enabled?: boolean;
+
     /** A validation function that is called whenever data is received. Return true for success, return false to kick socket. */
-    validator?: ((socket: SonicWSConnection, values: any[]) => boolean) | null;
+    validator?: ValidatorFunction;
 };
 
 /** Settings for single-typed packets */
@@ -192,7 +199,7 @@ export type EnumPacketSettings = SharedPacketSettings & {
  */
 export function CreatePacket(settings: SinglePacketSettings): Packet {
     let { tag, type = PacketType.NONE, dataMax = 1, dataMin, noDataRange = false, dontSpread = false,
-          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0 } = settings;
+          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
 
     if(noDataRange) {
         dataMin = 0;
@@ -203,7 +210,9 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
         throw new Error(`Invalid packet type: ${type}`);
     }
 
-    return new Packet(tag, PacketSchema.single(type, clampDataMax(dataMax), clampDataMin(dataMin, dataMax), dontSpread, dataBatching, maxBatchSize, rateLimit), validator, false);
+    const schema = PacketSchema.single(type, clampDataMax(dataMax), clampDataMin(dataMin, dataMax), dontSpread, dataBatching, maxBatchSize, rateLimit);
+
+    return new Packet(tag, schema, validator, enabled, false);
 }
 
 /**
@@ -215,7 +224,7 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
  */
 export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     let { tag, types, dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false,
-          largePacket = false, validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0 } = settings;
+          largePacket = false, validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
 
     const invalid = types.find((type) => !isValidType(type));
     if (invalid) {
@@ -240,7 +249,9 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
     // largepacket could be turned bigger if i ever need it, and this'll be easier impl anyway
-    return new Packet(tag, PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten, packetDelimitSize, dataBatching, maxBatchSize, rateLimit), validator, false);
+    const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten, packetDelimitSize, dataBatching, maxBatchSize, rateLimit);
+
+    return new Packet(tag, schema, validator, enabled, false);
 }
 
 /**
@@ -251,7 +262,7 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
  */
 export function CreateEnumPacket(settings: EnumPacketSettings): Packet {
     const { tag, enumTag, values, dataMax = 1, dataMin = 0, noDataRange = false, dontSpread = false,
-            validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0 } = settings;
+            validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
 
     return CreatePacket({
         tag: tag,
@@ -264,6 +275,7 @@ export function CreateEnumPacket(settings: EnumPacketSettings): Packet {
         dataBatching,
         maxBatchSize,
         rateLimit,
+        enabled,
     });
 }
 
