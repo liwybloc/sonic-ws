@@ -104,16 +104,8 @@ ws.on_close((event) => {
 
 ## KNOWN ISSUES
 
-some stack size things idkk
-
 ## PLANNED FEATURES
 
 More data checking and better error handling
-
-Layered object packets
-
-JSDoc'ing stuff
-
-Possibilities of nested objects; however these are inefficient to do than just a flat one
 
 Rate limiting per-packet
