@@ -43,6 +43,8 @@ export class Packet {
     public dontSpread: boolean;
     public autoFlatten: boolean;
 
+    public rateLimit: number;
+
     public object: boolean;
     
     private receiveProcessor: (data: string, cap: any, packet: Packet, index: number) => any;
@@ -58,6 +60,7 @@ export class Packet {
         this.tag = tag;
         
         this.enumData     = schema.enumData;
+        this.rateLimit    = schema.rateLimit;
         this.dontSpread   = schema.dontSpread;
         this.autoFlatten  = schema.autoFlatten;
         this.dataBatching = schema.dataBatching;
@@ -128,10 +131,12 @@ export class Packet {
         const enumData = String.fromCharCode(this.enumData.length + 1) + this.enumData.map(x => x.serialize()).join("");
         // data batching, also avoid null
         const dataBatching = String.fromCharCode(this.dataBatching + 1) + String.fromCharCode(this.maxBatchSize + 1);
+        // rate limit, avoiding null again... ugh i should prob fix this with a map-
+        const rateLimit = String.fromCharCode(this.rateLimit + 1);
 
         // single-value packet (not an object schema)
         if (!this.object) {
-            return spreadFlag + dataBatching + enumData +
+            return spreadFlag + dataBatching + rateLimit + enumData +
                 STX +                                                // dummy byte flag for consistent deserialization; becomes -1 to indicate single
                 String.fromCharCode((this.dataMax as number) + 1) +  // the data max, offset by 1 for NULL
                 String.fromCharCode((this.dataMin as number) + 1) +  // the data min, offset by 1 for NULL
@@ -141,7 +146,7 @@ export class Packet {
         }
 
         // object packet
-        return spreadFlag + dataBatching + enumData +
+        return spreadFlag + dataBatching + rateLimit + enumData +
             String.fromCharCode(this.maxSize + 2) +                                     // size, and +2 because of NULL and STX (STX is for single)
             (this.autoFlatten ? ETX : STX) +                                            // auto flatten flag
             String.fromCharCode(this.packetDelimitSize + 1) +                           // packet delimit size, offset by 1 for NULL
@@ -165,6 +170,8 @@ export class Packet {
 
         const dataBatching: number = text.charCodeAt(++offset) - 1;
         const maxBatchSize: number = text.charCodeAt(++offset) - 1;
+
+        const rateLimit: number = text.charCodeAt(++offset) - 1;
 
         const enumLength = text.charCodeAt(++offset) - 1;
         const enums: EnumPackage[] = [];
@@ -217,7 +224,7 @@ export class Packet {
             const tag = text.substring(tagStart, tagStart + tagLength); // tag is tag length long. yeah
 
             return [
-                new Packet(tag, PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, packetDelimitSize, dataBatching, maxBatchSize), null, client),
+                new Packet(tag, PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, packetDelimitSize, dataBatching, maxBatchSize, rateLimit), null, client),
                 (offset - beginningOffset) + 1 + areaSize + areaSize + size + tagLength,
             ];
         }
@@ -234,7 +241,7 @@ export class Packet {
         const tag: string = text.substring(tagStart + 1, tagStart + 1 + tagLength);
 
         return [
-            new Packet(tag, PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, maxBatchSize), null, client),
+            new Packet(tag, PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, maxBatchSize, rateLimit), null, client),
             (offset - beginningOffset) + 1 + tagLength
         ];
     }
@@ -268,6 +275,8 @@ export class PacketSchema {
     public dataBatching: number = 0;
     public maxBatchSize: number = 10;
 
+    public rateLimit: number = 0;
+
     public enumData: EnumPackage[] = [];
 
     public dontSpread: boolean = false;
@@ -279,7 +288,8 @@ export class PacketSchema {
         this.object = object;
     }
 
-    public static single(type: PacketType | EnumPackage, dataMax: number, dataMin: number, dontSpread: boolean, dataBatching: number, maxBatchSize: number): PacketSchema {
+    public static single(type: PacketType | EnumPackage, dataMax: number, dataMin: number, dontSpread: boolean, dataBatching: number,
+                         maxBatchSize: number, rateLimit: number): PacketSchema {
         const schema = new PacketSchema(false);
 
         if(typeof type == 'number') {
@@ -293,12 +303,14 @@ export class PacketSchema {
         schema.dataMin = dataMin;
         schema.dontSpread = dontSpread;
         schema.dataBatching = dataBatching;
+        schema.maxBatchSize = maxBatchSize;
+        schema.rateLimit = rateLimit;
 
         return schema;
     }
 
-    public static object(types: (PacketType | EnumPackage)[], dataMaxes: number[], dataMins: number[],
-                         dontSpread: boolean, autoFlatten: boolean, packetDelimitSize: number, dataBatching: number, maxBatchSize: number): PacketSchema {
+    public static object(types: (PacketType | EnumPackage)[], dataMaxes: number[], dataMins: number[], dontSpread: boolean,
+                         autoFlatten: boolean, packetDelimitSize: number, dataBatching: number, maxBatchSize: number, rateLimit: number): PacketSchema {
         if(types.length != dataMaxes.length || types.length != dataMins.length)
             throw new Error("There is an inbalance between the amount of types, data maxes, and data mins!");
 
@@ -320,6 +332,7 @@ export class PacketSchema {
         schema.packetDelimitSize = packetDelimitSize;
         schema.dataBatching = dataBatching;
         schema.maxBatchSize = maxBatchSize;
+        schema.rateLimit = rateLimit;
 
         return schema;
     }

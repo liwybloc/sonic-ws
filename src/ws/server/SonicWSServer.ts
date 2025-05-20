@@ -49,13 +49,14 @@ export class SonicWSServer {
     private connections: SonicWSConnection[] = [];
     private connectionMap: Record<number, SonicWSConnection> = {};
 
-    private rateLimit: number = 50;
+    private clientRateLimit: number = 500;
+    private serverRateLimit: number = 500;
 
     private handshakePacket: string | null = null;
 
     /**
      * Initializes and hosts a websocket with sonic protocol
-     * Rate limits can be set with wss.setRateLimit(x); it is defaulted at 50/second
+     * Rate limits can be set with wss.setClientRateLimit(x) and wss.setServerRateLimit(x); it is defaulted at 500/second per both
      * @param settings Sonic Server Options such as schema data for client and server packets, alongside websocket options
      */
     constructor(settings: SonicServerOptions) {
@@ -72,10 +73,10 @@ export class SonicWSServer {
         const keyData = "SWS" + VERSION_CHAR + s_clientPackets + NULL + s_serverPackets;
 
         this.wss.on('connection', (socket) => {
-            const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket, this.rateLimit);
+            const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket, this.clientRateLimit, this.serverRateLimit);
 
             // send tags to the client so it doesn't have to hard code them in
-            socket.send(keyData + NULL + String.fromCharCode(this.rateLimit) + sonicConnection.code);
+            socket.send(keyData + NULL + String.fromCharCode(this.clientRateLimit) + sonicConnection.code);
 
             this.connections.push(sonicConnection);
             this.connectionMap[sonicConnection.id] = sonicConnection;
@@ -134,16 +135,29 @@ export class SonicWSServer {
     }
 
     /**
-     * Sets the rate limit for all clients
+     * Sets the rate limit for all client-side packets
      * @param limit Amount of packets the sockets can send every second, or 0 for infinite
      */
-    public setRateLimit(limit: number) {
+    public setClientRateLimit(limit: number) {
         // so that i can store limits in 1 packet
         if(limit > MAX_C) {
             limit = 0;
             console.warn(`A rate limit above ${MAX_C} is considered infinite.`);
         }
-        this.rateLimit = limit;
+        this.clientRateLimit = limit;
+    }
+
+    /**
+     * Sets the rate limit for server-side packets per-socket
+     * @param limit Amount of packets the server can send every second, or 0 for infinite
+     */
+    public setServerRateLimit(limit: number) {
+        // so that i can store limits in 1 packet
+        if(limit > MAX_C) {
+            limit = 0;
+            console.warn(`A rate limit above ${MAX_C} is considered infinite.`);
+        }
+        this.serverRateLimit = limit;
     }
 
     /**

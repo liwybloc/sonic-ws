@@ -41,12 +41,7 @@ export class BatchHelper {
         }, time);
     }
 
-    public batchPacket(code: string, data: string, maxBatchSize: number, processRate: any) {
-        if(this.batchedData[code].length == maxBatchSize && processRate != null) {
-            // hacky, update later to store this data inside of an array here
-            processRate(code + String.fromCharCode(data.length) + data);
-            return;
-        }
+    public batchPacket(code: string, data: string) {
         this.batchedData[code].push(String.fromCharCode(data.length) + data);
     }
 

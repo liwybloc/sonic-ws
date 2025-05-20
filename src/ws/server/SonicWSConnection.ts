@@ -16,10 +16,13 @@
 
 import * as WS from 'ws';
 import { SonicWSServer } from './SonicWSServer';
-import { getStringBytes, MAX_C } from '../util/packets/CodePointUtil';
+import { getStringBytes } from '../util/packets/CodePointUtil';
 import { listenPacket, processPacket } from '../util/packets/PacketUtils';
 import { BatchHelper } from '../util/packets/BatchHelper';
 import { Packet } from '../packets/Packets';
+import { RateHandler } from '../util/packets/RateHandler';
+
+const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
 
 export class SonicWSConnection {
 
@@ -31,10 +34,6 @@ export class SonicWSConnection {
     private listeners: Record<string, Array<(...data: any[]) => void>>;
 
     private print: boolean = false;
-
-    private rateLimitInterval!: number;
-    private rateLimit: number;
-    private received: number = 0;
 
     private timers: number[] = [];
     
@@ -50,6 +49,7 @@ export class SonicWSConnection {
     }
 
     private batcher: BatchHelper;
+    private rater: RateHandler;
 
     /** If the packet handshake has been completed; `wss.requireHandshake(packet)` */
     public handshakeComplete: boolean = false;
@@ -59,7 +59,7 @@ export class SonicWSConnection {
     /** The indexed character of the connection. Smaller data packet in strings. */
     public code: string;
 
-    constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, rateLimit: number) {
+    constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number) {
         this.socket = socket;
         this.host = host;
 
@@ -73,9 +73,21 @@ export class SonicWSConnection {
             this.listeners[key] = [];
         }
 
+        this.setInterval = this.setInterval.bind(this);
+
         this.batcher = new BatchHelper();
         this.batcher.registerSendPackets(this.host.serverPackets, this);
         this.invalidPacket = this.invalidPacket.bind(this);
+
+        this.rater = new RateHandler(this);
+
+        this.rater.registerRate(CLIENT_RATELIMIT_TAG, clientRateLimit);
+        this.rater.registerRate(SERVER_RATELIMIT_TAG, serverRateLimit);
+
+        this.rater.registerAll(host.clientPackets, "client");
+        this.rater.registerAll(host.serverPackets, "server");
+
+        this.rater.start();
 
         if(this.handshakePacket == null) {
             this.socket.addEventListener('message', this.messageLambda);
@@ -85,24 +97,12 @@ export class SonicWSConnection {
         }
 
         this.socket.on('close', () => {
-            if(this.rateLimit != 0) clearInterval(this.rateLimitInterval);
             this.timers.forEach(clearTimeout);
         });
-
-        this.rateLimit = rateLimit;
-        if(this.rateLimit != 0) this.rateLimitInterval = setInterval(() => this.received = 0, 1000) as unknown as number;
-    }
-
-    private processRate(): boolean {
-        if(this.rateLimit != 0 && ++this.received > this.rateLimit) {
-            this.socket.close(4000);
-            return true;
-        }
-        return false;
     }
 
     private parseData(event: WS.MessageEvent): [key: string, value: string] | null {
-        if(this.processRate()) return null;
+        if(this.rater.trigger(CLIENT_RATELIMIT_TAG)) return null;
 
         const message = event.data.toString();
 
@@ -121,6 +121,8 @@ export class SonicWSConnection {
             this.socket.close(4002);
             return null;
         }
+
+        if(this.rater.trigger("client" + key)) return null;
 
         return [this.host.clientPackets.getTag(key), value];
     }
@@ -168,10 +170,10 @@ export class SonicWSConnection {
         if(typeof batchData == 'string') return this.invalidPacket(batchData);
 
         // count each value towards the rate limit.
-        this.received--;
+        this.rater.subtract(CLIENT_RATELIMIT_TAG);
         for(const data of batchData) {
             this.listenPacket(data, tag);
-            if(this.processRate()) break;
+            if(this.rater.trigger(CLIENT_RATELIMIT_TAG)) break;
         }
     }
 
@@ -182,6 +184,7 @@ export class SonicWSConnection {
     /** Sends raw data to the user; will likely fail validity checks if used externally */
     public raw_send(data: string): void {
         if(this.isClosed()) throw new Error("Connection is already closed!");
+        if(this.rater.trigger(SERVER_RATELIMIT_TAG)) return;
         if(this.print) console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${getStringBytes(data)})\x1b[0m ${this.hideNewLines(data)}`);
         this.socket.send(data);
     }
@@ -192,19 +195,6 @@ export class SonicWSConnection {
      */
     public isClosed(): boolean {
         return this.socket.readyState == WS.CLOSED;
-    }
-
-    /**
-     * Sets the rate limit of the client
-     * @param limit How many packets can be sent every second, 0 for no limit
-     */
-    public setRateLimit(limit: number): void {
-        // so that i can store limits in 1 packet
-        if(limit > MAX_C) {
-            limit = 0;
-            console.warn(`A rate limit above ${MAX_C} is considered infinite.`);
-        }
-        this.rateLimit = limit;
     }
 
     /**
@@ -232,8 +222,10 @@ export class SonicWSConnection {
      * For internal use.
      */
     public send_processed(code: string, data: string, packet: Packet) {
+        if(this.rater.trigger("client" + code)) return;
+
         if(packet.dataBatching == 0) this.raw_send(code + data);
-        else this.batcher.batchPacket(code, data, packet.maxBatchSize, null);
+        else this.batcher.batchPacket(code, data);
     }
 
     /**

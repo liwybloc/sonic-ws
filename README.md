@@ -104,8 +104,8 @@ ws.on_close((event) => {
 
 ## KNOWN ISSUES
 
+Batch rate limit is off by 1
+
 ## PLANNED FEATURES
 
 More data checking and better error handling
-
-Rate limiting per-packet

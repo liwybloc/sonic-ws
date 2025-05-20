@@ -27,7 +27,7 @@ const THRESHOLD_MULT = 0.90;
 export abstract class SonicWSCore {
 
     /** Raw 'ws' library connection / webjs WebSocket class */
-    public ws: WebSocket;
+    public socket: WebSocket;
 
     protected listeners: {
         message: Array<(data: string) => void>,
@@ -43,10 +43,6 @@ export abstract class SonicWSCore {
     private readyListeners: Array<() => void> | null = [];
     private keyHandler: ((event: MessageEvent) => undefined) | null;
 
-    private rateLimitTimeout: number = -1;
-    private rateLimit: number = -1;
-    private rateThreshold: number = -1;
-    private sentPackets: number = 0;
     private sendQueue: string[] = [];
 
     private timers: number[] = [];
@@ -56,7 +52,7 @@ export abstract class SonicWSCore {
     public id: number = -1;
 
     constructor(ws: WebSocket) {
-        this.ws = ws;
+        this.socket = ws;
         this.listeners = {
             message: [],
             close: [],
@@ -66,14 +62,12 @@ export abstract class SonicWSCore {
 
         this.batcher = new BatchHelper();
         this.invalidPacket = this.invalidPacket.bind(this);
-        this.processRate = this.processRate.bind(this);
 
         this.keyHandler = event => this.serverKeyHandler(event);
-        this.ws.addEventListener('message', this.keyHandler); // lambda to persist 'this'
+        this.socket.addEventListener('message', this.keyHandler); // lambda to persist 'this'
 
-        this.ws.addEventListener('close', (event: CloseEvent) => {
+        this.socket.addEventListener('close', (event: CloseEvent) => {
             this.listeners.close.forEach(listener => listener(event));
-            if(this.rateLimit != 0 && this.rateLimitTimeout != -1) clearInterval(this.rateLimitTimeout);
             this.timers.forEach(clearTimeout);
         });
     }
@@ -81,13 +75,13 @@ export abstract class SonicWSCore {
     private serverKeyHandler(event: MessageEvent): undefined {
         const data: string = event.data.toString();
         if(!data.startsWith("SWS")) {
-            this.ws.close(1000);
+            this.socket.close(1000);
             throw new Error("The server requested is not a Sonic WS server.");
         }
 
         const version = data.charCodeAt(3);
         if(version != VERSION) {
-            this.ws.close(1000);
+            this.socket.close(1000);
             throw new Error(`Version mismatch: ${version > VERSION ? "client" : "server"} is outdated (server: ${version}, client: ${VERSION})`);              
         }
 
@@ -96,20 +90,6 @@ export abstract class SonicWSCore {
         this.serverPackets.holdPackets(Packet.deserializeAll(skData, true));
 
         this.batcher.registerSendPackets(this.clientPackets, this);
-
-        this.rateLimit = uData.charCodeAt(0);
-        this.id = uData.charCodeAt(1);
-
-        if(this.rateLimit != 0) {
-            this.rateThreshold = Math.round(this.rateLimit * THRESHOLD_MULT);
-            this.rateLimitTimeout = setInterval(() => {
-                this.sentPackets = 0;
-
-                const toSend = [...this.sendQueue];
-                this.sendQueue = [];
-                toSend.forEach(p => this.raw_send(p));
-            }, 1000) as unknown as number;
-        }
 
         Object.keys(this.preListen!).forEach(tag => this.preListen![tag].forEach(listener => {
             const key = this.serverPackets.get(tag);
@@ -125,8 +105,8 @@ export abstract class SonicWSCore {
         this.readyListeners!.forEach(l => l());
         this.readyListeners = null; // clear
 
-        this.ws.removeEventListener('message', this.keyHandler!);
-        this.ws.addEventListener('message', event => this.messageHandler(event)); // lambda to persist 'this'
+        this.socket.removeEventListener('message', this.keyHandler!);
+        this.socket.addEventListener('message', event => this.messageHandler(event)); // lambda to persist 'this'
 
         this.keyHandler = null;
     }
@@ -176,19 +156,6 @@ export abstract class SonicWSCore {
         this.listeners.event[skey].push(listener);
     }
 
-    private processRate(data: string): boolean {
-        if(this.rateLimit == -1) {
-            console.error("A rate limit has not been received by the server!");
-            return true;
-        }
-        if(this.rateLimit != 0 && ++this.sentPackets >= this.rateThreshold) {
-            this.sendQueue.push(data);
-            console.warn(`Client is approaching the rate limit! Queued packets: ${this.sendQueue.length}`);
-            return true;
-        }
-        return false;
-    }
-
     /**
      * Listens for all messages rawly
      * @param listener Callback for when data is received
@@ -201,8 +168,7 @@ export abstract class SonicWSCore {
      * Sends raw data
      */
     public raw_send(data: string): void {
-        if(this.processRate(data)) return;
-        this.ws.send(data);
+        this.socket.send(data);
     }
 
     /**
@@ -213,7 +179,7 @@ export abstract class SonicWSCore {
     public send(tag: string, ...values: any[]): void {
         const [code, data, packet] = processPacket(this.clientPackets, tag, values);
         if(packet.dataBatching == 0) this.raw_send(code + data);
-        else this.batcher.batchPacket(code, data, packet.maxBatchSize, this.processRate);
+        else this.batcher.batchPacket(code, data);
     }
 
     /**
@@ -239,7 +205,7 @@ export abstract class SonicWSCore {
      * @param listener The callback with the values
      */
     public on(tag: string, listener: (value: any[]) => void): void {
-        if (this.ws.readyState !== WebSocket.OPEN) {
+        if (this.socket.readyState !== WebSocket.OPEN) {
             if (!this.preListen![tag]) this.preListen![tag] = [];
             this.preListen![tag].push(listener);
             return;
