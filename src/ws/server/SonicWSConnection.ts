@@ -253,7 +253,7 @@ export class SonicWSConnection {
         if(this.rater.trigger("server" + code)) return;
 
         if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
-        else this.batcher.batchPacket(packet, code, data);
+        else this.batcher.batchPacket(code, data);
     }
 
     /**

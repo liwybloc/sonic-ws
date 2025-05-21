@@ -47,8 +47,7 @@ export const PacketValidityProcessors: Record<PacketType, (data: Uint8Array, dat
     [PacketType.NONE]: (data) => data.length == 0,
     [PacketType.RAW]: () => true,
 
-    [PacketType.STRINGS_UTF8]: (raw: Uint8Array, cap: number, min: number) => {
-        const data = Array.from(raw);
+    [PacketType.STRINGS_UTF8]: (data: Uint8Array, cap: number, min: number) => {
         let sectors = 0, index = 0;
         while(index < data.length) {
             sectors++;
@@ -60,8 +59,7 @@ export const PacketValidityProcessors: Record<PacketType, (data: Uint8Array, dat
         if(sectors < min) return false;
         return true;
     },
-    [PacketType.STRINGS_UTF16]: (raw: Uint8Array, cap: number, min: number) => {
-        const data = Array.from(raw);
+    [PacketType.STRINGS_UTF16]: (data: Uint8Array, cap: number, min: number) => {
         let sectors = 0, index = 0;
         while(index < data.length) {
             sectors++;

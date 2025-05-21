@@ -313,7 +313,7 @@ export function convertVarInt(num: number, signed: boolean) {
                   : convertSVarInt(num, 0               , MAX_UVARINT, uvarIntOverflowPow, UVARINT_OVERFLOW, false);
 }
 
-export function readVarInt(arr: number[], off: number, signed: boolean) {
+export function readVarInt(arr: number[] | Uint8Array, off: number, signed: boolean) {
     let num = [];
     let cont;
     do {

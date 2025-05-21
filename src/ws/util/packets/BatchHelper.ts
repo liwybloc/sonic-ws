@@ -18,7 +18,7 @@ import { SonicWSCore } from "../../client/core/ClientCore";
 import { Packet } from "../../packets/Packets";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
 import { toPacketBuffer } from "../BufferUtil";
-import { convertBytePows, deconvertBytePows } from "./CompressionUtil";
+import { convertBytePows, convertVarInt, deconvertBytePows, readVarInt } from "./CompressionUtil";
 import { PacketHolder } from "./PacketHolder";
 
 export class BatchHelper {
@@ -43,9 +43,9 @@ export class BatchHelper {
         }, time);
     }
 
-    public batchPacket(packet: Packet, code: number, data: number[]) {
+    public batchPacket(code: number, data: number[]) {
         const batch = this.batchedData[code];
-        batch.push(...convertBytePows(data.length, packet.packetDelimitSize));
+        batch.push(...convertVarInt(data.length, false));
         data.forEach(val => batch.push(val));
     }
 
@@ -53,9 +53,10 @@ export class BatchHelper {
         const result: any[] = [];
         for(let i=0;i<data.length;) {
             if(result.length > packet.maxBatchSize) return "Too big of batch";
-            const len = deconvertBytePows(data.slice(i, i += packet.packetDelimitSize));
-            if(i + len > data.length) return "Tampered batch length";
-            const sect = data.slice(i, i += len);
+            const [off, varint] = readVarInt(data, i, false);
+            i = off;
+            if(i + varint > data.length) return "Tampered batch length";
+            const sect = data.slice(i, i += varint);
             const listen = packet.listen(sect, socket);
             if(typeof listen == 'string') return "Batched packet: " + listen;
             result.push([listen[0], !packet.dontSpread]);

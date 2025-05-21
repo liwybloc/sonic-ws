@@ -181,7 +181,7 @@ export abstract class SonicWSCore {
     public send(tag: string, ...values: any[]): void {
         const [code, data, packet] = processPacket(this.clientPackets, tag, values);
         if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
-        else this.batcher.batchPacket(packet, code, data);
+        else this.batcher.batchPacket(code, data);
     }
 
     /**
