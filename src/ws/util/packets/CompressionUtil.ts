@@ -34,17 +34,24 @@ export const MAX_SHORT = 0xFFFF;
 // we split the usable range in half to separate positive and negative encodings
 export const NEGATIVE_SHORT = Math.floor(MAX_SHORT / 2);
 // overflow for shorts in construction
-export const SHORT_OVERFLOW = MAX_BYTE + 1;
+export const SHORT_CC_OVERFLOW = MAX_BYTE + 1;
+// overflow for shorts base
+export const SHORT_OVERFLOW = MAX_SHORT + 1;
 
 // highest number INT_D can optimally support
 export const MAX_INT_D = Number.MAX_SAFE_INTEGER;
 
 
 // precompute the overflow powers
-const OVERFLOW_POWS: number[] = [];
-export function overflowPow(num: number): number {
+const BYTE_OVERFLOW_POWS: number[] = [];
+export function byteOverflowPow(num: number): number {
     // ??= will set it if undefined or just return it
-    return OVERFLOW_POWS[num] ??= Math.pow(BYTE_OVERFLOW, num);
+    return BYTE_OVERFLOW_POWS[num] ??= Math.pow(BYTE_OVERFLOW, num);
+}
+const SHORT_OVERFLOW_POWS: number[] = [];
+export function shortOverflowPow(num: number): number {
+    // ??= will set it if undefined or just return it
+    return SHORT_OVERFLOW_POWS[num] ??= Math.pow(SHORT_OVERFLOW, num);
 }
 // precompute the 2^x powers
 const TWO_POWS: number[] = [];
@@ -54,7 +61,8 @@ function twoPow(num: number) {
 }
 // precompute 0-3
 for(let i=0;i<=3;i++) {
-    overflowPow(i);
+    byteOverflowPow(i);
+    shortOverflowPow(i);
     twoPow(i);
 }
 
@@ -67,7 +75,7 @@ export type SHORT_BITS = [high: number, low: number];
 // reconstruction
 export function fromShort(short: SHORT_BITS) {
     // convert to number
-    return short[0] * SHORT_OVERFLOW + short[1];
+    return short[0] * SHORT_CC_OVERFLOW + short[1];
 }
 // checks, conversion
 export function toShort(n: number, signed: boolean): SHORT_BITS {
@@ -77,7 +85,7 @@ export function toShort(n: number, signed: boolean): SHORT_BITS {
     const lim = signed ? NEGATIVE_SHORT : MAX_SHORT;
     if (n > lim || n < -lim - 1) throw new Error(`${signed ? "Signed " : " "}Short Numbers must be within range -${lim + 1} and ${lim}`);
     // how many times it passes SHORT_OVERFLOW and the remainder
-    return [Math.floor(n / SHORT_OVERFLOW), n % SHORT_OVERFLOW];
+    return [Math.floor(n / SHORT_CC_OVERFLOW), n % SHORT_CC_OVERFLOW];
 }
 
 // this converts an encoded code point back to a signed number
@@ -126,26 +134,26 @@ export function sectorSize(number: number) {
     // iterative system because it's faster than log
     let count = 1;
     // i like my code 𝑓𝑟𝑒𝑎𝑘𝑦
-    for (let num = overflowPow(1); number >= num; num = overflowPow(++count));
+    for (let num = byteOverflowPow(1); number >= num; num = byteOverflowPow(++count));
 
     return count;
 }
 
-// encodes a signed integer into a unicode-safe string using a large base (OVERFLOW)
-export function convertINT_DCodes(number: number, chars: number): number[] {
+// encodes a number into a safe array using a large base (OVERFLOW)
+export function convertBase(number: number, chars: number, single: any, neg: number, overflow: number, overflowFunc: any): number[] {
     // no nan/infinity
-    if(!isFinite(number)) throw new Error("Cannot use a non-finite number in INT_E: " + number);
+    if(!isFinite(number)) throw new Error("Cannot use a non-finite number: " + number);
     // zero is just null
-    if(number == 0) return Array.from({length: chars});
+    if(number == 0) return Array.from({length: chars}).map(() => 0);
     // any 1 char will just be INT_C anyway
-    if(chars == 1) return [toSignedByte(number)];
+    if(chars == 1) return [single(number)];
 
     // store the sign and work with the absolute value
     const negative = number < 0;
     number = Math.abs(number);
 
     // limit range
-    if (number > MAX_INT_D) throw new Error(`INT_D Numbers must be within range -${MAX_INT_D.toLocaleString()} and ${MAX_INT_D.toLocaleString()}: ${number}`);
+    if (number > MAX_INT_D) throw new Error(`Non-float numbers must be within range -${MAX_INT_D.toLocaleString()} and ${MAX_INT_D.toLocaleString()}: ${number}`);
 
     let result = [];
 
@@ -153,7 +161,7 @@ export function convertINT_DCodes(number: number, chars: number): number[] {
     // this is similar to how base conversion works: divide by base^position
     const posPowerAmt = chars - 1;
     for (let i = 0; i < posPowerAmt; i++) {
-        const power = overflowPow(posPowerAmt - i);
+        const power = overflowFunc(posPowerAmt - i);
         const based = Math.floor(number / power);
         result.push(based);
         // remove it from the number so it doesnt effect future iterations
@@ -161,27 +169,38 @@ export function convertINT_DCodes(number: number, chars: number): number[] {
     }
 
     // the last digit is just the remainder
-    result.push(number % BYTE_OVERFLOW);
+    result.push(number % overflow);
 
     // if the number was negative, we offset each character to indicate the sign
     // we only offset non-zero digits to avoid collisions with the null character
-    const bits = negative ? result.map(part => part > 0 ? part + NEGATIVE_BYTE : part)
+    const bits = negative ? result.map(part => part > 0 ? part + neg : part)
                             : result;
 
     return bits;
 }
 
-// encodes a signed integer into a unicode-safe string using a large base (OVERFLOW)
-export function convertINT_D(number: number, chars: number): string {
-    return String.fromCharCode(...convertINT_DCodes(number, chars));
+// im sleepy go aways..
+
+export function convertBytePows(number: number, chars: number): number[] {
+    return convertBase(number, chars, toSignedByte, NEGATIVE_BYTE, BYTE_OVERFLOW, byteOverflowPow);
+}
+
+export function convertUBytePows(number: number, chars: number): number[] {
+    return convertBase(number, chars, (n: number) => n, 0, BYTE_OVERFLOW, byteOverflowPow);
 }
 
 // decodes a string created by convertINT_D back into the original signed integer
-export function deconvertINT_DCodes(codes: any) {
+export function deconvertBytePows(codes: any) {
     if(codes.length == 0) return fromSignedByte(codes[0]);
     // for each code point in the string, reverse the sign encoding if necessary,
     // multiply by the positional weight based on its place (most-significant-digit first)
-    return codes.reduce((c: number, n: number, i: number, arr: any) => c + fromSignedByte(n) * overflowPow(arr.length - i - 1), 0);
+    return codes.reduce((c: number, n: number, i: number, arr: any) => c + fromSignedByte(n) * byteOverflowPow(arr.length - i - 1), 0);
+}
+export function deconvertUBytePows(codes: number[]): number {
+    if(codes.length == 0) return codes[0];
+    // for each code point in the string, reverse the sign encoding if necessary,
+    // multiply by the positional weight based on its place (most-significant-digit first)
+    return codes.reduce((c: number, n: number, i: number, arr: any) => c + n * byteOverflowPow(arr.length - i - 1), 0);
 }
 
 // boolean stuff

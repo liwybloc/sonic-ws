@@ -17,7 +17,7 @@
 import { PacketHolder } from "./PacketHolder";
 import { Packet, PacketSchema, ValidatorFunction } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
-import { NEGATIVE_BYTE } from "./CompressionUtil";
+import { BYTE_OVERFLOW, MAX_BYTE, MAX_SHORT, NEGATIVE_BYTE } from "./CompressionUtil";
 import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage } from "../enums/EnumType";
 
@@ -92,9 +92,9 @@ function clampDataMax(dataMax: number, packetDelimitSize: number = 1) {
         console.warn(`Having a data maximum below 0 does not do anything!`);
         return 0;
     }
-    const max = Math.pow(NEGATIVE_BYTE, packetDelimitSize);
+    const max = Math.pow(BYTE_OVERFLOW, packetDelimitSize);
     if(dataMax > max) {
-        console.warn(`Only ${max} values can be sent in a single type! Use CreateObjPacket() / largePacket: true if you want to send more.`);
+        console.warn(`Only ${max} values can be sent on this type! Use CreateObjPacket() & packetSize: x if you want to send more.`);
         return max;
     }
     return dataMax;
@@ -105,7 +105,7 @@ function clampDataMin(dataMin: number, dataMax: number) {
         console.warn(`Having a data minimum below 0 does not do anything!`);
         return 0;
     }
-    // also catches >NEGATIVE_C
+    // also catches >BYTE_OVERFLOW
     if(dataMin > dataMax) {
         console.warn(`Data minimum can not be higher than the data maximum!`);
         return dataMax;
@@ -172,8 +172,8 @@ export type MultiPacketSettings = SharedPacketSettings & {
     dataMins?: number[] | number;
     /** Will automatically run FlattenData() and UnFlattenData() on values; this will optimize [[x,y,z],[x,y,z]...] for wire transfer */
     autoFlatten?: boolean;
-    /** If the packet will have values larger than 55,296 then this will allow up to 3,057,647,616 length for some minor bandwidth cost. */
-    largePacket?: boolean;
+    /** If the packet will have values larger than 255 bytes, you can increase this value to get 255^x values. */
+    packetSize?: number;
 };
 
 /** Settings for single-typed enum packets */
@@ -201,7 +201,7 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
 
     if(noDataRange) {
         dataMin = 0;
-        dataMax = NEGATIVE_BYTE;
+        dataMax = BYTE_OVERFLOW;
     } else if(dataMin == undefined) dataMin = type == PacketType.NONE ? 0 : dataMax;
 
     if (!isValidType(type)) {
@@ -222,18 +222,15 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
  */
 export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     let { tag, types, dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false,
-          largePacket = false, validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
+          packetSize = 1, validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
 
     const invalid = types.find((type) => !isValidType(type));
     if (invalid) {
         throw new Error(`Invalid packet type: ${invalid}`);
     }
 
-    // if needed, change to largePacket as a number for it to be any
-    const packetDelimitSize = largePacket ? 2 : 1;
-
     if(noDataRange) {
-        dataMaxes = Array.from({ length: types.length }).map(() => Math.pow(NEGATIVE_BYTE, packetDelimitSize));
+        dataMaxes = Array.from({ length: types.length }).map(() => Math.pow(BYTE_OVERFLOW, packetSize));
         dataMins = Array.from({ length: types.length }).map(() => 0);
     } else {
         if(dataMaxes == undefined) dataMaxes = Array.from({ length: types.length }).map(() => 1);
@@ -243,11 +240,11 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
         else if (!Array.isArray(dataMins)) dataMins = Array.from({ length: types.length }).map(() => dataMins as number);
     }
 
-    const clampedDataMaxes = dataMaxes.map(m => clampDataMax(m, packetDelimitSize));
+    const clampedDataMaxes = dataMaxes.map(m => clampDataMax(m, packetSize));
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
     // largepacket could be turned bigger if i ever need it, and this'll be easier impl anyway
-    const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten, packetDelimitSize, dataBatching, maxBatchSize, rateLimit);
+    const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten, packetSize, dataBatching, maxBatchSize, rateLimit);
 
     return new Packet(tag, schema, validator, enabled, false);
 }

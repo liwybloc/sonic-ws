@@ -16,7 +16,7 @@
 
 import { EnumPackage, EnumValue } from "../util/enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertFloat, convertINT_DCodes, decompressBools, deconvertFloat, deconvertINT_DCodes, demapShort_ZZ, demapZigZag, fromShort, fromSignedByte, fromSignedShort, mapShort_ZZ, mapZigZag, MAX_BYTE, overflowPow, processCharCodes, sectorSize, SHORT_BITS, toByte, toShort, toSignedByte, toSignedShort } from "../util/packets/CompressionUtil";
+import { compressBools, convertFloat, convertBytePows, decompressBools, deconvertFloat, deconvertBytePows, demapShort_ZZ, demapZigZag, fromShort, fromSignedByte, fromSignedShort, mapShort_ZZ, mapZigZag, MAX_BYTE, byteOverflowPow, processCharCodes, sectorSize, SHORT_BITS, toByte, toShort, toSignedByte, toSignedShort, shortOverflowPow } from "../util/packets/CompressionUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 import { splitBuffer } from "../util/BufferUtil";
@@ -116,12 +116,12 @@ export const PacketReceiveProcessors: Record<PacketType, (data: Uint8Array, cap:
     [PacketType.USHORTS]: (data) => splitBuffer(data, 2).map(v => fromShort(v as SHORT_BITS)),
     [PacketType.SHORTS_ZZ]: (data) => splitBuffer(data, 2).map(v => demapShort_ZZ(v as SHORT_BITS)),
 
-    [PacketType.INTEGERS_D]: (data) => splitArray(data.slice(1), data[0]).map(deconvertINT_DCodes),
+    [PacketType.INTEGERS_D]: (data) => splitArray(data.slice(1), data[0]).map(deconvertBytePows),
     [PacketType.INTEGERS_A]: (data) => {
         let numbers: number[] = [];
         for(let i = 0; i < data.length; i++) {
             const sectSize = data[i];
-            numbers.push(deconvertINT_DCodes(data.slice(i + 1, i + 1 + sectSize)));
+            numbers.push(deconvertBytePows(data.slice(i + 1, i + 1 + sectSize)));
             i += sectSize;
         }
         return numbers;
@@ -160,7 +160,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => number[]
         const res: number[] = [];
         const sectSize = numbers.reduce((c, n) => Math.max(c, sectorSize(n)), 1);
         res.push(sectSize);
-        numbers.forEach(n => convertINT_DCodes(n, sectSize).forEach(c => res.push(c)));
+        numbers.forEach(n => convertBytePows(n, sectSize).forEach(c => res.push(c)));
         return res;
     },
     [PacketType.INTEGERS_A]: (numbers: number[]) => {
@@ -168,7 +168,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => number[]
         for(const number of numbers) {
             const sectSize = sectorSize(number);
             res.push(sectSize);
-            convertINT_DCodes(number, sectSize).forEach(n => res.push(n));
+            convertBytePows(number, sectSize).forEach(n => res.push(n));
         }
         return res;
     },
@@ -182,13 +182,14 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => number[]
 export function createObjSendProcessor(types: PacketType[], packetDelimitSize: number): (data: any[]) => number[] {
     const size = types.length;
     const processors = types.map(t => PacketSendProcessors[t]);
+    const lim = byteOverflowPow(packetDelimitSize);
     return (data: any[]) => {
         let result: number[] = [];
         for(let i=0;i<size;i++) {
             const sectorData = data[i];
             const d = processors[i](Array.isArray(sectorData) ? sectorData : [sectorData]);
-            if(d.length > overflowPow(packetDelimitSize)) throw new Error(`Cannot store ${d.length} bytes of data! Set largePacket: true on the object!`);
-            result.push(...convertINT_DCodes(d.length, packetDelimitSize));
+            if(d.length > lim) throw new Error(`Cannot store ${d.length}/${lim} bytes of data! Increase packetSize on the object!`);
+            result.push(...convertBytePows(d.length, packetDelimitSize));
             d.forEach(val => result.push(val));
         }
         return result;
@@ -200,7 +201,7 @@ export function createObjReceiveProcessor(types: PacketType[], packetDelimitSize
         let result: any[] = [];
         let enums = 0;
         for(let i=0;i<data.length;) {
-            const sectorLength = deconvertINT_DCodes(data.slice(i, i += packetDelimitSize));
+            const sectorLength = deconvertBytePows(data.slice(i, i += packetDelimitSize));
             const sector = data.slice(i, i += sectorLength);
             result.push(processors[result.length](sector, dataCaps[result.length], packet, types[result.length] == PacketType.ENUMS ? enums++ : 0));
         }
@@ -212,7 +213,7 @@ export function createObjValidator(types: PacketType[], packetDelimitSize: numbe
     return (data: Uint8Array, dataCaps: number[], dataMins: number[], packet: Packet) => {
         let sectors = 0, enums = 0;
         for(let i=0;i<data.length;) {
-            const sectorLength = deconvertINT_DCodes(data.slice(i, i += packetDelimitSize));
+            const sectorLength = deconvertBytePows(data.slice(i, i += packetDelimitSize));
             if(sectorLength + i > data.length) return false;
             const sector = data.slice(i, i += sectorLength);
             if(!validators[sectors](sector, dataCaps[sectors], dataMins[sectors], packet, types[sectors] == PacketType.ENUMS ? enums++ : 0)) return false;

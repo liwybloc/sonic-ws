@@ -18,7 +18,7 @@ import { SonicWSCore } from "../../client/core/ClientCore";
 import { Packet } from "../../packets/Packets";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
 import { toPacketBuffer } from "../BufferUtil";
-import { convertINT_DCodes, deconvertINT_DCodes } from "./CompressionUtil";
+import { convertBytePows, deconvertBytePows } from "./CompressionUtil";
 import { PacketHolder } from "./PacketHolder";
 
 export class BatchHelper {
@@ -45,7 +45,7 @@ export class BatchHelper {
 
     public batchPacket(packet: Packet, code: number, data: number[]) {
         const batch = this.batchedData[code];
-        batch.push(...convertINT_DCodes(data.length, packet.packetDelimitSize));
+        batch.push(...convertBytePows(data.length, packet.packetDelimitSize));
         data.forEach(val => batch.push(val));
     }
 
@@ -53,7 +53,7 @@ export class BatchHelper {
         const result: any[] = [];
         for(let i=0;i<data.length;) {
             if(result.length > packet.maxBatchSize) return "Too big of batch";
-            const len = deconvertINT_DCodes(data.slice(i, i += packet.packetDelimitSize));
+            const len = deconvertBytePows(data.slice(i, i += packet.packetDelimitSize));
             if(i + len > data.length) return "Tampered batch length";
             const sect = data.slice(i, i += len);
             const listen = packet.listen(sect, socket);

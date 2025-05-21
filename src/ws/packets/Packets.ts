@@ -18,7 +18,7 @@ import { DefineEnum } from "../util/enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../util/enums/EnumType";
 import { SonicWSConnection } from "../server/SonicWSConnection";
 import { splitArray } from "../util/ArrayUtil";
-import { convertINT_D, deconvertINT_DCodes, ETX, processCharCodes, STX } from "../util/packets/CompressionUtil";
+import { convertUBytePows, deconvertUBytePows, ETX, processCharCodes, STX } from "../util/packets/CompressionUtil";
 import { UnFlattenData } from "../util/packets/PacketUtils";
 import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, PacketReceiveProcessors, PacketSendProcessors, PacketValidityProcessors } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
@@ -100,6 +100,8 @@ export class Packet {
         this.processSend     = (data: any[]) => this.sendProcessor(data);
         this.validate        = client ? () => true : (data: Uint8Array) => this.validifier(data, this.dataMax, this.dataMin, this, 0);
         this.customValidator = customValidator;
+        
+        this.serializeBytePows = this.serializeBytePows.bind(this);
     }
 
     public listen(value: Uint8Array, socket: SonicWSConnection | null): [processed: any, flatten: boolean] | string {
@@ -124,8 +126,8 @@ export class Packet {
         }
     }
 
-    private serializeINT_D(n: number) {
-        return String.fromCharCode(...processCharCodes(convertINT_D(n, this.packetDelimitSize)).map(x => x + 1));
+    private serializeBytePows(n: number) {
+        return String.fromCharCode(...convertUBytePows(n, this.packetDelimitSize).map(x => x + 1));
     }
 
     public serialize(): string {
@@ -154,15 +156,15 @@ export class Packet {
             String.fromCharCode(this.maxSize + 2) +                                     // size, and +2 because of NULL and STX (STX is for single)
             (this.autoFlatten ? ETX : STX) +                                            // auto flatten flag
             String.fromCharCode(this.packetDelimitSize + 1) +                           // packet delimit size, offset by 1 for NULL
-            (this.dataMax as number[]).map(x => this.serializeINT_D(x)).join("") +      // all data maxes, serialized
-            (this.dataMin as number[]).map(x => this.serializeINT_D(x)).join("") +      // all data mins, serialized
+            (this.dataMax as number[]).map(this.serializeBytePows).join("") +          // all data maxes, serialized
+            (this.dataMin as number[]).map(this.serializeBytePows).join("") +          // all data mins, serialized
             (this.type as PacketType[]).map(x => String.fromCharCode(x + 1)).join("") + // all types, offset by 1 for NULL
             String.fromCharCode(this.tag.length + 1) +                                  // tag length, offset by 1 for NULL
             this.tag;                                                                   // the tag
     }
 
-    private static processINT_Ds(area: string, packetDelimitSize: number) {
-        return splitArray(processCharCodes(area), packetDelimitSize).map((x: number[]) => deconvertINT_DCodes(x.map(y => y - 1))); // subtract 1 to reverse
+    private static processBytePows(area: string, packetDelimitSize: number) {
+        return splitArray(processCharCodes(area), packetDelimitSize).map((x: number[]) => deconvertUBytePows(x.map(y => y - 1))); // subtract 1 to reverse
     }
 
     // i think i was high when i made these,
@@ -216,8 +218,8 @@ export class Packet {
             const tEnd = tStart + size;       // types section end
             const tagStart = tEnd + 1;        // tag string starts after tag length byte
 
-            const dataMaxes: number[]  = this.processINT_Ds(text.substring(dcStart, dcEnd), packetDelimitSize);
-            const dataMins: number[]   = this.processINT_Ds(text.substring(dmStart, dmEnd), packetDelimitSize);
+            const dataMaxes: number[]  = this.processBytePows(text.substring(dcStart, dcEnd), packetDelimitSize);
+            const dataMins: number[]   = this.processBytePows(text.substring(dmStart, dmEnd), packetDelimitSize);
 
             const types: PacketType[]  = processCharCodes(text.substring(tStart, tEnd)).map(x => x - 1);
 
