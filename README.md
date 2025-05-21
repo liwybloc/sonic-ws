@@ -8,6 +8,7 @@ Compression:
 - Lossless compression up to 70% or more (for example, 38kb -> 14kb)
 - Optimized bandwidth for many different types to fit special constraints
 - Automatic helpers to flatten typed nested arrays for maximum wire efficiency (for example, [[1,2,3],[4,5,6]] to [[1,4],[2,5],[3,6]])
+- Uses raw bytes to transmit data as efficiently as possible
 
 Developer Friendly:
 - Predefined data types of various sized integers, decimals, strings, enums, etc. and RAW for any special cases
@@ -30,6 +31,7 @@ Developer Experience:
 - Minimal boilerplate code due to listeners only receiving valid data
 - Enums can map to any primitive value (e.g. number, string, boolean, null) and transmits in 1 byte
 - Timers and intervals for sockets that automatically clear upon closure
+- Many data types to bring speed, clarity, and security
 - Debug tools for socket ids, byte size, data logging, etc. for troubleshooting
 - JSDoc's for understanding
 
