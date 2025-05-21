@@ -48,13 +48,15 @@ export enum PacketType {
     /** One or more integers up to MAX_SAFE_INTEGER | 9,007,199,254,740,991 (or negative). Similar maximum size will produce maximum efficiency */
     INTEGERS_D = 10,
 
-    /** One or more integers of any size. */
+    /** One or more integers up to 562,949,953,421,311. */
     VARINT = 11,
+    /** One or more integers up to 562,949,953,421,311 */
+    VARINT_ZZ = 12,
 
     /** One or more single precision floating point numbers. Only up to 7 digits of accuracy. */
-    FLOAT = 12,
+    FLOAT = 13,
 
     /** One or more true/false */
-    BOOLEANS = 13,
+    BOOLEANS = 14,
     
 }

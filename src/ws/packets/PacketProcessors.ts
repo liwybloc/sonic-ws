@@ -36,6 +36,24 @@ const LEN_DELIMIT = (data: Uint8Array, cap: number, min: number) => {
 const BYTE_LEN = (data: Uint8Array, cap: number, min: number) => data.length >= min && data.length <= cap;
 const SHORT_LEN = (data: Uint8Array, cap: number, min: number) => data.length >= min * 2 && data.length <= cap * 2 && data.length % 2 == 0;
 
+const VARINT_VERIF = (raw: Uint8Array, cap: number, min: number) => {
+    if(raw.length == 0) return false;
+
+    let sectors = 0;
+    let i = 0;
+    while(i < raw.length) {
+        let cont = false, inSect = 0;
+        do {
+            if(++inSect > MAX_VSECT_SIZE) return false;
+            cont = (raw[i++] & VARINT_CHAIN_FLAG) != 0;
+        } while (cont);
+        if(++sectors > cap) return false;
+    }
+    if(sectors < min) return false;
+
+    return true;
+};
+
 // todo, instead of big array make this a function that creates functions, then i can include pre-defined data like Math.floor(min/8) and stuff
 export const PacketValidityProcessors: Record<PacketType, (data: Uint8Array, dataCap: number, dataMin: number, packet: Packet, index: number) => boolean> = {
     [PacketType.NONE]: (data) => data.length == 0,
@@ -75,23 +93,9 @@ export const PacketValidityProcessors: Record<PacketType, (data: Uint8Array, dat
 
         return true;
     },
-    [PacketType.VARINT]: (raw: Uint8Array, cap: number, min: number) => {
-        if(raw.length == 0) return false;
 
-        let sectors = 0;
-        let i = 0;
-        while(i < raw.length) {
-            let cont = false, inSect = 0;
-            do {
-                if(++inSect > MAX_VSECT_SIZE) return false;
-                cont = (raw[i++] & VARINT_CHAIN_FLAG) != 0;
-            } while (cont);
-            if(++sectors > cap) return false;
-        }
-        if(sectors < min) return false;
-
-        return true;
-    },
+    [PacketType.VARINT]: VARINT_VERIF,
+    [PacketType.VARINT_ZZ]: VARINT_VERIF,
     
     [PacketType.FLOAT]: (data, cap, min) => {
         let sectors = 0;
@@ -136,7 +140,9 @@ export const PacketReceiveProcessors: Record<PacketType, (data: Uint8Array, cap:
     [PacketType.SHORTS_ZZ]: (data) => splitBuffer(data, 2).map(v => demapShort_ZZ(v as SHORT_BITS)),
 
     [PacketType.INTEGERS_D]: (data) => splitArray(data.slice(1), data[0]).map(deconvertBytePows),
+
     [PacketType.VARINT]: (data) => deconvertVarInts(Array.from(data)),
+    [PacketType.VARINT_ZZ]: (data) => deconvertVarInts(Array.from(data)).map(demapZigZag),
 
     [PacketType.FLOAT]: (data) => splitBuffer(data, 4).map(deconvertFloat),
 
@@ -174,7 +180,9 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => number[]
         numbers.forEach(n => convertBytePows(n, sectSize).forEach(c => res.push(c)));
         return res;
     },
+
     [PacketType.VARINT]: (numbers: number[]) => numbers.map(convertVarInt).flat(),
+    [PacketType.VARINT_ZZ]: (numbers: number[]) => numbers.map(n => convertVarInt(mapZigZag(n))).flat(),
 
     [PacketType.FLOAT]: (floats: number[]) => floats.map(convertFloat).flat(),
     
