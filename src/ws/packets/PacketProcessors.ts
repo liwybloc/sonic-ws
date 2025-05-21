@@ -33,19 +33,8 @@ const LEN_DELIMIT = (data: Uint8Array, cap: number, min: number) => {
     return true;
 }
 
-const BYTE_LEN = (data: Uint8Array, cap: number, min: number) => data.length >= min && data.length <= cap && data.find(v => v > MAX_BYTE) == null;
-const SHORT_LEN = (data: Uint8Array, cap: number, min: number) => data.length >= min * 2 && data.length <= cap * 2 && data.length % 2 == 0 && data.find(v => v > MAX_BYTE) == null;
-const INT_D_LIKE = (raw: Uint8Array, cap: number, min: number, off: number) => {
-    if(raw.length == 0) return false;
-
-    const dataLength = raw.length - 1, sectSize = raw[0] + off;
-    if(dataLength % sectSize != 0) return false;
-
-    const valueAmount = dataLength / sectSize;
-    if(valueAmount < min || valueAmount > cap) return false;
-
-    return true;
-}
+const BYTE_LEN = (data: Uint8Array, cap: number, min: number) => data.length >= min && data.length <= cap;
+const SHORT_LEN = (data: Uint8Array, cap: number, min: number) => data.length >= min * 2 && data.length <= cap * 2 && data.length % 2 == 0;
 
 // todo, instead of big array make this a function that creates functions, then i can include pre-defined data like Math.floor(min/8) and stuff
 export const PacketValidityProcessors: Record<PacketType, (data: Uint8Array, dataCap: number, dataMin: number, packet: Packet, index: number) => boolean> = {
@@ -72,14 +61,23 @@ export const PacketValidityProcessors: Record<PacketType, (data: Uint8Array, dat
     [PacketType.USHORTS]: SHORT_LEN,
     [PacketType.SHORTS_ZZ]: SHORT_LEN,
 
-    [PacketType.INTEGERS_D]: (raw, cap, min) => INT_D_LIKE(raw, cap, min, 0),
+    [PacketType.INTEGERS_D]: (raw: Uint8Array, cap: number, min: number) => {
+        if(raw.length == 0) return false;
+
+        const dataLength = raw.length - 1, sectSize = raw[0];
+        if(dataLength % sectSize != 0) return false;
+
+        const valueAmount = dataLength / sectSize;
+        if(valueAmount < min || valueAmount > cap) return false;
+
+        return true;
+    },
     [PacketType.INTEGERS_A]: LEN_DELIMIT,
     
     [PacketType.FLOAT]: (data, cap, min) => {
         let sectors = 0;
         for(let i=0;i<data.length;i+=4) {
             if(i + 4 > data.length) return false;
-            if(data[i] > 255 || data[i + 1] > 255 || data[i + 2] > 255 || data[i + 3] > 255) return false;
             sectors++;
             if(sectors > cap) return false;
         }
