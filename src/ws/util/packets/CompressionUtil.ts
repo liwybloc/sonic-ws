@@ -313,19 +313,25 @@ export function convertVarInt(num: number, signed: boolean) {
                   : convertSVarInt(num, 0               , MAX_UVARINT, uvarIntOverflowPow, UVARINT_OVERFLOW, false);
 }
 
+export function readVarInt(arr: number[], off: number, signed: boolean) {
+    let num = [];
+    let cont;
+    do {
+        let part = arr[off++];
+        num.push(part);
+        cont = (part & VARINT_CHAIN_FLAG) != 0;
+    } while (cont);
+    const func = signed ? varIntOverflowPow : uvarIntOverflowPow;
+    return [off, num.reduce((p, c, i) => p + fromSignedVarInt(i < num.length - 1 ? c ^ VARINT_CHAIN_FLAG : c, signed) * func(i), 0)];
+}
+
 export function deconvertVarInts(arr: number[], signed: boolean) {
     let res = [];
     let i = 0;
-    const func = signed ? varIntOverflowPow : uvarIntOverflowPow;
     while(i < arr.length) {
-        let num = [];
-        let cont;
-        do {
-            let part = arr[i++];
-            num.push(part);
-            cont = (part & VARINT_CHAIN_FLAG) != 0;
-        } while (cont);
-        res.push(num.reduce((p, c, i) => p + fromSignedVarInt(i < num.length - 1 ? c ^ VARINT_CHAIN_FLAG : c, signed) * func(i), 0));
+        const [off, varint] = readVarInt(arr, i, signed);
+        res.push(varint);
+        i = off;
     }
     return res;
 }

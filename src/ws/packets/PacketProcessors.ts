@@ -16,7 +16,7 @@
 
 import { EnumPackage, EnumValue } from "../util/enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertFloat, convertBytePows, decompressBools, deconvertFloat, deconvertBytePows, demapShort_ZZ, demapZigZag, fromShort, fromSignedByte, fromSignedShort, mapShort_ZZ, mapZigZag, byteOverflowPow, processCharCodes, sectorSize, SHORT_BITS, toByte, toShort, toSignedByte, toSignedShort, MAX_DSECT_SIZE, convertVarInt, deconvertVarInts, VARINT_CHAIN_FLAG, MAX_VSECT_SIZE, MAX_BYTE } from "../util/packets/CompressionUtil";
+import { compressBools, convertFloat, convertBytePows, decompressBools, deconvertFloat, deconvertBytePows, demapShort_ZZ, demapZigZag, fromShort, fromSignedByte, fromSignedShort, mapShort_ZZ, mapZigZag, byteOverflowPow, processCharCodes, sectorSize, SHORT_BITS, toByte, toShort, toSignedByte, toSignedShort, MAX_DSECT_SIZE, convertVarInt, deconvertVarInts, VARINT_CHAIN_FLAG, MAX_VSECT_SIZE, MAX_BYTE, readVarInt } from "../util/packets/CompressionUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 import { splitBuffer } from "../util/BufferUtil";
@@ -47,19 +47,32 @@ export const PacketValidityProcessors: Record<PacketType, (data: Uint8Array, dat
     [PacketType.NONE]: (data) => data.length == 0,
     [PacketType.RAW]: () => true,
 
-    [PacketType.STRINGS_UTF8]: (data: Uint8Array, cap: number, min: number) => {
-        let sectors = 0;
-        for(let index = 0; index < data.length; index++) {
+    [PacketType.STRINGS_UTF8]: (raw: Uint8Array, cap: number, min: number) => {
+        const data = Array.from(raw);
+        let sectors = 0, index = 0;
+        while(index < data.length) {
             sectors++;
             if(sectors > cap) return false;
-            index += data[index];
-            if(index + 1 > data.length) return false;
+            const [off, varint] = readVarInt(data, index, false);
+            index = off + varint;
+            if(index > data.length) return false;
         }
         if(sectors < min) return false;
         return true;
     },
-    // todo
-    [PacketType.STRINGS_UTF16]: (data: Uint8Array, cap: number, min: number) => true,
+    [PacketType.STRINGS_UTF16]: (raw: Uint8Array, cap: number, min: number) => {
+        const data = Array.from(raw);
+        let sectors = 0, index = 0;
+        while(index < data.length) {
+            sectors++;
+            if(sectors > cap) return false;
+            const [off, varint] = readVarInt(data, index, false);
+            index = off + varint * 2;
+            if(index > data.length) return false;
+        }
+        if(sectors < min) return false;
+        return true;
+    },
 
     [PacketType.ENUMS]: (data, cap, min, packet, index) => {
         if (data.length < min || data.length > cap || index >= packet.enumData.length) return false;
@@ -110,30 +123,33 @@ export const PacketValidityProcessors: Record<PacketType, (data: Uint8Array, dat
         return true;
     },
 
-    [PacketType.BOOLEANS]: (data, cap, min) => {
-        return data.length >= Math.floor(min / 8) && data.length <= Math.floor(cap / 8) && data.find(d => d > 255) == undefined;
-    }
+    [PacketType.BOOLEANS]: (data, cap, min) => data.length >= Math.floor(min / 8) && data.length <= Math.floor(cap / 8) && data.find(d => d > 255) == undefined,
 }
 
 export const PacketReceiveProcessors: Record<PacketType, (data: Uint8Array, cap: number, packet: Packet, index: number) => Uint8Array | string | number | number[] | string[] | EnumValue[]> = {
     [PacketType.NONE]: () => "",
     [PacketType.RAW]: (data) => data,
 
-    [PacketType.STRINGS_UTF8]: (data) => {
+    [PacketType.STRINGS_UTF8]: (raw) => {
+        const data = Array.from(raw);
         let strings: string[] = [];
         for(let i = 0; i < data.length; i++) {
-            const stringSize = data[i];
-            const str = Array.from(data.slice(i + 1, i + 1 + stringSize));
-            strings.push(str.map(x => String.fromCharCode(x)).join(""));
+            const [off, varint] = readVarInt(data, i, false);
+            const stringSize = varint;
+            i = off - 1;
+            strings.push(data.slice(i + 1, i + 1 + stringSize).map(x => String.fromCharCode(x)).join(""));
             i += stringSize;
         }
         return strings;
     },
-    [PacketType.STRINGS_UTF16]: (data) => {
+    [PacketType.STRINGS_UTF16]: (raw) => {
+        const data = Array.from(raw);
         let strings: string[] = [];
         for(let i = 0; i < data.length; i++) {
-            const stringSize = data[i] * 2;
-            strings.push(splitBuffer(data.slice(i + 1, i + 1 + stringSize), 2).map((short: number[]) => String.fromCharCode(fromShort(short as SHORT_BITS))).join(""));
+            const [off, varint] = readVarInt(data, i, false);
+            const stringSize = varint * 2;
+            i = off - 1;
+            strings.push(splitArray(data.slice(i + 1, i + 1 + stringSize), 2).map((short: number[]) => String.fromCharCode(fromShort(short as SHORT_BITS))).join(""));
             i += stringSize;
         }
         return strings;
@@ -171,7 +187,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => number[]
         const res: number[] = [];
         for(const v of strings) {
             const string = String(v);
-            res.push(string.length);
+            res.push(...convertVarInt(string.length, false));
 
             const codes = processCharCodes(string);
 
@@ -186,7 +202,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => number[]
         const res: number[] = [];
         for(const v of strings) {
             const string = String(v);
-            res.push(string.length);
+            res.push(...convertVarInt(string.length, false));
             processCharCodes(string).map(c => res.push(...toShort(c, false)));
         }
         return res;
