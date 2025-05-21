@@ -17,7 +17,7 @@
 import { PacketHolder } from "./PacketHolder";
 import { Packet, PacketSchema, ValidatorFunction } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
-import { BYTE_OVERFLOW, MAX_BYTE, MAX_SHORT, NEGATIVE_BYTE } from "./CompressionUtil";
+import { BYTE_OVERFLOW } from "./CompressionUtil";
 import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage } from "../enums/EnumType";
 

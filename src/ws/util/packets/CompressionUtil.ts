@@ -42,34 +42,36 @@ export const SHORT_OVERFLOW = MAX_SHORT + 1;
 export const MAX_INT_D = Number.MAX_SAFE_INTEGER;
 
 // for varint to overflow; is 128
-export const VARINT_OVERFLOW = NEGATIVE_BYTE + 1;
+export const UVARINT_OVERFLOW = NEGATIVE_BYTE + 1;
 // flag for chaining
 export const VARINT_CHAIN_FLAG = 0x80;
+// splitting usable range in half for signed
+export const NEGATIVE_VARINT = Math.floor(NEGATIVE_BYTE / 2);
+// for varint to overflow with negative; is 64
+export const VARINT_OVERFLOW = NEGATIVE_VARINT + 1;
 // max continues
 export const MAX_VSECT_SIZE = 7;
-// max value from this, subtract one because that's what makes this work :D
-export const MAX_VARINT = (VARINT_OVERFLOW ** MAX_VSECT_SIZE) - 1;
+// max value from this, subtract one for overflow
+export const MAX_UVARINT = (UVARINT_OVERFLOW ** MAX_VSECT_SIZE) - 1;
+// max for negatives
+export const MAX_VARINT = Math.floor(MAX_UVARINT / 2);
 
-// precompute the overflow powers
+// precompute powers
 const BYTE_OVERFLOW_POWS: number[] = [];
-export function byteOverflowPow(num: number): number {
-    // ??= will set it if undefined or just return it
-    return BYTE_OVERFLOW_POWS[num] ??= Math.pow(BYTE_OVERFLOW, num);
-}
+export const byteOverflowPow = (num: number) => BYTE_OVERFLOW_POWS[num] ??= BYTE_OVERFLOW ** num;
+
+const UVARINT_OVERFLOW_POWS: number[] = [];
+export const uvarIntOverflowPow = (num: number) => UVARINT_OVERFLOW_POWS[num] ??= UVARINT_OVERFLOW ** num;
+
 const VARINT_OVERFLOW_POWS: number[] = [];
-export function varIntOverflowPow(num: number) {
-    // ??= will set it if undefined or just return it
-    return VARINT_OVERFLOW_POWS[num] ??= Math.pow(VARINT_OVERFLOW, num);
-}
-// precompute the 2^x powers
+export const varIntOverflowPow = (num: number) => VARINT_OVERFLOW_POWS[num] ??= VARINT_OVERFLOW ** num;
+
 const TWO_POWS: number[] = [];
-function twoPow(num: number) {
-    // ??= will set it if undefined or just return it
-    return TWO_POWS[num] ??= Math.pow(2, num);
-}
-// precompute 0-3
-for(let i=0;i<=3;i++) {
+const twoPow = (num: number) => TWO_POWS[num] ??= Math.pow(2, num);
+
+for(let i = 0; i <= 3; i++) {
     byteOverflowPow(i);
+    uvarIntOverflowPow(i);
     varIntOverflowPow(i);
     twoPow(i);
 }
@@ -91,7 +93,8 @@ export function toShort(n: number, signed: boolean): SHORT_BITS {
     if(!isFinite(n)) throw new Error("Cannot use NaN or Infinity in shorts.");
     // limit check
     const lim = signed ? NEGATIVE_SHORT : MAX_SHORT;
-    if (n > lim || n < -lim - 1) throw new Error(`${signed ? "Signed " : " "}Short Numbers must be within range -${lim + 1} and ${lim}`);
+    const min = signed ? -NEGATIVE_SHORT - 1 : 0;
+    if (n > lim || n < min) throw new Error(`${signed ? "Signed " : " "}Short Numbers must be within range ${min} and ${lim}`);
     // how many times it passes SHORT_OVERFLOW and the remainder
     return [Math.floor(n / SHORT_CC_OVERFLOW), n % SHORT_CC_OVERFLOW];
 }
@@ -196,7 +199,7 @@ export function convertBytePows(number: number, chars: number): number[] {
 }
 
 export function convertUBytePows(number: number, chars: number): number[] {
-    return convertBase(number, chars, (n: number) => n, 0, BYTE_OVERFLOW, byteOverflowPow);
+    return convertBase(number, chars, (n: number) => toByte(n, false), 0, BYTE_OVERFLOW, byteOverflowPow);
 }
 
 // decodes a string created by convertINT_D back into the original signed integer
@@ -292,16 +295,28 @@ export function mapShort_ZZ(short: number): SHORT_BITS {
 
 // yeah!
 
-export function convertVarInt(num: number) {
-    if(num > MAX_VARINT) throw new Error(`Highest acceptable var int number is ${MAX_VARINT}: ${num}`);
-    const chars = sectorSize(num, varIntOverflowPow);
-    if(chars == 1) return [num];
-    return convertBase(num, chars, (n: number) => n, 0, VARINT_OVERFLOW, varIntOverflowPow).map((x, i) => i != 0 ? x | VARINT_CHAIN_FLAG : x).reverse();
+export function toSignedVarInt(n: number) {
+    return n < 0 ? n | VARINT_OVERFLOW : n;
+}
+export function fromSignedVarInt(n: number, signed: boolean) {
+    return signed && (n & VARINT_OVERFLOW) != 0 ? -(n ^ VARINT_OVERFLOW) : n;
 }
 
-export function deconvertVarInts(arr: number[]) {
+function convertSVarInt(num: number, min: number, max: number, func: (n: number) => number, overflow: number, signed: boolean) {
+    if(num > max || num < min) throw new Error(`${signed ? "Signed " : ""}Variable Ints must be within range ${min} and ${max}: ${num}`);
+    const chars = sectorSize(num, func);
+    return convertBase(num, chars, toSignedVarInt, VARINT_OVERFLOW, overflow, func).map((x, i) => i == 0 ? x : x | VARINT_CHAIN_FLAG).reverse();
+}
+
+export function convertVarInt(num: number, signed: boolean) {
+    return signed ? convertSVarInt(num, -MAX_UVARINT - 1, MAX_UVARINT, varIntOverflowPow , VARINT_OVERFLOW , true )
+                  : convertSVarInt(num, 0               , MAX_UVARINT, uvarIntOverflowPow, UVARINT_OVERFLOW, false);
+}
+
+export function deconvertVarInts(arr: number[], signed: boolean) {
     let res = [];
     let i = 0;
+    const func = signed ? varIntOverflowPow : uvarIntOverflowPow;
     while(i < arr.length) {
         let num = [];
         let cont;
@@ -310,7 +325,7 @@ export function deconvertVarInts(arr: number[]) {
             num.push(part);
             cont = (part & VARINT_CHAIN_FLAG) != 0;
         } while (cont);
-        res.push(num.reduce((p, c, i) => p + (i < num.length - 1 ? c ^ VARINT_CHAIN_FLAG : c) * varIntOverflowPow(i), 0));
+        res.push(num.reduce((p, c, i) => p + fromSignedVarInt(i < num.length - 1 ? c ^ VARINT_CHAIN_FLAG : c, signed) * func(i), 0));
     }
     return res;
 }

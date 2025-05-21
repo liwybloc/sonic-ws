@@ -31,7 +31,7 @@ Developer Experience:
 - Minimal boilerplate code due to listeners only receiving valid data
 - Enums can map to any primitive value (e.g. number, string, boolean, null) and transmits in 1 byte
 - Timers and intervals for sockets that automatically clear upon closure
-- Many data types to bring speed, clarity, and security
+- Many data types to maximize speed, clarity, bandwidth, and security
 - Debug tools for socket ids, byte size, data logging, etc. for troubleshooting
 - JSDoc's for understanding
 
@@ -54,11 +54,11 @@ Browser (Client):
 ```js
 const wss = new SonicWSServer({
     clientPackets: [
-        CreatePacket({tag: "pong", type: PacketType.INTS_D, dataMax: 1})
+        CreatePacket({tag: "pong", type: PacketType.VARINT, dataMax: 1})
     ],
     serverPackets: [
-        CreatePacket({tag: "ping", type: PacketType.INTS_D, dataMax: 1}),
-        CreateObjPacket({tag: "data", types: [PacketType.INTS_A, PacketTypes.STRING], dataMaxes: [2, 3]})
+        CreatePacket({tag: "ping", type: PacketType.VARINT, dataMax: 1}),
+        CreateObjPacket({tag: "data", types: [PacketType.BYTES, PacketTypes.STRINGS], dataMaxes: [2, 3]})
     ],
     websocketOptions: { port: 1234 }
 });
@@ -69,7 +69,7 @@ wss.on_connect((socket) => {
 
     socket.on("pong", (num) => {
         console.log("Ponged!", num);
-        socket.send("data", [Math.floor(Math.random() * 1000), Math.floor(Math.random() * 1000)], ["hello", "from", "server"]);
+        socket.send("data", [Math.floor(Math.random() * 26), Math.floor(Math.random() * 256)], ["hello", "from", "server"]);
     });
 
     setInterval(() => {
@@ -108,6 +108,8 @@ ws.on_close((event) => {
 ## KNOWN ISSUES
 
 Batch rate limit is off by 1
+
+Varint max is off by a bit
 
 ## PLANNED FEATURES
 

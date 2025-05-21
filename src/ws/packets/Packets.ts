@@ -302,6 +302,7 @@ export class PacketSchema {
 
         if(typeof type == 'number') {
             schema.type = type as PacketType;
+            if(type == PacketType.NONE) dataMax = dataMin = 0; // remove garbage data issues
         } else {
             schema.type = PacketType.ENUMS;
             schema.enumData = [type as EnumPackage];
