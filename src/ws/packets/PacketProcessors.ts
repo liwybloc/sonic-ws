@@ -16,7 +16,7 @@
 
 import { EnumPackage, EnumValue } from "../util/enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertFloat, convertBytePows, decompressBools, deconvertFloat, deconvertBytePows, demapShort_ZZ, demapZigZag, fromShort, fromSignedByte, fromSignedShort, mapShort_ZZ, mapZigZag, MAX_BYTE, byteOverflowPow, processCharCodes, sectorSize, SHORT_BITS, toByte, toShort, toSignedByte, toSignedShort, shortOverflowPow } from "../util/packets/CompressionUtil";
+import { compressBools, convertFloat, convertBytePows, decompressBools, deconvertFloat, deconvertBytePows, demapShort_ZZ, demapZigZag, fromShort, fromSignedByte, fromSignedShort, mapShort_ZZ, mapZigZag, byteOverflowPow, processCharCodes, sectorSize, SHORT_BITS, toByte, toShort, toSignedByte, toSignedShort, MAX_DSECT_SIZE, convertVarInt, deconvertVarInts, VARINT_CHAIN_FLAG, MAX_VSECT_SIZE } from "../util/packets/CompressionUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 import { splitBuffer } from "../util/BufferUtil";
@@ -64,7 +64,10 @@ export const PacketValidityProcessors: Record<PacketType, (data: Uint8Array, dat
     [PacketType.INTEGERS_D]: (raw: Uint8Array, cap: number, min: number) => {
         if(raw.length == 0) return false;
 
-        const dataLength = raw.length - 1, sectSize = raw[0];
+        const sectSize = raw[0];
+        if(sectSize > MAX_DSECT_SIZE) return false;
+
+        const dataLength = raw.length - 1;
         if(dataLength % sectSize != 0) return false;
 
         const valueAmount = dataLength / sectSize;
@@ -72,7 +75,23 @@ export const PacketValidityProcessors: Record<PacketType, (data: Uint8Array, dat
 
         return true;
     },
-    [PacketType.INTEGERS_A]: LEN_DELIMIT,
+    [PacketType.VARINT]: (raw: Uint8Array, cap: number, min: number) => {
+        if(raw.length == 0) return false;
+
+        let sectors = 0;
+        let i = 0;
+        while(i < raw.length) {
+            let cont = false, inSect = 0;
+            do {
+                if(++inSect > MAX_VSECT_SIZE) return false;
+                cont = (raw[i++] & VARINT_CHAIN_FLAG) != 0;
+            } while (cont);
+            if(++sectors > cap) return false;
+        }
+        if(sectors < min) return false;
+
+        return true;
+    },
     
     [PacketType.FLOAT]: (data, cap, min) => {
         let sectors = 0;
@@ -117,15 +136,7 @@ export const PacketReceiveProcessors: Record<PacketType, (data: Uint8Array, cap:
     [PacketType.SHORTS_ZZ]: (data) => splitBuffer(data, 2).map(v => demapShort_ZZ(v as SHORT_BITS)),
 
     [PacketType.INTEGERS_D]: (data) => splitArray(data.slice(1), data[0]).map(deconvertBytePows),
-    [PacketType.INTEGERS_A]: (data) => {
-        let numbers: number[] = [];
-        for(let i = 0; i < data.length; i++) {
-            const sectSize = data[i];
-            numbers.push(deconvertBytePows(data.slice(i + 1, i + 1 + sectSize)));
-            i += sectSize;
-        }
-        return numbers;
-    },
+    [PacketType.VARINT]: (data) => deconvertVarInts(Array.from(data)),
 
     [PacketType.FLOAT]: (data) => splitBuffer(data, 4).map(deconvertFloat),
 
@@ -158,20 +169,12 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => number[]
 
     [PacketType.INTEGERS_D]: (numbers: number[]) => {
         const res: number[] = [];
-        const sectSize = numbers.reduce((c, n) => Math.max(c, sectorSize(n)), 1);
+        const sectSize = numbers.reduce((c, n) => Math.max(c, sectorSize(n, byteOverflowPow)), 1);
         res.push(sectSize);
         numbers.forEach(n => convertBytePows(n, sectSize).forEach(c => res.push(c)));
         return res;
     },
-    [PacketType.INTEGERS_A]: (numbers: number[]) => {
-        const res: number[] = [];
-        for(const number of numbers) {
-            const sectSize = sectorSize(number);
-            res.push(sectSize);
-            convertBytePows(number, sectSize).forEach(n => res.push(n));
-        }
-        return res;
-    },
+    [PacketType.VARINT]: (numbers: number[]) => numbers.map(convertVarInt).flat(),
 
     [PacketType.FLOAT]: (floats: number[]) => floats.map(convertFloat).flat(),
     

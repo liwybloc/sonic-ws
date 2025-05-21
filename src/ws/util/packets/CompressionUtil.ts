@@ -41,6 +41,14 @@ export const SHORT_OVERFLOW = MAX_SHORT + 1;
 // highest number INT_D can optimally support
 export const MAX_INT_D = Number.MAX_SAFE_INTEGER;
 
+// for varint to overflow; is 128
+export const VARINT_OVERFLOW = NEGATIVE_BYTE + 1;
+// flag for chaining
+export const VARINT_CHAIN_FLAG = 0x80;
+// max continues
+export const MAX_VSECT_SIZE = 7;
+// max value from this, subtract one because that's what makes this work :D
+export const MAX_VARINT = (VARINT_OVERFLOW ** MAX_VSECT_SIZE) - 1;
 
 // precompute the overflow powers
 const BYTE_OVERFLOW_POWS: number[] = [];
@@ -48,10 +56,10 @@ export function byteOverflowPow(num: number): number {
     // ??= will set it if undefined or just return it
     return BYTE_OVERFLOW_POWS[num] ??= Math.pow(BYTE_OVERFLOW, num);
 }
-const SHORT_OVERFLOW_POWS: number[] = [];
-export function shortOverflowPow(num: number): number {
+const VARINT_OVERFLOW_POWS: number[] = [];
+export function varIntOverflowPow(num: number) {
     // ??= will set it if undefined or just return it
-    return SHORT_OVERFLOW_POWS[num] ??= Math.pow(SHORT_OVERFLOW, num);
+    return VARINT_OVERFLOW_POWS[num] ??= Math.pow(VARINT_OVERFLOW, num);
 }
 // precompute the 2^x powers
 const TWO_POWS: number[] = [];
@@ -62,7 +70,7 @@ function twoPow(num: number) {
 // precompute 0-3
 for(let i=0;i<=3;i++) {
     byteOverflowPow(i);
-    shortOverflowPow(i);
+    varIntOverflowPow(i);
     twoPow(i);
 }
 
@@ -128,16 +136,18 @@ export function toSignedByte(number: number) {
 }
 
 // calculate how many characters (digits) are needed to store this number in OVERFLOW base
-export function sectorSize(number: number) {
+export function sectorSize(number: number, pow: any) {
     number = Math.abs(number);
 
     // iterative system because it's faster than log
     let count = 1;
     // i like my code 𝑓𝑟𝑒𝑎𝑘𝑦
-    for (let num = byteOverflowPow(1); number >= num; num = byteOverflowPow(++count));
+    for (let num = pow(1); number >= num; num = pow(++count));
 
     return count;
 }
+
+export const MAX_DSECT_SIZE = sectorSize(MAX_INT_D, byteOverflowPow);
 
 // encodes a number into a safe array using a large base (OVERFLOW)
 export function convertBase(number: number, chars: number, single: any, neg: number, overflow: number, overflowFunc: any): number[] {
@@ -278,4 +288,29 @@ export function demapShort_ZZ(short: SHORT_BITS) {
 }
 export function mapShort_ZZ(short: number): SHORT_BITS {
     return toShort(mapZigZag(short), false);
+}
+
+// yeah!
+
+export function convertVarInt(num: number) {
+    if(num > MAX_VARINT) throw new Error(`Highest acceptable var int number is ${MAX_VARINT}: ${num}`);
+    const chars = sectorSize(num, varIntOverflowPow);
+    if(chars == 1) return [num];
+    return convertBase(num, chars, (n: number) => n, 0, VARINT_OVERFLOW, varIntOverflowPow).map((x, i) => i != 0 ? x | VARINT_CHAIN_FLAG : x).reverse();
+}
+
+export function deconvertVarInts(arr: number[]) {
+    let res = [];
+    let i = 0;
+    while(i < arr.length) {
+        let num = [];
+        let cont;
+        do {
+            let part = arr[i++];
+            num.push(part);
+            cont = (part & VARINT_CHAIN_FLAG) != 0;
+        } while (cont);
+        res.push(num.reduce((p, c, i) => p + (i < num.length - 1 ? c ^ VARINT_CHAIN_FLAG : c) * varIntOverflowPow(i), 0));
+    }
+    return res;
 }
