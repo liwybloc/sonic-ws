@@ -1,3 +1,19 @@
+/*
+ * Copyright 2025 Lily (cutelittlelily)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 import { Packet } from "../../packets/Packets";
 
 /**
@@ -52,7 +68,8 @@ export class PacketHolder {
      * Returns the numeric key for a given tag
      * @param tag The packet tag
      */
-    public get(tag: string): number {
+    public getKey(tag: string): number {
+        if(!(tag in this.keys)) throw new Error(`Not a valid tag: ${tag}`);
         return this.keys[tag];
     }
 
@@ -61,15 +78,15 @@ export class PacketHolder {
      * @param tag The packet tag
      */
     public getChar(tag: string): string {
-        return String.fromCharCode(this.get(tag));
+        return String.fromCharCode(this.getKey(tag));
     }
 
     /**
      * Returns the tag associated with a given character key
      * @param key A 1-character string key
      */
-    public getTag(key: string): string {
-        return this.tags[key.charCodeAt(0)!];
+    public getTag(key: number): string {
+        return this.tags[key];
     }
 
     /**
@@ -83,10 +100,10 @@ export class PacketHolder {
 
     /**
      * Checks if a given character key exists
-     * @param key A 1-character string key
+     * @param key A string index
      */
-    public has(key: string): boolean {
-        return key.charCodeAt(0) in this.tags;
+    public hasKey(key: number): boolean {
+        return key in this.tags;
     }
 
     /**

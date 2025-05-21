@@ -16,13 +16,14 @@
 
 import * as WS from 'ws';
 import { SonicWSServer } from './SonicWSServer';
-import { getStringBytes } from '../util/packets/CodePointUtil';
 import { listenPacket, processPacket } from '../util/packets/PacketUtils';
 import { BatchHelper } from '../util/packets/BatchHelper';
 import { Packet } from '../packets/Packets';
 import { RateHandler } from '../util/packets/RateHandler';
+import { toPacketBuffer } from '../util/BufferUtil';
 
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
+const NEW_LINE = '\n'.charCodeAt(0);
 
 export class SonicWSConnection {
 
@@ -104,23 +105,24 @@ export class SonicWSConnection {
         });
     }
 
-    private parseData(event: WS.MessageEvent): [key: string, value: string] | null {
+    private parseData(event: WS.MessageEvent): [key: string, value: Uint8Array] | null {
         if(this.rater.trigger(CLIENT_RATELIMIT_TAG)) return null;
+        if (!(event.data instanceof Buffer)) return null;
 
-        const message = event.data.toString();
+        const message = new Uint8Array(event.data);
 
-        if(this.print) console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${getStringBytes(message)})\x1b[0m ${this.hideNewLines(message)}`);
+        if(this.print) console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${message.byteLength})\x1b[0m ${this.hideNewLines(message)}`);
 
-        if (message.length < 1) {
+        if (message.byteLength < 1) {
             this.socket.close(4001);
             return null;
         }
 
         const key = message[0];
-        const value = message.substring(1);
+        const value = message.slice(1);
 
         // not a key, bye bye
-        if(!this.host.clientPackets.has(key)) {
+        if(!this.host.clientPackets.hasKey(key)) {
             this.socket.close(4002);
             return null;
         }
@@ -164,7 +166,7 @@ export class SonicWSConnection {
         listenPacket(data, this.listeners[tag], this.invalidPacket);
     }
 
-    private messageHandler(data: [tag: string, value: string] | null): void {
+    private messageHandler(data: [tag: string, value: Uint8Array] | null): void {
         if(data == null) return;
 
         const [tag, value] = data;
@@ -188,15 +190,15 @@ export class SonicWSConnection {
         }
     }
 
-    private hideNewLines(str: string): string {
-        return str.split("\n").join("☺");
+    private hideNewLines(str: Uint8Array): string {
+        return Array.from(str).map(x => x == NEW_LINE ? "☺" : String.fromCharCode(x)).join("");
     }
 
     /** Sends raw data to the user; will likely fail validity checks if used externally */
-    public raw_send(data: string): void {
+    public raw_send(data: Uint8Array): void {
         if(this.isClosed()) throw new Error("Connection is already closed!");
         if(this.rater.trigger(SERVER_RATELIMIT_TAG)) return;
-        if(this.print) console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${getStringBytes(data)})\x1b[0m ${this.hideNewLines(data)}`);
+        if(this.print) console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${data.byteLength})\x1b[0m ${this.hideNewLines(data)}`);
         this.socket.send(data);
     }
 
@@ -247,10 +249,10 @@ export class SonicWSConnection {
     /**
      * For internal use.
      */
-    public send_processed(code: string, data: string, packet: Packet) {
+    public send_processed(code: number, data: number[], packet: Packet) {
         if(this.rater.trigger("server" + code)) return;
 
-        if(packet.dataBatching == 0) this.raw_send(code + data);
+        if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
         else this.batcher.batchPacket(packet, code, data);
     }
 

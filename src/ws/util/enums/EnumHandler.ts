@@ -40,9 +40,9 @@ export function DefineEnum(tag: string, values: any[]): EnumPackage {
  * @param value The value to send
  * @returns A transmittable enum value
  */
-export function WrapEnum(tag: string, value: any): string {
+export function WrapEnum(tag: string, value: any): number {
     if(!(value in ENUM_TAG_TO_KEY[tag])) throw new Error(`Value "${value}" does not exist in enum "${tag}"`);
-    return String.fromCharCode(ENUM_TAG_TO_KEY[tag][value]);
+    return ENUM_TAG_TO_KEY[tag][value];
 }
 
 export function fromIndex(tag: string, index: number): string {

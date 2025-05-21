@@ -18,7 +18,7 @@ import { DefineEnum } from "../util/enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../util/enums/EnumType";
 import { SonicWSConnection } from "../server/SonicWSConnection";
 import { splitArray } from "../util/ArrayUtil";
-import { convertINT_D, deconvertINT_DCodes, ETX, processCharCodes, STX } from "../util/packets/CodePointUtil";
+import { convertINT_D, deconvertINT_DCodes, ETX, processCharCodes, STX } from "../util/packets/CompressionUtil";
 import { UnFlattenData } from "../util/packets/PacketUtils";
 import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, PacketReceiveProcessors, PacketSendProcessors, PacketValidityProcessors } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
@@ -50,13 +50,13 @@ export class Packet {
 
     public object: boolean;
     
-    private receiveProcessor: (data: string, cap: any, packet: Packet, index: number) => any;
-    private sendProcessor: (...data: any[]) => string;
-    private validifier: (data: string, cap: any, min: any, packet: Packet, index: number) => boolean;
+    private receiveProcessor: (data: Uint8Array, cap: any, packet: Packet, index: number) => any;
+    private sendProcessor: (...data: any[]) => number[];
+    private validifier: (data: Uint8Array, cap: any, min: any, packet: Packet, index: number) => boolean;
 
-    public processReceive: (data: string) => any;
-    public processSend: (data: any[]) => string;
-    public validate: (data: string) => boolean;
+    public processReceive: (data: Uint8Array) => any;
+    public processSend: (data: any[]) => number[];
+    public validate: (data: Uint8Array) => boolean;
     public customValidator: ((socket: SonicWSConnection, ...values: any[]) => boolean) | null;
 
     constructor(tag: string, schema: PacketSchema, customValidator: ValidatorFunction, enabled: boolean, client: boolean) {
@@ -96,13 +96,13 @@ export class Packet {
             this.sendProcessor    = PacketSendProcessors[this.type];
         }
         
-        this.processReceive  = (data: string) => this.receiveProcessor(data, this.dataMax, this, 0);
+        this.processReceive  = (data: Uint8Array) => this.receiveProcessor(data, this.dataMax, this, 0);
         this.processSend     = (data: any[]) => this.sendProcessor(data);
-        this.validate        = client ? () => true : (data: string) => this.validifier(data, this.dataMax, this.dataMin, this, 0);
+        this.validate        = client ? () => true : (data: Uint8Array) => this.validifier(data, this.dataMax, this.dataMin, this, 0);
         this.customValidator = customValidator;
     }
 
-    public listen(value: string, socket: SonicWSConnection | null): [processed: any, flatten: boolean] | string {
+    public listen(value: Uint8Array, socket: SonicWSConnection | null): [processed: any, flatten: boolean] | string {
         try {
             if(!this.validate(value)) return "Invalid packet";
 

@@ -17,42 +17,45 @@
 import { SonicWSCore } from "../../client/core/ClientCore";
 import { Packet } from "../../packets/Packets";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
-import { convertINT_D, deconvertINT_D } from "./CodePointUtil";
+import { toPacketBuffer } from "../BufferUtil";
+import { convertINT_DCodes, deconvertINT_DCodes } from "./CompressionUtil";
 import { PacketHolder } from "./PacketHolder";
 
 export class BatchHelper {
 
-    public batchedData: Record<string, string[]> = {};
+    public batchedData: Record<number, number[]> = {};
 
     public registerSendPackets(packetHolder: PacketHolder, clazz: SonicWSCore | SonicWSConnection) {
         packetHolder.getTags().forEach(tag => {
             const packet = packetHolder.getPacket(tag);
             if(packet.dataBatching == 0) return;
-            const code = packetHolder.getChar(tag);
+            const code = packetHolder.getKey(tag);
             this.initiateBatch(code, packet.dataBatching, clazz);
         });
     }
 
-    public initiateBatch(code: string, time: number, clazz: SonicWSCore | SonicWSConnection) {
+    public initiateBatch(code: number, time: number, clazz: SonicWSCore | SonicWSConnection) {
         this.batchedData[code] = [];
         clazz.setInterval(() => {
             if(this.batchedData[code].length == 0) return;
-            clazz.raw_send(code + this.batchedData[code].join(""));
+            clazz.raw_send(toPacketBuffer(code, this.batchedData[code]));
             this.batchedData[code] = [];
         }, time);
     }
 
-    public batchPacket(packet: Packet, code: string, data: string) {
-        this.batchedData[code].push(convertINT_D(data.length, packet.packetDelimitSize) + data);
+    public batchPacket(packet: Packet, code: number, data: number[]) {
+        const batch = this.batchedData[code];
+        batch.push(...convertINT_DCodes(data.length, packet.packetDelimitSize));
+        data.forEach(val => batch.push(val));
     }
 
-    public static unravelBatch(packet: Packet, data: string, socket: SonicWSConnection | null): any[] | string {
+    public static unravelBatch(packet: Packet, data: Uint8Array, socket: SonicWSConnection | null): any[] | string {
         const result: any[] = [];
         for(let i=0;i<data.length;) {
             if(result.length > packet.maxBatchSize) return "Too big of batch";
-            const len = deconvertINT_D(data.slice(i, i += packet.packetDelimitSize));
+            const len = deconvertINT_DCodes(data.slice(i, i += packet.packetDelimitSize));
             if(i + len > data.length) return "Tampered batch length";
-            const sect = data.substring(i, i += len);
+            const sect = data.slice(i, i += len);
             const listen = packet.listen(sect, socket);
             if(typeof listen == 'string') return "Batched packet: " + listen;
             result.push([listen[0], !packet.dontSpread]);

@@ -15,11 +15,12 @@
  */
 
 import { PacketHolder } from '../../util/packets/PacketHolder';
-import { NULL } from '../../util/packets/CodePointUtil';
+import { NULL } from '../../util/packets/CompressionUtil';
 import { listenPacket, processPacket } from '../../util/packets/PacketUtils';
 import { VERSION } from '../../../version';
 import { Packet } from '../../packets/Packets';
 import { BatchHelper } from '../../util/packets/BatchHelper';
+import { toPacketBuffer } from '../../util/BufferUtil';
 
 // throttle at 90% of rate limit to avoid spikes and kicks
 const THRESHOLD_MULT = 0.90;
@@ -30,9 +31,9 @@ export abstract class SonicWSCore {
     public socket: WebSocket;
 
     protected listeners: {
-        message: Array<(data: string) => void>,
+        message: Array<(data: Uint8Array) => void>,
         close: Array<(event: CloseEvent) => void>,
-        event: { [key: string]: Array<(...data: any[]) => void> }
+        event: { [key: number]: Array<(...data: any[]) => void> }
     };
 
     protected preListen: { [key: string]: Array<(data: any[]) => void> } | null;
@@ -43,15 +44,15 @@ export abstract class SonicWSCore {
     private readyListeners: Array<() => void> | null = [];
     private keyHandler: ((event: MessageEvent) => undefined) | null;
 
-    private sendQueue: string[] = [];
-
     private timers: number[] = [];
 
     private batcher: BatchHelper;
 
+    private bufferHandler: (val: MessageEvent) => Promise<Uint8Array>;
+
     public id: number = -1;
 
-    constructor(ws: WebSocket) {
+    constructor(ws: WebSocket, bufferHandler: (val: MessageEvent) => Promise<Uint8Array>) {
         this.socket = ws;
         this.listeners = {
             message: [],
@@ -70,6 +71,8 @@ export abstract class SonicWSCore {
             this.listeners.close.forEach(listener => listener(event));
             this.timers.forEach(clearTimeout);
         });
+
+        this.bufferHandler = bufferHandler;
     }
 
     private serverKeyHandler(event: MessageEvent): undefined {
@@ -92,7 +95,7 @@ export abstract class SonicWSCore {
         this.batcher.registerSendPackets(this.clientPackets, this);
 
         Object.keys(this.preListen!).forEach(tag => this.preListen![tag].forEach(listener => {
-            const key = this.serverPackets.get(tag);
+            const key = this.serverPackets.getKey(tag);
             // print the error to console without halting execution
             if(key == null) return console.error(new Error(`The server does not send the packet with tag "${tag}"!`));
 
@@ -116,37 +119,36 @@ export abstract class SonicWSCore {
         throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/cutelittlelily/sonic-ws");
     }
 
-    private listenPacket(data: string | [any[], boolean], code: string) {
+    private listenPacket(data: string | [any[], boolean], code: number) {
         listenPacket(data, this.listeners.event[code], this.invalidPacket);
     }
 
-    private messageHandler(event: MessageEvent) {
-        let data = event.data.toString();
+    private async messageHandler(event: MessageEvent) {
+        const data = await this.bufferHandler(event);
 
         this.listeners.message.forEach(listener => listener(data));
         if (data.length < 1) return;
 
-        const key = data.substring(0, 1);
-        const value = data.substring(1);
-        const code = key.charCodeAt(0);
-        if (code == null) return;
+        const key = data[0];
+        const value = data.slice(1);
+        if (key == null) return;
 
         const packet = this.serverPackets.getPacket(this.serverPackets.getTag(key));
         
         if(packet.dataBatching == 0) {
-            this.listenPacket(packet.listen(value, null), code);
+            this.listenPacket(packet.listen(value, null), key);
             return;
         }
 
         const batchData = BatchHelper.unravelBatch(packet, value, null);
         if(typeof batchData == 'string') return this.invalidPacket(batchData);
 
-        batchData.forEach(data => this.listenPacket(data, code));
+        batchData.forEach(data => this.listenPacket(data, key));
         
     }
 
     protected listen(key: string, listener: (data: any[]) => void) {
-        const skey = this.serverPackets.get(key);
+        const skey = this.serverPackets.getKey(key);
         if (!skey) {
             console.log("Key is not available on server: " + key);
             return;
@@ -160,14 +162,14 @@ export abstract class SonicWSCore {
      * Listens for all messages rawly
      * @param listener Callback for when data is received
      */
-    public raw_onmessage(listener: (data: string) => void): void {
+    public raw_onmessage(listener: (data: Uint8Array) => void): void {
         this.listeners.message.push(listener);
     }
 
     /**
      * Sends raw data
      */
-    public raw_send(data: string): void {
+    public raw_send(data: Uint8Array): void {
         this.socket.send(data);
     }
 
@@ -178,7 +180,7 @@ export abstract class SonicWSCore {
      */
     public send(tag: string, ...values: any[]): void {
         const [code, data, packet] = processPacket(this.clientPackets, tag, values);
-        if(packet.dataBatching == 0) this.raw_send(code + data);
+        if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
         else this.batcher.batchPacket(packet, code, data);
     }
 

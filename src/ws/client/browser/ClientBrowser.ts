@@ -24,7 +24,7 @@ const w = window as any;
 w.SonicWS = class SonicWS extends SonicWSCore {
     constructor(url: string, protocols?: string | string[]) {
         const ws = new WebSocket(url, protocols);
-        super(ws);
+        super(ws, async (val: MessageEvent) => new Uint8Array(await (val.data as Blob).arrayBuffer()));
     }
 
     WrapEnum(tag: string, value: string) {

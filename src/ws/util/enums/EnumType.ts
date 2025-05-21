@@ -35,9 +35,11 @@ function getTypedIndex(data: any) {
     return TYPE_INDEX_MAP[type];
 }
 
+export type EnumValue = string | number | boolean | undefined | null;
+
 export class EnumPackage {
     public tag: string;
-    public values: any[];
+    public values: EnumValue[];
 
     constructor(tag: string, values: any[]) {
         this.tag = tag;

@@ -18,7 +18,7 @@ import fetch from 'node-fetch';
 import * as WS from 'ws';
 import { SonicWSConnection } from './SonicWSConnection';
 import { PacketHolder } from '../util/packets/PacketHolder';
-import { MAX_C, NULL } from '../util/packets/CodePointUtil';
+import { MAX_BYTE, NULL } from '../util/packets/CompressionUtil';
 import { VERSION, VERSION_CHAR } from '../../version';
 import { processPacket } from '../util/packets/PacketUtils';
 import { Packet } from '../packets/Packets';
@@ -140,9 +140,9 @@ export class SonicWSServer {
      */
     public setClientRateLimit(limit: number) {
         // so that i can store limits in 1 packet
-        if(limit > MAX_C) {
+        if(limit > MAX_BYTE) {
             limit = 0;
-            console.warn(`A rate limit above ${MAX_C} is considered infinite.`);
+            console.warn(`A rate limit above ${MAX_BYTE} is considered infinite.`);
         }
         this.clientRateLimit = limit;
     }
@@ -153,9 +153,9 @@ export class SonicWSServer {
      */
     public setServerRateLimit(limit: number) {
         // so that i can store limits in 1 packet
-        if(limit > MAX_C) {
+        if(limit > MAX_BYTE) {
             limit = 0;
-            console.warn(`A rate limit above ${MAX_C} is considered infinite.`);
+            console.warn(`A rate limit above ${MAX_BYTE} is considered infinite.`);
         }
         this.serverRateLimit = limit;
     }

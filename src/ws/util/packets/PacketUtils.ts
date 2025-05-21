@@ -17,10 +17,9 @@
 import { PacketHolder } from "./PacketHolder";
 import { Packet, PacketSchema, ValidatorFunction } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
-import { NULL, NEGATIVE_C } from "./CodePointUtil";
+import { NEGATIVE_BYTE } from "./CompressionUtil";
 import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage } from "../enums/EnumType";
-import { SonicWSConnection } from "../../server/SonicWSConnection";
 
 /**
  * Processes and verifies values into a sendable format
@@ -29,9 +28,8 @@ import { SonicWSConnection } from "../../server/SonicWSConnection";
  * @param values The values
  * @returns The indexed code, the data, and the packet schema
  */
-export function processPacket(packets: PacketHolder, tag: string, values: any[]): [code: string, data: string, packet: Packet] {
-    const code = packets.getChar(tag);
-    if(code == NULL) throw new Error(`Tag "${tag}" has not been created!`);
+export function processPacket(packets: PacketHolder, tag: string, values: any[]): [code: number, data: number[], packet: Packet] {
+    const code = packets.getKey(tag);
 
     const packet = packets.getPacket(tag);
 
@@ -61,7 +59,7 @@ export function processPacket(packets: PacketHolder, tag: string, values: any[])
         }
     }
 
-    return [code, values.length > 0 ? packet.processSend(values) : "", packet];
+    return [code, values.length > 0 ? packet.processSend(values) : [], packet];
 }
 
 /**
@@ -94,7 +92,7 @@ function clampDataMax(dataMax: number, packetDelimitSize: number = 1) {
         console.warn(`Having a data maximum below 0 does not do anything!`);
         return 0;
     }
-    const max = Math.pow(NEGATIVE_C, packetDelimitSize);
+    const max = Math.pow(NEGATIVE_BYTE, packetDelimitSize);
     if(dataMax > max) {
         console.warn(`Only ${max} values can be sent in a single type! Use CreateObjPacket() / largePacket: true if you want to send more.`);
         return max;
@@ -203,7 +201,7 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
 
     if(noDataRange) {
         dataMin = 0;
-        dataMax = NEGATIVE_C;
+        dataMax = NEGATIVE_BYTE;
     } else if(dataMin == undefined) dataMin = type == PacketType.NONE ? 0 : dataMax;
 
     if (!isValidType(type)) {
@@ -235,7 +233,7 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     const packetDelimitSize = largePacket ? 2 : 1;
 
     if(noDataRange) {
-        dataMaxes = Array.from({ length: types.length }).map(() => Math.pow(NEGATIVE_C, packetDelimitSize));
+        dataMaxes = Array.from({ length: types.length }).map(() => Math.pow(NEGATIVE_BYTE, packetDelimitSize));
         dataMins = Array.from({ length: types.length }).map(() => 0);
     } else {
         if(dataMaxes == undefined) dataMaxes = Array.from({ length: types.length }).map(() => 1);

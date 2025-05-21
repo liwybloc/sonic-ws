@@ -14,18 +14,14 @@
  * limitations under the License.
  */
 
-import WS from 'ws';
-import { SonicWSCore } from '../core/ClientCore';
+import { splitArray } from "./ArrayUtil";
 
-/** Class to connect to a SonicWS server */
-export class SonicWS extends SonicWSCore {
-    /**
-     * Creates a connection to the url
-     * @param url The url to connect to
-     * @param options The websocket options
-     */
-    constructor(url: string, options?: WS.ClientOptions) {
-        const ws = new WS.WebSocket(url, options);
-        super(ws as unknown as WebSocket, (val: MessageEvent) => Promise.resolve(new Uint8Array(val.data as Buffer)));
-    }
+export function toPacketBuffer(code: number, data: number[]): Uint8Array {
+    const buffer = new Uint8Array(1 + data.length);
+    buffer[0] = code;
+    buffer.set(data, 1);
+    return buffer;
+}
+export function splitBuffer(arr: Uint8Array, x: number): number[][] {
+    return splitArray(Array.from(arr), x) as number[][];
 }
