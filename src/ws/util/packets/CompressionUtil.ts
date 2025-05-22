@@ -302,10 +302,10 @@ export function fromSignedVarInt(n: number, signed: boolean) {
     return signed && (n & VARINT_OVERFLOW) != 0 ? -(n ^ VARINT_OVERFLOW) : n;
 }
 
-function convertSVarInt(num: number, min: number, max: number, func: (n: number) => number, overflow: number, signed: boolean) {
+function convertSVarInt(num: number, min: number, max: number, overflowFunc: (n: number) => number, overflow: number, signed: boolean) {
     if(num > max || num < min) throw new Error(`${signed ? "Signed " : ""}Variable Ints must be within range ${min} and ${max}: ${num}`);
-    const chars = sectorSize(num, func);
-    return convertBase(num, chars, toSignedVarInt, VARINT_OVERFLOW, overflow, func).map((x, i) => i == 0 ? x : x | VARINT_CHAIN_FLAG).reverse();
+    const chars = sectorSize(num, overflowFunc);
+    return convertBase(num, chars, toSignedVarInt, VARINT_OVERFLOW, overflow, overflowFunc).map((x, i) => i == 0 ? x : x | VARINT_CHAIN_FLAG).reverse();
 }
 
 export function convertVarInt(num: number, signed: boolean) {

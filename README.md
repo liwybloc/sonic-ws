@@ -72,7 +72,7 @@ wss.on_connect((socket) => {
         socket.send("data", [Math.floor(Math.random() * 26), Math.floor(Math.random() * 256)], ["hello", "from", "server"]);
     });
 
-    setInterval(() => {
+    socket.setInterval(() => {
         socket.send("ping", Date.now());
     }, 10000);
 
