@@ -20,6 +20,9 @@ import { compressBools, convertFloat, convertBytePows, decompressBools, deconver
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 import { splitBuffer } from "../util/BufferUtil";
+import { SonicWSConnection } from "../server/SonicWSConnection";
+import { SonicWSCore } from "../client/core/ClientCore";
+import { Connection } from "../Connection";
 
 const BYTE_LEN = (data: Uint8Array, cap: number, min: number) => data.length >= min && data.length <= cap;
 const SHORT_LEN = (data: Uint8Array, cap: number, min: number) => data.length >= min * 2 && data.length <= cap * 2 && data.length % 2 == 0;
@@ -109,6 +112,7 @@ export const PacketValidityProcessors: Record<PacketType, (data: Uint8Array, dat
     [PacketType.VARINT]: VARINT_VERIF,
     [PacketType.UVARINT]: VARINT_VERIF,
     [PacketType.VARINT_ZZ]: VARINT_VERIF,
+    [PacketType.DELTAS]: VARINT_VERIF,
     
     [PacketType.FLOAT]: (data, cap, min) => {
         let sectors = 0;
@@ -171,6 +175,7 @@ export const PacketReceiveProcessors: Record<PacketType, (data: Uint8Array, cap:
     [PacketType.VARINT]: (data) => deconvertVarInts(Array.from(data), true),
     [PacketType.UVARINT]: (data) => deconvertVarInts(Array.from(data), false),
     [PacketType.VARINT_ZZ]: (data) => deconvertVarInts(Array.from(data), false).map(demapZigZag),
+    [PacketType.DELTAS]: (data) => deconvertVarInts(Array.from(data), false).map((x, i, arr) => arr[i] = (arr[i - 1] || 0) + demapZigZag(x)),
 
     [PacketType.FLOAT]: (data) => splitBuffer(data, 4).map(deconvertFloat),
 
@@ -227,6 +232,7 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => number[]
     [PacketType.VARINT]: (numbers: number[]) => numbers.map(n => convertVarInt(n, true)).flat(),
     [PacketType.UVARINT]: (numbers: number[]) => numbers.map(n => convertVarInt(n, false)).flat(),
     [PacketType.VARINT_ZZ]: (numbers: number[]) => numbers.map(n => convertVarInt(mapZigZag(n), false)).flat(),
+    [PacketType.DELTAS]: (numbers: number[]) => numbers.map((n, i) => convertVarInt(mapZigZag(n - (numbers[i - 1] || 0)), false)).flat(),
 
     [PacketType.FLOAT]: (floats: number[]) => floats.map(convertFloat).flat(),
     
@@ -234,16 +240,23 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => number[]
 }
 
 // so uhm. it work. sorry-
-export function createObjSendProcessor(types: PacketType[], packetDelimitSize: number): (data: any[]) => number[] {
+export function createObjSendProcessor(packet: Packet): (data: any[]) => number[] {
+    const types = (packet.type as PacketType[]);
+    const packetDelimitSize = packet.packetDelimitSize;
+
     const size = types.length;
     const processors = types.map(t => PacketSendProcessors[t]);
+
     const lim = byteOverflowPow(packetDelimitSize);
+    
     return (data: any[]) => {
         let result: number[] = [];
         for(let i=0;i<size;i++) {
             const sectorData = data[i];
+
             const d = processors[i](Array.isArray(sectorData) ? sectorData : [sectorData]);
             if(d.length > lim) throw new Error(`Cannot store ${d.length}/${lim} bytes of data! Increase packetSize on the object!`);
+
             result.push(...convertBytePows(d.length, packetDelimitSize));
             d.forEach(val => result.push(val));
         }

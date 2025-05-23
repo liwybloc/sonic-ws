@@ -22,6 +22,7 @@ import { convertUBytePows, deconvertUBytePows, ETX, processCharCodes, STX } from
 import { UnFlattenData } from "../util/packets/PacketUtils";
 import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, PacketReceiveProcessors, PacketSendProcessors, PacketValidityProcessors } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
+import { Connection } from "../Connection";
 
 export type ValidatorFunction = ((socket: SonicWSConnection, values: any[]) => boolean) | null;
 
@@ -82,7 +83,7 @@ export class Packet {
 
             this.receiveProcessor = createObjReceiveProcessor(this.type, this.packetDelimitSize);
             this.validifier       = createObjValidator(this.type, this.packetDelimitSize);
-            this.sendProcessor    = createObjSendProcessor(this.type, this.packetDelimitSize);
+            this.sendProcessor    = createObjSendProcessor(this);
         } else {
             this.type    = schema.type;
             this.dataMax = schema.dataMax;

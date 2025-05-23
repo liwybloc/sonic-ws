@@ -21,11 +21,9 @@ import { VERSION } from '../../../version';
 import { Packet } from '../../packets/Packets';
 import { BatchHelper } from '../../util/packets/BatchHelper';
 import { toPacketBuffer } from '../../util/BufferUtil';
+import { Connection } from '../../Connection';
 
-// throttle at 90% of rate limit to avoid spikes and kicks
-const THRESHOLD_MULT = 0.90;
-
-export abstract class SonicWSCore {
+export abstract class SonicWSCore implements Connection {
 
     /** Raw 'ws' library connection / webjs WebSocket class */
     public socket: WebSocket;
@@ -131,7 +129,6 @@ export abstract class SonicWSCore {
 
         const key = data[0];
         const value = data.slice(1);
-        if (key == null) return;
 
         const packet = this.serverPackets.getPacket(this.serverPackets.getTag(key));
         
@@ -235,6 +232,13 @@ export abstract class SonicWSCore {
         const interval = setInterval(call, time) as unknown as number;
         this.timers.push(interval);
         return interval;
+    }
+
+    /**
+     * Closes the connection
+     */
+    public close(code?: number, reason?: string): void {
+        this.socket.close(code, reason);
     }
 
 }

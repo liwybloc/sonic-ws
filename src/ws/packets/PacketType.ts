@@ -59,11 +59,13 @@ export enum PacketType {
     UVARINT = 13,
     /** One or more integers between -281,474,976,710,656 and 281,474,976,710,655 | zig-zag encoded (good for deltas; maps like -1->1, 1->2, -2->3, 2->4, etc.)  */
     VARINT_ZZ = 14,
+    /** Var ints that use deltas; each value will show the difference from the last value. Good for close numbers */
+    DELTAS = 15,
 
     /** One or more single precision floating point numbers. Only up to 7 digits of accuracy. */
-    FLOAT = 15,
+    FLOAT = 16,
 
     /** One or more true/false */
-    BOOLEANS = 16,
+    BOOLEANS = 17,
     
 }

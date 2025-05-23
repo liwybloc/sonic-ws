@@ -15,6 +15,7 @@
  */
 
 import { SonicWSCore } from "../../client/core/ClientCore";
+import { Connection } from "../../Connection";
 import { Packet } from "../../packets/Packets";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
 import { toPacketBuffer } from "../BufferUtil";
@@ -25,20 +26,20 @@ export class BatchHelper {
 
     public batchedData: Record<number, number[]> = {};
 
-    public registerSendPackets(packetHolder: PacketHolder, clazz: SonicWSCore | SonicWSConnection) {
+    public registerSendPackets(packetHolder: PacketHolder, conn: Connection) {
         packetHolder.getTags().forEach(tag => {
             const packet = packetHolder.getPacket(tag);
             if(packet.dataBatching == 0) return;
             const code = packetHolder.getKey(tag);
-            this.initiateBatch(code, packet.dataBatching, clazz);
+            this.initiateBatch(code, packet.dataBatching, conn);
         });
     }
 
-    public initiateBatch(code: number, time: number, clazz: SonicWSCore | SonicWSConnection) {
+    public initiateBatch(code: number, time: number, conn: Connection) {
         this.batchedData[code] = [];
-        clazz.setInterval(() => {
+        conn.setInterval(() => {
             if(this.batchedData[code].length == 0) return;
-            clazz.raw_send(toPacketBuffer(code, this.batchedData[code]));
+            conn.raw_send(toPacketBuffer(code, this.batchedData[code]));
             this.batchedData[code] = [];
         }, time);
     }

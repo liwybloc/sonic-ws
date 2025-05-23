@@ -21,11 +21,12 @@ import { BatchHelper } from '../util/packets/BatchHelper';
 import { Packet } from '../packets/Packets';
 import { RateHandler } from '../util/packets/RateHandler';
 import { toPacketBuffer } from '../util/BufferUtil';
+import { Connection } from '../Connection';
 
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
 const NEW_LINE = '\n'.charCodeAt(0);
 
-export class SonicWSConnection {
+export class SonicWSConnection implements Connection {
 
     /** Raw 'ws' library socket */
     public socket: WS.WebSocket;
@@ -291,10 +292,10 @@ export class SonicWSConnection {
     }
 
     /**
-     * Closes the socket
+     * Closes the connection
      */
-    public close(code: number = 1000): void {
-        this.socket.close(code);
+    public close(code?: number, reason?: string): void {
+        this.socket.close(code, reason);
     }
 
     /**
