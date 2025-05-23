@@ -117,8 +117,10 @@ export abstract class SonicWSCore implements Connection {
         throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/cutelittlelily/sonic-ws");
     }
 
-    private listenPacket(data: string | [any[], boolean], code: number) {
-        listenPacket(data, this.listeners.event[code], this.invalidPacket);
+    private listenPacket(data: string | [any[], boolean], code: number): void {
+        const listeners = this.listeners.event[code];
+        if(!listeners) return console.warn("Warn: No listener for packet " + this.serverPackets.getTag(code));
+        listenPacket(data, listeners, this.invalidPacket);
     }
 
     private async messageHandler(event: MessageEvent) {

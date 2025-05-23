@@ -90,7 +90,7 @@ export function fromShort(short: SHORT_BITS) {
 // checks, conversion
 export function toShort(n: number, signed: boolean): SHORT_BITS {
     // no nan/infinity
-    if(!isFinite(n)) throw new Error("Cannot use NaN or Infinity in shorts.");
+    if(!isFinite(n)) throw new Error("Can only use real numbers in shorts: " + n);
     // limit check
     const lim = signed ? NEGATIVE_SHORT : MAX_SHORT;
     const min = signed ? -NEGATIVE_SHORT - 1 : 0;
@@ -118,7 +118,7 @@ export function toSignedShort(number: number): SHORT_BITS {
 // checks
 export function toByte(n: number, signed: boolean): number {
     // no nan/infinity
-    if(!isFinite(n)) throw new Error("Cannot use NaN or Infinity in bytes.");
+    if(!isFinite(n)) throw new Error("Can only use real numbers in bytes: " + n);;
     // limit check
     const lim = signed ? NEGATIVE_BYTE : MAX_BYTE;
     if (n > lim || n < -lim - 1) throw new Error(`${signed ? "Signed " : " "}Byte Numbers must be within range -${lim + 1} and ${lim}: ${n}`);
