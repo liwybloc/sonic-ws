@@ -280,7 +280,11 @@ export function CreateEnumPacket(settings: EnumPacketSettings): Packet {
  * @param array A 2-depth array of multi-valued
  */
 export function FlattenData(arr: any[][]): any[][] {
-    return arr[0]?.map((_, i) => arr.map(row => row[i])) ?? [];
+    if(arr == null) return [];
+    const setup = arr[0];
+    if(setup == null) return [];
+    if(!Array.isArray(setup)) throw new Error(`Cannot flatten array: ${arr}`);
+    return setup.map((_, i) => arr.map(row => row[i])) ?? [];
 }
 
 /**
