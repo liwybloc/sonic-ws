@@ -17,12 +17,10 @@
 import { DefineEnum } from "../util/enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../util/enums/EnumType";
 import { SonicWSConnection } from "../server/SonicWSConnection";
-import { splitArray } from "../util/ArrayUtil";
-import { convertUBytePows, convertVarInt, deconvertUBytePows, deconvertVarInts, ETX, processCharCodes, readVarInt, STX } from "../util/packets/CompressionUtil";
+import { convertVarInt, processCharCodes, readVarInt } from "../util/packets/CompressionUtil";
 import { UnFlattenData } from "../util/packets/PacketUtils";
 import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, PacketReceiveProcessors, PacketSendProcessors, PacketValidityProcessors } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
-import { Connection } from "../Connection";
 import { asString } from "../util/BufferUtil";
 
 export type ValidatorFunction = ((socket: SonicWSConnection, values: any[]) => boolean) | null;
@@ -39,8 +37,6 @@ export class Packet {
 
     public dataMax: number | number[];
     public dataMin: number | number[];
-
-    public packetDelimitSize: number;
 
     public dataBatching: number;
     public maxBatchSize: number;
@@ -72,8 +68,6 @@ export class Packet {
         this.dataBatching = schema.dataBatching;
         this.maxBatchSize = client ? Infinity : schema.maxBatchSize;
 
-        this.packetDelimitSize = schema.packetDelimitSize;
-
         if(schema.object) {
             this.type    = schema.types;
             this.dataMax = schema.dataMaxes;
@@ -82,8 +76,8 @@ export class Packet {
             this.minSize = this.type.length;
             this.object  = true;
 
-            this.receiveProcessor = createObjReceiveProcessor(this.type, this.packetDelimitSize);
-            this.validifier       = createObjValidator(this.type, this.packetDelimitSize);
+            this.receiveProcessor = createObjReceiveProcessor(this.type);
+            this.validifier       = createObjValidator(this.type);
             this.sendProcessor    = createObjSendProcessor(this);
         } else {
             this.type    = schema.type;
@@ -158,7 +152,6 @@ export class Packet {
             ...sharedData,
             this.maxSize + 1,                                                 // size, and +1 because of 0 for single
             this.autoFlatten ? 1 : 0,                                         // auto flatten flag
-            this.packetDelimitSize,
             ...(this.dataMax as number[]).map(this.serializeNumber).flat(), // all data maxes, serialized
             ...(this.dataMin as number[]).map(this.serializeNumber).flat(), // all data mins, serialized
             ...(this.type as PacketType[]),                                   // all types, offset by 1 for NULL
@@ -226,8 +219,6 @@ export class Packet {
         if (size != -1) {
             // 1 for true, 0 for false
             const autoFlatten: boolean = data[offset++] == 1;
-            // packet delimit size stuff
-            const packetDelimitSize: number = data[offset++];
 
             // read var ints for the datamaxes
             const [dataMaxes, o1] = this.readVarInts(data, offset, size)
@@ -245,7 +236,7 @@ export class Packet {
             const finalTypes: (PacketType | EnumPackage)[] = types.map(x => x == PacketType.ENUMS ? enums[index++] : x); // convert enums to their enum packages
 
             // make schema
-            const schema = PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, packetDelimitSize, dataBatching, maxBatchSize, -1);
+            const schema = PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, dataBatching, maxBatchSize, -1);
             return [
                 new Packet(tag, schema, null, false, client),
                 // +1 to go next
@@ -302,8 +293,6 @@ export class PacketSchema {
     public dataMax: number = -1;
     public dataMin: number = -1;
 
-    public packetDelimitSize: number = 1;
-
     public dataBatching: number = 0;
     public maxBatchSize: number = 10;
 
@@ -343,7 +332,7 @@ export class PacketSchema {
     }
 
     public static object(types: (PacketType | EnumPackage)[], dataMaxes: number[], dataMins: number[], dontSpread: boolean,
-                         autoFlatten: boolean, packetDelimitSize: number, dataBatching: number, maxBatchSize: number, rateLimit: number): PacketSchema {
+                         autoFlatten: boolean, dataBatching: number, maxBatchSize: number, rateLimit: number): PacketSchema {
         if(types.length != dataMaxes.length || types.length != dataMins.length)
             throw new Error("There is an inbalance between the amount of types, data maxes, and data mins!");
 
@@ -362,7 +351,6 @@ export class PacketSchema {
         schema.dataMins = dataMins;
         schema.dontSpread = dontSpread;
         schema.autoFlatten = autoFlatten;
-        schema.packetDelimitSize = packetDelimitSize;
         schema.dataBatching = dataBatching;
         schema.maxBatchSize = maxBatchSize;
         schema.rateLimit = rateLimit;

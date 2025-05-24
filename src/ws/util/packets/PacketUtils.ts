@@ -174,9 +174,6 @@ export type MultiPacketSettings = SharedPacketSettings & {
     dataMins?: number[] | number;
     /** Will automatically run FlattenData() and UnFlattenData() on values; this will optimize [[x,y,z],[x,y,z]...] for wire transfer */
     autoFlatten?: boolean;
-    /** If the packet will have values larger than 255 bytes, you can increase this value to get 255^x values. */
-    packetSize?: number;
-    // ^^ please get rid of this shit and make it varints.. please..
 };
 
 /** Settings for single-typed enum packets */
@@ -225,7 +222,7 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
  */
 export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     let { tag, types, dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false,
-          packetSize = 1, validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
+          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
 
     const invalid = types.find((type) => !isValidType(type));
     if (invalid) {
@@ -247,7 +244,7 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
     // largepacket could be turned bigger if i ever need it, and this'll be easier impl anyway
-    const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten, packetSize, dataBatching, maxBatchSize, rateLimit);
+    const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten, dataBatching, maxBatchSize, rateLimit);
 
     return new Packet(tag, schema, validator, enabled, false);
 }

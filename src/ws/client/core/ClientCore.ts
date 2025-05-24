@@ -15,12 +15,12 @@
  */
 
 import { PacketHolder } from '../../util/packets/PacketHolder';
-import { NULL, readVarInt } from '../../util/packets/CompressionUtil';
+import { readVarInt } from '../../util/packets/CompressionUtil';
 import { listenPacket, processPacket } from '../../util/packets/PacketUtils';
 import { SERVER_SUFFIX, VERSION } from '../../../version';
 import { Packet } from '../../packets/Packets';
 import { BatchHelper } from '../../util/packets/BatchHelper';
-import { asString, splitBufferAt, toPacketBuffer } from '../../util/BufferUtil';
+import { asString, toPacketBuffer } from '../../util/BufferUtil';
 import { Connection } from '../../Connection';
 
 export abstract class SonicWSCore implements Connection {

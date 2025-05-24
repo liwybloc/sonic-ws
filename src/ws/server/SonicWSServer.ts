@@ -18,7 +18,7 @@ import fetch from 'node-fetch';
 import * as WS from 'ws';
 import { SonicWSConnection } from './SonicWSConnection';
 import { PacketHolder } from '../util/packets/PacketHolder';
-import { convertVarInt, MAX_BYTE, NULL } from '../util/packets/CompressionUtil';
+import { convertVarInt, MAX_BYTE } from '../util/packets/CompressionUtil';
 import { SERVER_SUFFIX_NUMS, VERSION } from '../../version';
 import { processPacket } from '../util/packets/PacketUtils';
 import { Packet } from '../packets/Packets';

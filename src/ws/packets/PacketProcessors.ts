@@ -16,13 +16,10 @@
 
 import { EnumPackage, EnumValue } from "../util/enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertFloat, convertBytePows, decompressBools, deconvertFloat, deconvertBytePows, demapShort_ZZ, demapZigZag, fromShort, fromSignedByte, fromSignedShort, mapShort_ZZ, mapZigZag, byteOverflowPow, processCharCodes, sectorSize, SHORT_BITS, toByte, toShort, toSignedByte, toSignedShort, MAX_DSECT_SIZE, convertVarInt, deconvertVarInts, VARINT_CHAIN_FLAG, MAX_VSECT_SIZE, MAX_BYTE, readVarInt } from "../util/packets/CompressionUtil";
+import { compressBools, convertFloat, convertBytePows, decompressBools, deconvertFloat, deconvertBytePows, demapShort_ZZ, demapZigZag, fromShort, fromSignedByte, fromSignedShort, mapShort_ZZ, mapZigZag, byteOverflowPow, processCharCodes, sectorSize, SHORT_BITS, toByte, toShort, toSignedByte, toSignedShort, MAX_DSECT_SIZE, convertVarInt, deconvertVarInts, VARINT_CHAIN_FLAG, MAX_VSECT_SIZE, MAX_BYTE, readVarInt, MAX_UVARINT } from "../util/packets/CompressionUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 import { splitBuffer } from "../util/BufferUtil";
-import { SonicWSConnection } from "../server/SonicWSConnection";
-import { SonicWSCore } from "../client/core/ClientCore";
-import { Connection } from "../Connection";
 
 const BYTE_LEN = (data: Uint8Array, cap: number, min: number) => data.length >= min && data.length <= cap;
 const SHORT_LEN = (data: Uint8Array, cap: number, min: number) => data.length >= min * 2 && data.length <= cap * 2 && data.length % 2 == 0;
@@ -242,12 +239,9 @@ export const PacketSendProcessors: Record<PacketType, (...data: any) => number[]
 // so uhm. it work. sorry-
 export function createObjSendProcessor(packet: Packet): (data: any[]) => number[] {
     const types = (packet.type as PacketType[]);
-    const packetDelimitSize = packet.packetDelimitSize;
 
     const size = types.length;
     const processors = types.map(t => PacketSendProcessors[t]);
-
-    const lim = byteOverflowPow(packetDelimitSize);
     
     return (data: any[]) => {
         let result: number[] = [];
@@ -255,33 +249,35 @@ export function createObjSendProcessor(packet: Packet): (data: any[]) => number[
             const sectorData = data[i];
 
             const d = processors[i](Array.isArray(sectorData) ? sectorData : [sectorData]);
-            if(d.length > lim) throw new Error(`Cannot store ${d.length}/${lim} bytes of data! Increase packetSize on the object!`);
+            if(d.length > MAX_UVARINT) throw new Error(`Cannot send ${d.length}/${MAX_UVARINT} bytes of data!`);
 
-            result.push(...convertBytePows(d.length, packetDelimitSize));
+            result.push(...convertVarInt(d.length, false));
             d.forEach(val => result.push(val));
         }
         return result;
     };
 }
-export function createObjReceiveProcessor(types: PacketType[], packetDelimitSize: number): (data: Uint8Array, dataCaps: number[], packet: Packet) => any {
+export function createObjReceiveProcessor(types: PacketType[]): (data: Uint8Array, dataCaps: number[], packet: Packet) => any {
     const processors = types.map(t => PacketReceiveProcessors[t]);
     return (data: Uint8Array, dataCaps: number[], packet: Packet) => {
         let result: any[] = [];
         let enums = 0;
         for(let i=0;i<data.length;) {
-            const sectorLength = deconvertBytePows(data.slice(i, i += packetDelimitSize));
+            const [off, sectorLength] = readVarInt(data, i, false);
+            i = off;
             const sector = data.slice(i, i += sectorLength);
             result.push(processors[result.length](sector, dataCaps[result.length], packet, types[result.length] == PacketType.ENUMS ? enums++ : 0));
         }
         return result;
     };
 }
-export function createObjValidator(types: PacketType[], packetDelimitSize: number): (data: Uint8Array, dataCaps: number[], dataMins: number[], packet: Packet) => boolean {
+export function createObjValidator(types: PacketType[]): (data: Uint8Array, dataCaps: number[], dataMins: number[], packet: Packet) => boolean {
     const validators = types.map(t => PacketValidityProcessors[t]);
     return (data: Uint8Array, dataCaps: number[], dataMins: number[], packet: Packet) => {
         let sectors = 0, enums = 0;
         for(let i=0;i<data.length;) {
-            const sectorLength = deconvertBytePows(data.slice(i, i += packetDelimitSize));
+            const [off, sectorLength] = readVarInt(data, i, false);
+            i = off;
             if(sectorLength + i > data.length) return false;
             const sector = data.slice(i, i += sectorLength);
             if(!validators[sectors](sector, dataCaps[sectors], dataMins[sectors], packet, types[sectors] == PacketType.ENUMS ? enums++ : 0)) return false;

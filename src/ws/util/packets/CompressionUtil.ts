@@ -18,9 +18,6 @@ import { splitArray } from "../ArrayUtil";
 
 // this shit is so complex so i commented it...
 
-// char cache for easier code
-export const NULL = String.fromCharCode(0), STX = String.fromCharCode(1), ETX = String.fromCharCode(2);
-
 // the highest 8-bit
 export const MAX_BYTE = 0xFF;
 // we split the usable range in half to separate positive and negative encodings
@@ -198,22 +195,12 @@ export function convertBytePows(number: number, chars: number): number[] {
     return convertBase(number, chars, toSignedByte, NEGATIVE_BYTE, BYTE_OVERFLOW, byteOverflowPow);
 }
 
-export function convertUBytePows(number: number, chars: number): number[] {
-    return convertBase(number, chars, (n: number) => toByte(n, false), 0, BYTE_OVERFLOW, byteOverflowPow);
-}
-
 // decodes a string created by convertINT_D back into the original signed integer
 export function deconvertBytePows(codes: any) {
     if(codes.length == 0) return fromSignedByte(codes[0]);
     // for each code point in the string, reverse the sign encoding if necessary,
     // multiply by the positional weight based on its place (most-significant-digit first)
     return codes.reduce((c: number, n: number, i: number, arr: any) => c + fromSignedByte(n) * byteOverflowPow(arr.length - i - 1), 0);
-}
-export function deconvertUBytePows(codes: number[]): number {
-    if(codes.length == 0) return codes[0];
-    // for each code point in the string, reverse the sign encoding if necessary,
-    // multiply by the positional weight based on its place (most-significant-digit first)
-    return codes.reduce((c: number, n: number, i: number, arr: any) => c + n * byteOverflowPow(arr.length - i - 1), 0);
 }
 
 // boolean stuff
