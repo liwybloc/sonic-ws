@@ -14,40 +14,50 @@
  * limitations under the License.
  */
 
-import { SonicWSCore } from "../../client/core/ClientCore";
 import { Connection } from "../../Connection";
 import { Packet } from "../../packets/Packets";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
 import { toPacketBuffer } from "../BufferUtil";
-import { convertBytePows, convertVarInt, deconvertBytePows, readVarInt } from "./CompressionUtil";
+import { convertVarInt, readVarInt } from "./CompressionUtil";
 import { PacketHolder } from "./PacketHolder";
 
 export class BatchHelper {
 
-    public batchedData: Record<number, number[]> = {};
+    private batchTimes: Record<number, number> = {};
+    private batchTimeouts: Record<number, number> = {};
+    private batchedData: Record<number, number[]> = {};
+
+    private conn!: Connection;
 
     public registerSendPackets(packetHolder: PacketHolder, conn: Connection) {
+        this.conn = conn;
         packetHolder.getTags().forEach(tag => {
             const packet = packetHolder.getPacket(tag);
             if(packet.dataBatching == 0) return;
             const code = packetHolder.getKey(tag);
-            this.initiateBatch(code, packet.dataBatching, conn);
+            this.initiateBatch(code, packet.dataBatching);
         });
     }
 
-    public initiateBatch(code: number, time: number, conn: Connection) {
+    private initiateBatch(code: number, time: number) {
         this.batchedData[code] = [];
-        conn.setInterval(() => {
-            if(this.batchedData[code].length == 0) return;
-            conn.raw_send(toPacketBuffer(code, this.batchedData[code]));
+        this.batchTimes[code] = time;
+    }
+
+    private startBatch(code: number) {
+        this.batchTimeouts[code] = this.conn.setTimeout(() => {
+            this.conn.raw_send(toPacketBuffer(code, this.batchedData[code]));
             this.batchedData[code] = [];
-        }, time);
+            delete this.batchTimeouts[code];
+        }, this.batchTimes[code]) as unknown as number;
     }
 
     public batchPacket(code: number, data: number[]) {
         const batch = this.batchedData[code];
         batch.push(...convertVarInt(data.length, false));
         data.forEach(val => batch.push(val));
+
+        if(!this.batchTimeouts[code]) this.startBatch(code);
     }
 
     public static unravelBatch(packet: Packet, data: Uint8Array, socket: SonicWSConnection | null): any[] | string {
