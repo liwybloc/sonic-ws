@@ -36,8 +36,6 @@ export class SonicWSConnection implements Connection {
     private listeners: Record<string, Array<(...data: any[]) => void>>;
 
     private print: boolean = false;
-
-    private timers: number[] = [];
     
     private handshakePacket: string | null;
     private handshakeLambda!: (data: WS.MessageEvent) => void;
@@ -62,6 +60,8 @@ export class SonicWSConnection implements Connection {
     public id: number;
     /** The indexed character of the connection. Smaller data packet in strings. */
     public code: string;
+
+    timers: Record<number, number> = {};
 
     constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number) {
         this.socket = socket;
@@ -102,7 +102,7 @@ export class SonicWSConnection implements Connection {
         }
 
         this.socket.on('close', () => {
-            this.timers.forEach(clearTimeout);
+            Object.values(this.timers).forEach(clearTimeout);
         });
     }
 
@@ -302,10 +302,14 @@ export class SonicWSConnection implements Connection {
      * Sets a timeout that will automatically end when the socket closes
      * @param call The function to call
      * @param time The time between now and the call (ms)
+     * @returns The timeout id to be used with socket.clearInterval(id)
      */
     public setTimeout(call: () => void, time: number): number {
-        const timeout = setTimeout(call, time) as unknown as number;
-        this.timers.push(timeout);
+        const timeout = setTimeout(() => {
+            call();
+            this.clearTimeout(timeout);
+        }, time) as unknown as number;
+        this.timers[timeout] = timeout;
         return timeout;
     }
 
@@ -313,11 +317,28 @@ export class SonicWSConnection implements Connection {
      * Sets an interval that will automatically end when the socket closes
      * @param call The function to call
      * @param time The time between calls (ms)
+     * @returns The interval id to be used with socket.clearInterval(id)
      */
     public setInterval(call: () => void, time: number): number {
         const interval = setInterval(call, time) as unknown as number;
-        this.timers.push(interval);
+        this.timers[interval] = interval;
         return interval;
+    }
+
+    /**
+     * Clears a timeout
+     * @param id The timeout id
+     */
+    public clearTimeout(id: number): void {
+        clearTimeout(id);
+        delete this.timers[id];
+    }
+    /**
+     * Clears an interval
+     * @param id The interval id
+     */
+    public clearInterval(id: number): void {
+        this.clearTimeout(id);
     }
 
 }

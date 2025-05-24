@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
+import { MAX_BYTE } from "../packets/CompressionUtil";
 import { EnumPackage } from "./EnumType";
 
-export const MAX_ENUM_SIZE = 0x80;
+export const MAX_ENUM_SIZE = MAX_BYTE;
 
 export const ENUM_TAG_TO_KEY: Record<string, Record<any, number>> = {};
 export const ENUM_KEY_TO_TAG: Record<string, Record<number, any>> = {};
