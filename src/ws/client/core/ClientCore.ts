@@ -15,12 +15,12 @@
  */
 
 import { PacketHolder } from '../../util/packets/PacketHolder';
-import { NULL } from '../../util/packets/CompressionUtil';
+import { NULL, readVarInt } from '../../util/packets/CompressionUtil';
 import { listenPacket, processPacket } from '../../util/packets/PacketUtils';
-import { VERSION } from '../../../version';
+import { SERVER_SUFFIX, VERSION } from '../../../version';
 import { Packet } from '../../packets/Packets';
 import { BatchHelper } from '../../util/packets/BatchHelper';
-import { toPacketBuffer } from '../../util/BufferUtil';
+import { asString, splitBufferAt, toPacketBuffer } from '../../util/BufferUtil';
 import { Connection } from '../../Connection';
 
 export abstract class SonicWSCore implements Connection {
@@ -40,7 +40,6 @@ export abstract class SonicWSCore implements Connection {
 
     private pastKeys: boolean = false;
     private readyListeners: Array<() => void> | null = [];
-    private keyHandler: ((event: MessageEvent) => undefined) | null;
 
     private batcher: BatchHelper;
 
@@ -60,10 +59,12 @@ export abstract class SonicWSCore implements Connection {
         this.preListen = {};
 
         this.batcher = new BatchHelper();
-        this.invalidPacket = this.invalidPacket.bind(this);
 
-        this.keyHandler = event => this.serverKeyHandler(event);
-        this.socket.addEventListener('message', this.keyHandler); // lambda to persist 'this'
+        this.invalidPacket = this.invalidPacket.bind(this);
+        this.serverKeyHandler = this.serverKeyHandler.bind(this);
+        this.messageHandler = this.messageHandler.bind(this);
+
+        this.socket.addEventListener('message', this.serverKeyHandler);
 
         this.socket.addEventListener('close', (event: CloseEvent) => {
             this.listeners.close.forEach(listener => listener(event));
@@ -73,22 +74,36 @@ export abstract class SonicWSCore implements Connection {
         this.bufferHandler = bufferHandler;
     }
 
-    private serverKeyHandler(event: MessageEvent): undefined {
-        const data: string = event.data.toString();
-        if(!data.startsWith("SWS")) {
+    private reading: boolean = false;
+    private async serverKeyHandler(event: MessageEvent) {
+        // stupid asynchronous bullshit
+        if(this.reading) return this.messageHandler(event);
+        this.reading = true;
+        const data: Uint8Array = await this.bufferHandler(event);
+
+        if(data.length < 3 || asString(data.slice(0, 3)) != SERVER_SUFFIX) {
             this.socket.close(1000);
             throw new Error("The server requested is not a Sonic WS server.");
         }
 
-        const version = data.charCodeAt(3);
+        if(data.length == 3) {
+            // todo: queue
+            return;
+        }
+
+        const version = data[3];
         if(version != VERSION) {
             this.socket.close(1000);
             throw new Error(`Version mismatch: ${version > VERSION ? "client" : "server"} is outdated (server: ${version}, client: ${VERSION})`);              
         }
 
-        const [ckData, skData, uData] = data.substring(4).split(NULL);
+        const [off,ckLength] = readVarInt(data, 4, false);
+        const ckData = data.slice(off, off + ckLength);
         this.clientPackets.holdPackets(Packet.deserializeAll(ckData, true));
+        const skData = data.slice(off + ckLength, data.length - 1);
         this.serverPackets.holdPackets(Packet.deserializeAll(skData, true));
+
+        this.id = data[data.length - 1];
 
         this.batcher.registerSendPackets(this.clientPackets, this);
 
@@ -106,10 +121,8 @@ export abstract class SonicWSCore implements Connection {
         this.readyListeners!.forEach(l => l());
         this.readyListeners = null; // clear
 
-        this.socket.removeEventListener('message', this.keyHandler!);
-        this.socket.addEventListener('message', event => this.messageHandler(event)); // lambda to persist 'this'
-
-        this.keyHandler = null;
+        this.socket.removeEventListener('message', this.serverKeyHandler);
+        this.socket.addEventListener('message', this.messageHandler);
     }
 
     private invalidPacket(listened: string) {

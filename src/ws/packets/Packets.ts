@@ -18,11 +18,12 @@ import { DefineEnum } from "../util/enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../util/enums/EnumType";
 import { SonicWSConnection } from "../server/SonicWSConnection";
 import { splitArray } from "../util/ArrayUtil";
-import { convertUBytePows, deconvertUBytePows, ETX, processCharCodes, STX } from "../util/packets/CompressionUtil";
+import { convertUBytePows, convertVarInt, deconvertUBytePows, deconvertVarInts, ETX, processCharCodes, readVarInt, STX } from "../util/packets/CompressionUtil";
 import { UnFlattenData } from "../util/packets/PacketUtils";
 import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, PacketReceiveProcessors, PacketSendProcessors, PacketValidityProcessors } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
 import { Connection } from "../Connection";
+import { asString } from "../util/BufferUtil";
 
 export type ValidatorFunction = ((socket: SonicWSConnection, values: any[]) => boolean) | null;
 
@@ -102,7 +103,7 @@ export class Packet {
         this.validate        = client ? () => true : (data: Uint8Array) => this.validifier(data, this.dataMax, this.dataMin, this, 0);
         this.customValidator = customValidator;
         
-        this.serializeBytePows = this.serializeBytePows.bind(this);
+        this.serializeNumber = this.serializeNumber.bind(this);
     }
 
     public listen(value: Uint8Array, socket: SonicWSConnection | null): [processed: any, flatten: boolean] | string {
@@ -127,140 +128,162 @@ export class Packet {
         }
     }
 
-    private serializeBytePows(n: number) {
-        return String.fromCharCode(...convertUBytePows(n, this.packetDelimitSize).map(x => x + 1));
+    private serializeNumber(n: number): number[] {
+        return convertVarInt(n, false);
     }
 
-    public serialize(): string {
-        // spread flag; ETX for "2", STX for "1", avoid NULL for delimiting
-        const spreadFlag = this.dontSpread ? ETX : STX;
-        // enum data, avoid null
-        const enumData = String.fromCharCode(this.enumData.length + 1) + this.enumData.map(x => x.serialize()).join("");
-        // data batching, also avoid null
-        const dataBatching = String.fromCharCode(this.dataBatching + 1) + String.fromCharCode(this.maxBatchSize + 1);
-        // rate limit, avoiding null again... ugh i should prob fix this with a map-
-        const rateLimit = String.fromCharCode(this.rateLimit + 1);
+    public serialize(): number[] {
+
+        // shared values for both
+        const sharedData: number[] = [
+            this.tag.length, ...processCharCodes(this.tag),
+            this.dontSpread ? 1 : 0,
+            this.dataBatching, this.maxBatchSize,
+            this.enumData.length, ...this.enumData.map(x => x.serialize()).flat(),
+        ];
 
         // single-value packet (not an object schema)
         if (!this.object) {
-            return spreadFlag + dataBatching + rateLimit + enumData +
-                STX +                                                // dummy byte flag for consistent deserialization; becomes -1 to indicate single
-                String.fromCharCode((this.dataMax as number) + 1) +  // the data max, offset by 1 for NULL
-                String.fromCharCode((this.dataMin as number) + 1) +  // the data min, offset by 1 for NULL
-                String.fromCharCode((this.type as PacketType) + 1) + // the type, offset by 1 for NULL
-                String.fromCharCode(this.tag.length + 1) +           // tag length, offset by 1 for NULL
-                this.tag;                                            // the tag
-        }
-
-        // object packet
-        return spreadFlag + dataBatching + rateLimit + enumData +
-            String.fromCharCode(this.maxSize + 2) +                                     // size, and +2 because of NULL and STX (STX is for single)
-            (this.autoFlatten ? ETX : STX) +                                            // auto flatten flag
-            String.fromCharCode(this.packetDelimitSize + 1) +                           // packet delimit size, offset by 1 for NULL
-            (this.dataMax as number[]).map(this.serializeBytePows).join("") +          // all data maxes, serialized
-            (this.dataMin as number[]).map(this.serializeBytePows).join("") +          // all data mins, serialized
-            (this.type as PacketType[]).map(x => String.fromCharCode(x + 1)).join("") + // all types, offset by 1 for NULL
-            String.fromCharCode(this.tag.length + 1) +                                  // tag length, offset by 1 for NULL
-            this.tag;                                                                   // the tag
-    }
-
-    private static processBytePows(area: string, packetDelimitSize: number) {
-        return splitArray(processCharCodes(area), packetDelimitSize).map((x: number[]) => deconvertUBytePows(x.map(y => y - 1))); // subtract 1 to reverse
-    }
-
-    // i think i was high when i made these,
-    // probably ^^
-    public static deserialize(text: string, offset: number, client: boolean): [packet: Packet, offset: number] {
-        const beginningOffset = offset;
-
-        const dontSpread: boolean = text[offset] == ETX;
-
-        const dataBatching: number = text.charCodeAt(++offset) - 1;
-        const maxBatchSize: number = text.charCodeAt(++offset) - 1;
-
-        const rateLimit: number = text.charCodeAt(++offset) - 1;
-
-        const enumLength = text.charCodeAt(++offset) - 1;
-        const enums: EnumPackage[] = [];
-
-        for (let i = 0; i < enumLength; i++) {
-            const enumTagLength = text.charCodeAt(++offset) - 1;
-            const enumTag = text.slice(++offset, offset += enumTagLength);
-            offset--;
-            const valueCount = text.charCodeAt(++offset) - 1;
-            const values = [];
-            for (let j = 0; j < valueCount; j++) {
-                const valueLength = text.charCodeAt(++offset) - 1;
-                const valueType = text.charCodeAt(++offset) - 1;
-                const value = text.slice(++offset, offset += valueLength);
-                offset--;
-                values.push(TYPE_CONVERSION_MAP[valueType](value));
-            }
-            enums.push(DefineEnum(enumTag, values));
-        }
-
-        const size: number = text.charCodeAt(++offset) - 2;
-
-        // objects
-        // the single packet is STX so STX - 2 = -1
-        if (size != -1) {
-            // ETX for true, STX for false
-            const autoFlatten: boolean = text[++offset] == ETX;
-            // delimiting size for huge packets
-            const packetDelimitSize: number = text.charCodeAt(++offset) - 1;
-
-            const areaSize = size * packetDelimitSize;
-
-            const dcStart = ++offset;         // data maxes section start
-            const dcEnd = dcStart + areaSize; // data maxes section end
-            const dmStart = dcEnd;            // data mins section start
-            const dmEnd = dmStart + areaSize; // data mins section end
-            const tStart = dmEnd;             // types section start
-            const tEnd = tStart + size;       // types section end
-            const tagStart = tEnd + 1;        // tag string starts after tag length byte
-
-            const dataMaxes: number[]  = this.processBytePows(text.substring(dcStart, dcEnd), packetDelimitSize);
-            const dataMins: number[]   = this.processBytePows(text.substring(dmStart, dmEnd), packetDelimitSize);
-
-            const types: PacketType[]  = processCharCodes(text.substring(tStart, tEnd)).map(x => x - 1);
-
-            let index = 0;
-            const finalTypes: (PacketType | EnumPackage)[] = types.map(x => x == PacketType.ENUMS ? enums[index++] : x); // convert enums to their enum packages
-
-            const tagLength: number = text.charCodeAt(tagStart - 1) - 1; // tag length is right behind tag, subtracting 1 to reverse
-            const tag = text.substring(tagStart, tagStart + tagLength); // tag is tag length long. yeah
-
-            const schema = PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, packetDelimitSize, dataBatching, maxBatchSize, rateLimit);
             return [
-                new Packet(tag, schema, null, false, client),
-                (offset - beginningOffset) + 1 + areaSize + areaSize + size + tagLength,
+                ...sharedData,           // shared
+                0,                       // dummy byte flag for consistent deserialization; becomes -1 to indicate single
+                ...this.serializeNumber(this.dataMax as number),  // the data max
+                ...this.serializeNumber(this.dataMin as number),  // the data min
+                this.type as PacketType, // type
             ];
         }
 
-        // single packet; subtracting 1 to revere.
-        const dataMax: number = text.charCodeAt(++offset) - 1;
-        const dataMin: number = text.charCodeAt(++offset) - 1;
-        const type: PacketType = (text.charCodeAt(++offset) - 1) as PacketType;
+        // object packet
+        return [
+            ...sharedData,
+            this.maxSize + 1,                                                 // size, and +1 because of 0 for single
+            this.autoFlatten ? 1 : 0,                                         // auto flatten flag
+            this.packetDelimitSize,
+            ...(this.dataMax as number[]).map(this.serializeNumber).flat(), // all data maxes, serialized
+            ...(this.dataMin as number[]).map(this.serializeNumber).flat(), // all data mins, serialized
+            ...(this.type as PacketType[]),                                   // all types, offset by 1 for NULL
+            this.tag.length,                                                  // tag length, offset by 1 for NULL
+        ];
+    }
 
+    private static readVarInts(data: Uint8Array, offset: number, size: number): [res: number[], offset: number] {
+        const res: number[] = [];
+        for(let i=0;i<size;i++) {
+            const [off, varint] = readVarInt(data, offset, false);
+            offset = off;
+            res.push(varint);
+        }
+        return [res, offset];
+    }
+
+    public static deserialize(data: Uint8Array, offset: number, client: boolean): [packet: Packet, offset: number] {
+        const beginningOffset = offset;
+
+        // read length, go up 1
+        const tagLength: number = data[offset++];
+        // read tag as it's up 1, and add offset
+        const tag: string = asString(data.slice(offset, offset += tagLength));
+
+        // then read dont spread, go up 1
+        const dontSpread: boolean = data[offset++] == 1;
+
+        // read batching, up 1
+        const dataBatching: number = data[offset++];
+        // read max batch size, up 1; can prob remove? idk
+        const maxBatchSize: number = data[offset++];
+
+        // read enum length, up 1
+        const enumLength = data[offset++];
+        const enums: EnumPackage[] = [];
+
+        for (let i = 0; i < enumLength; i++) {
+            // read tag length, go up 1
+            const enumTagLength = data[offset++];
+            // up 1 so read offset -> offset += tag length, to add tag length and skip over it
+            const enumTag = asString(data.slice(offset, offset += enumTagLength));
+            // read amount of values
+            const valueCount = data[offset++];
+            const values = [];
+            for (let j = 0; j < valueCount; j++) {
+                // read the length of the value, go up 1
+                const valueLength = data[offset++];
+                // then read the type of value, up 1
+                const valueType = data[offset++];
+                // now can just read the values, increase offset for later use
+                const value = asString(data.slice(offset, offset += valueLength));
+                // process it
+                values.push(TYPE_CONVERSION_MAP[valueType](value));
+            }
+            // define the enum with the values
+            enums.push(DefineEnum(enumTag, values));
+        }
+
+        // read type count; prob should change sometime
+        const size: number = data[offset++] - 1;
+
+        // objects
+        // single packet is 0, 0 - 1 = -1
+        if (size != -1) {
+            // 1 for true, 0 for false
+            const autoFlatten: boolean = data[offset++] == 1;
+            // packet delimit size stuff
+            const packetDelimitSize: number = data[offset++];
+
+            // read var ints for the datamaxes
+            const [dataMaxes, o1] = this.readVarInts(data, offset, size)
+            offset = o1;
+            
+            // read var ints for the datamins
+            const [dataMins, o2] = this.readVarInts(data, offset, size);
+            offset = o2;
+
+            // get types, skip past size since there'll be size of these
+            const types: PacketType[]  = Array.from(data.slice(offset, offset += size));
+
+            // convert any enums into their indexed form for best bandwidth
+            let index = 0;
+            const finalTypes: (PacketType | EnumPackage)[] = types.map(x => x == PacketType.ENUMS ? enums[index++] : x); // convert enums to their enum packages
+
+            // make schema
+            const schema = PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, packetDelimitSize, dataBatching, maxBatchSize, -1);
+            return [
+                new Packet(tag, schema, null, false, client),
+                // +1 to go next
+                (offset - beginningOffset) + 1,
+            ];
+        }
+
+        // single packet
+
+        // read varint for datamax
+        const [o1, dataMax] = readVarInt(data, offset, false);
+        offset = o1;
+
+        // read varint for datamin
+        const [o2, dataMin] = readVarInt(data, offset, false);
+        offset = o2;
+
+        // read type, no more so no +1
+        const type: PacketType = data[offset] as PacketType;
+
+        // do enum stuff
         const finalType = type == PacketType.ENUMS ? enums[0] : type; // convert enum to enum package
 
-        const tagStart = ++offset;
-        const tagLength: number = text.charCodeAt(tagStart) - 1;
-        const tag: string = text.substring(tagStart + 1, tagStart + 1 + tagLength);
-
-        const schema = PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, maxBatchSize, rateLimit);
+        // make schema
+        const schema = PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, maxBatchSize, -1);
         return [
             new Packet(tag, schema, null, false, client),
-            (offset - beginningOffset) + 1 + tagLength
+            // +1 to go next
+            (offset - beginningOffset) + 1,
         ];
     }
     
-    public static deserializeAll(text: string, client: boolean): Packet[] {
+    public static deserializeAll(data: Uint8Array, client: boolean): Packet[] {
         const arr: Packet[] = [];
 
         let offset = 0;
-        while(offset < text.length) {
-            const [packet, len] = this.deserialize(text, offset, client);
+        while(offset < data.length) {
+            const [packet, len] = this.deserialize(data, offset, client);
             arr.push(packet);
             offset += len;
         }

@@ -18,8 +18,8 @@ import fetch from 'node-fetch';
 import * as WS from 'ws';
 import { SonicWSConnection } from './SonicWSConnection';
 import { PacketHolder } from '../util/packets/PacketHolder';
-import { MAX_BYTE, NULL } from '../util/packets/CompressionUtil';
-import { VERSION, VERSION_CHAR } from '../../version';
+import { convertVarInt, MAX_BYTE, NULL } from '../util/packets/CompressionUtil';
+import { SERVER_SUFFIX_NUMS, VERSION } from '../../version';
 import { processPacket } from '../util/packets/PacketUtils';
 import { Packet } from '../packets/Packets';
 
@@ -54,6 +54,9 @@ export class SonicWSServer {
 
     private handshakePacket: string | null = null;
 
+    private maxConnections: number = 0;
+    private queueTime: number = 10000;
+
     /**
      * Initializes and hosts a websocket with sonic protocol
      * Rate limits can be set with wss.setClientRateLimit(x) and wss.setServerRateLimit(x); it is defaulted at 500/second per both
@@ -70,13 +73,20 @@ export class SonicWSServer {
         const s_clientPackets = this.clientPackets.serialize();
         const s_serverPackets = this.serverPackets.serialize();
 
-        const keyData = "SWS" + VERSION_CHAR + s_clientPackets + NULL + s_serverPackets;
+        const keyData: number[] = [...SERVER_SUFFIX_NUMS, VERSION, ...convertVarInt(s_clientPackets.length, false), ...s_clientPackets, ...s_serverPackets];
+        const retryData = new Uint8Array(SERVER_SUFFIX_NUMS);
 
         this.wss.on('connection', (socket) => {
+            if(this.maxConnections != 0 && this.connections.length >= this.maxConnections) {
+                socket.send(retryData);
+                socket.close(1013);
+                return;
+            }
+
             const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket, this.clientRateLimit, this.serverRateLimit);
 
             // send tags to the client so it doesn't have to hard code them in
-            socket.send(keyData + NULL + String.fromCharCode(this.clientRateLimit) + sonicConnection.code);
+            socket.send(new Uint8Array([...keyData, sonicConnection.id]));
 
             this.connections.push(sonicConnection);
             this.connectionMap[sonicConnection.id] = sonicConnection;
@@ -220,6 +230,24 @@ export class SonicWSServer {
      */
     public broadcast(tag: string, ...values: any): void {
         this.broadcastFiltered(tag, () => true, ...values);
+    }
+
+    /**
+     * Sets the maximum amount of users that can be connected; will tell about wss.setQueueTime(time). Defaults to unlimited
+     * @param amount The amount of users that can be connected
+     */
+    public setMaxConnections(amount: number): void {
+        if(amount < 1) throw new Error(`Max connections must be at least 1: ${amount}`);
+        this.maxConnections = amount;
+    }
+
+    /**
+     * Sets the time in milliseconds for queued users to attempt to retry; applies for wss.setMaxConnections(amt). Defaults to 10,000ms
+     * @param time The requested reconnect time
+     */
+    public setQueueTimeMs(time: number): void {
+        if(time < 1) throw new Error(`Queue time must be at least 1ms: ${time}ms`);
+        this.queueTime = time;
     }
 
     /**

@@ -14,7 +14,11 @@
  * limitations under the License.
  */
 
+import { processCharCodes } from "./ws/util/packets/CompressionUtil";
+
 /** Current protocol version */
 export const VERSION = 9;
-/** Current protocol version as a character */
-export const VERSION_CHAR = String.fromCharCode(VERSION);
+/** Server data suffix */
+export const SERVER_SUFFIX = "SWS";
+/** Server data suffix in array */
+export const SERVER_SUFFIX_NUMS = processCharCodes(SERVER_SUFFIX);

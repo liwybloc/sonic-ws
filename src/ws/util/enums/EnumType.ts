@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import { processCharCodes } from "../packets/CompressionUtil";
+
 const TYPE_INDEX_MAP: Record<string, number> = { 
     'string': 0,
     'number': 1,
@@ -46,14 +48,17 @@ export class EnumPackage {
         this.values = values;
     }
 
-    public serialize(): string {
-        return String.fromCharCode(this.tag.length + 1) +      // tag length
-               this.tag +                                      // tag
-               String.fromCharCode(this.values.length + 1) +   // value count
-               this.values.map(v =>                                    
-                   String.fromCharCode(String(v).length + 1) + // value length
-                   String.fromCharCode(getTypedIndex(v) + 1) + // value type
-                   v                                           // value
-               ).join("");
+    public serialize(): number[] {
+        const tag = processCharCodes(this.tag);
+        return [
+                this.tag.length,                   // tag length
+                ...tag,                            // tag
+                this.values.length,                // value count
+                ...this.values.map(v => [                                
+                    String(v).length,              // value length
+                    getTypedIndex(v),              // value type
+                    ...processCharCodes(String(v)) // value
+                ]).flat(),
+               ];
     }
 }

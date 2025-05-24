@@ -20,7 +20,7 @@ import { listenPacket, processPacket } from '../util/packets/PacketUtils';
 import { BatchHelper } from '../util/packets/BatchHelper';
 import { Packet } from '../packets/Packets';
 import { RateHandler } from '../util/packets/RateHandler';
-import { toPacketBuffer } from '../util/BufferUtil';
+import { asString, toPacketBuffer } from '../util/BufferUtil';
 import { Connection } from '../Connection';
 
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
@@ -58,8 +58,6 @@ export class SonicWSConnection implements Connection {
     
     /** The index of the connection; unique for all connected, recycles old disconnected ids. Should be safe for INTS_C unless you have more than 27,647 connected at once. */
     public id: number;
-    /** The indexed character of the connection. Smaller data packet in strings. */
-    public code: string;
 
     timers: Record<number, number> = {};
 
@@ -68,7 +66,6 @@ export class SonicWSConnection implements Connection {
         this.host = host;
 
         this.id = id;
-        this.code = String.fromCharCode(id);
         
         this.handshakePacket = handshakePacket;
 
@@ -192,7 +189,7 @@ export class SonicWSConnection implements Connection {
     }
 
     private hideNewLines(str: Uint8Array): string {
-        return Array.from(str).map(x => x == NEW_LINE ? "☺" : String.fromCharCode(x)).join("");
+        return Array.from(asString(str)).map(x => x == "\n" ? "☺" : x).join("");
     }
 
     /** Sends raw data to the user; will likely fail validity checks if used externally */

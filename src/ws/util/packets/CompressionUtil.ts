@@ -313,19 +313,20 @@ export function convertVarInt(num: number, signed: boolean) {
                   : convertSVarInt(num, 0               , MAX_UVARINT, uvarIntOverflowPow, UVARINT_OVERFLOW, false);
 }
 
-export function readVarInt(arr: number[] | Uint8Array, off: number, signed: boolean) {
+export function readVarInt(arr: number[] | Uint8Array, off: number, signed: boolean): [offset: number, number: number] {
     let num = [];
     let cont;
     do {
-        let part = arr[off++];
-        num.push(part);
+        const part = arr[off++];
         cont = (part & VARINT_CHAIN_FLAG) != 0;
+        num.push(cont ? part ^ VARINT_CHAIN_FLAG : part);
     } while (cont);
     const func = signed ? varIntOverflowPow : uvarIntOverflowPow;
-    return [off, num.reduce((p, c, i) => p + fromSignedVarInt(i < num.length - 1 ? c ^ VARINT_CHAIN_FLAG : c, signed) * func(i), 0)];
+    const number = num.reduce((p, c, i) => p + fromSignedVarInt(c, signed) * func(i), 0);
+    return [off, number];
 }
 
-export function deconvertVarInts(arr: number[], signed: boolean) {
+export function deconvertVarInts(arr: number[], signed: boolean): number[] {
     let res = [];
     let i = 0;
     while(i < arr.length) {

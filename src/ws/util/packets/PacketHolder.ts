@@ -15,6 +15,7 @@
  */
 
 import { Packet } from "../../packets/Packets";
+import { convertVarInt } from "./CompressionUtil";
 
 /**
  * Holds and maps packets to indexed keys and tags for serialization and lookup
@@ -135,8 +136,8 @@ export class PacketHolder {
     }
 
     /** Serializes all registered packets into a string */
-    public serialize(): string {
-        return this.packets.map(p => p.serialize()).join("");
+    public serialize(): number[] {
+        return this.packets.map(p => p.serialize()).flat();
     }
 
 }

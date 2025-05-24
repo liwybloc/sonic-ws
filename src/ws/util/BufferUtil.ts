@@ -25,3 +25,21 @@ export function toPacketBuffer(code: number, data: number[]): Uint8Array {
 export function splitBuffer(arr: Uint8Array, x: number): number[][] {
     return splitArray(Array.from(arr), x) as number[][];
 }
+export function splitBufferAt(arr: Uint8Array, at: number): number[][] {
+    const result: number[][] = [];
+    let current: number[] = [];
+    for (const byte of Array.from(arr)) {
+        if (byte === at) {
+            result.push(current);
+            current = [];
+        } else {
+            current.push(byte);
+        }
+    }
+    result.push(current);
+    return result;
+}
+
+export function asString(data: Uint8Array | number[]): string {
+    return String.fromCharCode(...Array.from(data));
+}

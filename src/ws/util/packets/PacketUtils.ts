@@ -86,16 +86,18 @@ function isValidType(type: any): boolean {
     return (typeof type == 'number' && type in PacketType) || type instanceof EnumPackage;
 }
 
-/** Clamps data max between 0 and the NEGATIVE_C^packetDelimitSize */
-function clampDataMax(dataMax: number, packetDelimitSize: number = 1) {
+const MAX_DATA_MAX = 2048383;
+
+/** Clamps data max between 0 and MAX_DATA_MAX */
+function clampDataMax(dataMax: number) {
     if(dataMax < 0) {
         console.warn(`Having a data maximum below 0 does not do anything!`);
         return 0;
     }
-    const max = Math.pow(BYTE_OVERFLOW, packetDelimitSize);
-    if(dataMax > max) {
-        console.warn(`Only ${max} values can be sent on this type! Use CreateObjPacket() & packetSize: x if you want to send more.`);
-        return max;
+    // dfkjgsdkfgjk
+    if(dataMax > MAX_DATA_MAX) {
+        console.warn(`Only ${MAX_DATA_MAX} values can be sent on a type! Uhh make an issue if you want to send more.`);
+        return MAX_DATA_MAX;
     }
     return dataMax;
 }
@@ -105,7 +107,7 @@ function clampDataMin(dataMin: number, dataMax: number) {
         console.warn(`Having a data minimum below 0 does not do anything!`);
         return 0;
     }
-    // also catches >BYTE_OVERFLOW
+    // also catches >MAX_DATA_MAX
     if(dataMin > dataMax) {
         console.warn(`Data minimum can not be higher than the data maximum!`);
         return dataMax;
@@ -174,6 +176,7 @@ export type MultiPacketSettings = SharedPacketSettings & {
     autoFlatten?: boolean;
     /** If the packet will have values larger than 255 bytes, you can increase this value to get 255^x values. */
     packetSize?: number;
+    // ^^ please get rid of this shit and make it varints.. please..
 };
 
 /** Settings for single-typed enum packets */
@@ -201,7 +204,7 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
 
     if(noDataRange) {
         dataMin = 0;
-        dataMax = BYTE_OVERFLOW;
+        dataMax = MAX_DATA_MAX;
     } else if(dataMin == undefined) dataMin = type == PacketType.NONE ? 0 : dataMax;
 
     if (!isValidType(type)) {
@@ -230,7 +233,7 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     }
 
     if(noDataRange) {
-        dataMaxes = Array.from({ length: types.length }).map(() => Math.pow(BYTE_OVERFLOW, packetSize));
+        dataMaxes = Array.from({ length: types.length }).map(() => MAX_DATA_MAX);
         dataMins = Array.from({ length: types.length }).map(() => 0);
     } else {
         if(dataMaxes == undefined) dataMaxes = Array.from({ length: types.length }).map(() => 1);
@@ -240,7 +243,7 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
         else if (!Array.isArray(dataMins)) dataMins = Array.from({ length: types.length }).map(() => dataMins as number);
     }
 
-    const clampedDataMaxes = dataMaxes.map(m => clampDataMax(m, packetSize));
+    const clampedDataMaxes = dataMaxes.map(clampDataMax);
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
     // largepacket could be turned bigger if i ever need it, and this'll be easier impl anyway
