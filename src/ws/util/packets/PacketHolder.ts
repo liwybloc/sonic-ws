@@ -74,14 +74,6 @@ export class PacketHolder {
     }
 
     /**
-     * Returns the character representation of a tag's key
-     * @param tag The packet tag
-     */
-    public getChar(tag: string): string {
-        return String.fromCharCode(this.getKey(tag));
-    }
-
-    /**
      * Returns the tag associated with a given character key
      * @param key A 1-character string key
      */

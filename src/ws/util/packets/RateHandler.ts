@@ -52,7 +52,7 @@ export class RateHandler {
     public registerAll(packetHolder: PacketHolder, prefix: string) {
         const packets = packetHolder.getPackets();
         for(const packet of packets)
-            this.registerRate(prefix + packetHolder.getChar(packet.tag), packet.rateLimit);
+            this.registerRate(prefix + packetHolder.getKey(packet.tag), packet.rateLimit);
     }
 
     public trigger(tag: string | number): boolean {

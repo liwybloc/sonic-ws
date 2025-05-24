@@ -19,7 +19,7 @@ import { splitArray } from "../util/ArrayUtil";
 import { compressBools, convertFloat, convertBytePows, decompressBools, deconvertFloat, deconvertBytePows, demapShort_ZZ, demapZigZag, fromShort, fromSignedByte, fromSignedShort, mapShort_ZZ, mapZigZag, byteOverflowPow, processCharCodes, sectorSize, SHORT_BITS, toByte, toShort, toSignedByte, toSignedShort, MAX_DSECT_SIZE, convertVarInt, deconvertVarInts, VARINT_CHAIN_FLAG, MAX_VSECT_SIZE, MAX_BYTE, readVarInt, MAX_UVARINT } from "../util/packets/CompressionUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
-import { splitBuffer } from "../util/BufferUtil";
+import { asString, splitBuffer } from "../util/BufferUtil";
 
 const BYTE_LEN = (data: Uint8Array, cap: number, min: number) => data.length >= min && data.length <= cap;
 const SHORT_LEN = (data: Uint8Array, cap: number, min: number) => data.length >= min * 2 && data.length <= cap * 2 && data.length % 2 == 0;
@@ -136,7 +136,7 @@ export const PacketReceiveProcessors: Record<PacketType, (data: Uint8Array, cap:
             const [off, varint] = readVarInt(data, i, false);
             const stringSize = varint;
             i = off - 1;
-            strings.push(data.slice(i + 1, i + 1 + stringSize).map(x => String.fromCharCode(x)).join(""));
+            strings.push(asString(data.slice(i + 1, i + 1 + stringSize)));
             i += stringSize;
         }
         return strings;
@@ -181,7 +181,7 @@ export const PacketReceiveProcessors: Record<PacketType, (data: Uint8Array, cap:
 
 export const PacketSendProcessors: Record<PacketType, (...data: any) => number[]> = {
     [PacketType.NONE]: () => [],
-    [PacketType.RAW]: (data: any[]) => data.map(s => processCharCodes(String(s))).flat(),
+    [PacketType.RAW]: (data: Uint8Array | number[]) => Array.from(data),
 
     [PacketType.STRINGS_UTF8]: (strings: any[]) => {
         const res: number[] = [];

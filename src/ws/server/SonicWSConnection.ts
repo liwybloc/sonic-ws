@@ -236,8 +236,7 @@ export class SonicWSConnection implements Connection {
      * @param listener A function to listen for it
      */
     public on(tag: string, listener: (...values: any) => void): void {
-        const code = this.host.clientPackets.getChar(tag);
-        if (code == null) throw new Error(`Tag "${tag}" has not been created!`);
+        if (!this.host.clientPackets.hasTag(tag)) throw new Error(`Tag "${tag}" has not been created!`);
 
         if (!this.listeners[tag]) this.listeners[tag] = [];
         this.listeners[tag].push(listener);

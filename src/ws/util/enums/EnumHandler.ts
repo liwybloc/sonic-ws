@@ -49,6 +49,3 @@ export function WrapEnum(tag: string, value: any): number {
 export function fromIndex(tag: string, index: number): string {
     return ENUM_KEY_TO_TAG[tag][index];
 }
-export function fromEncoded(tag: string, encoded: string): string {
-    return fromIndex(tag, encoded.charCodeAt(0));
-}
