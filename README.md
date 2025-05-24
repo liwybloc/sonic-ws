@@ -8,7 +8,7 @@ Compression:
 - Lossless compression up to 70% or more (for example, 38kb -> 14kb)
 - Optimized bandwidth for many different types to fit special constraints
 - Automatic helpers to flatten typed nested arrays for maximum wire efficiency (for example, [[1,2,3],[4,5,6]] to [[1,4],[2,5],[3,6]])
-- Uses raw bytes to transmit data as efficiently as possible
+- Uses raw binary bytes to transmit data as efficiently as possible while still using high level readable code
 
 Developer Friendly:
 - Predefined data types of various sized integers, decimals, strings, enums, etc. and RAW for any special cases
