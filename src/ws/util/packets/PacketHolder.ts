@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Lily (cutelittlelily)
+ * Copyright 2025 Lily (liwybloc)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 
 import { Packet } from "../../packets/Packets";
-import { convertVarInt } from "./CompressionUtil";
 
 /**
  * Holds and maps packets to indexed keys and tags for serialization and lookup

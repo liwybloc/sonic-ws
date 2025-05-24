@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Lily (cutelittlelily)
+ * Copyright 2025 Lily (liwybloc)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 import { PacketHolder } from "./PacketHolder";
 import { Packet, PacketSchema, ValidatorFunction } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
-import { BYTE_OVERFLOW } from "./CompressionUtil";
 import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage } from "../enums/EnumType";
 

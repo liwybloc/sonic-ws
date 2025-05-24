@@ -33,6 +33,7 @@ Developer Experience:
 - Timers and intervals for sockets that automatically clear upon closure
 - Many data types to maximize speed, clarity, bandwidth, and security
 - Debug tools for socket ids, byte size, data logging, etc. for troubleshooting
+- Very minimal learning curve, easy to work in
 - JSDoc's for understanding
 
 Whether you're making a real-time game, a dashboard, a distributed system, or anything else, SonicWS gets you safe, structured packets, fast.

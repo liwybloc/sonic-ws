@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Lily (cutelittlelily)
+ * Copyright 2025 Lily (liwybloc)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import { asString, toPacketBuffer } from '../util/BufferUtil';
 import { Connection } from '../Connection';
 
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
-const NEW_LINE = '\n'.charCodeAt(0);
 
 export class SonicWSConnection implements Connection {
 
