@@ -109,8 +109,6 @@ ws.on_close((event) => {
 
 ## KNOWN ISSUES
 
-Batch rate limit is off by 1
-
 Varint max is off by a bit
 
 ## PLANNED FEATURES

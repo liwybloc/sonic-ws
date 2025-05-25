@@ -179,11 +179,8 @@ export class SonicWSConnection implements Connection {
         const batchData = BatchHelper.unravelBatch(packet, value, this);
         if(typeof batchData == 'string') return this.invalidPacket(batchData);
 
-        // count each value towards the rate limit.
-        this.rater.subtract(CLIENT_RATELIMIT_TAG);
         for(const data of batchData) {
             this.listenPacket(data, tag);
-            if(this.rater.trigger(CLIENT_RATELIMIT_TAG)) break;
         }
     }
 

@@ -135,7 +135,7 @@ export class Packet {
         const sharedData: number[] = [
             this.tag.length, ...processCharCodes(this.tag),
             this.dontSpread ? 1 : 0,
-            this.dataBatching, this.maxBatchSize,
+            this.dataBatching,
             this.enumData.length, ...this.enumData.map(x => x.serialize()).flat(),
         ];
 
@@ -185,8 +185,6 @@ export class Packet {
 
         // read batching, up 1
         const dataBatching: number = data[offset++];
-        // read max batch size, up 1; can prob remove? idk
-        const maxBatchSize: number = data[offset++];
 
         // read enum length, up 1
         const enumLength = data[offset++];
@@ -239,7 +237,7 @@ export class Packet {
             const finalTypes: (PacketType | EnumPackage)[] = types.map(x => x == PacketType.ENUMS ? enums[index++] : x); // convert enums to their enum packages
 
             // make schema
-            const schema = PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, dataBatching, maxBatchSize, -1);
+            const schema = PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, dataBatching, -1, -1);
             return [
                 new Packet(tag, schema, null, false, client),
                 // +1 to go next
@@ -264,7 +262,7 @@ export class Packet {
         const finalType = type == PacketType.ENUMS ? enums[0] : type; // convert enum to enum package
 
         // make schema
-        const schema = PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, maxBatchSize, -1);
+        const schema = PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, -1, -1);
         return [
             new Packet(tag, schema, null, false, client),
             // +1 to go next
