@@ -136,7 +136,7 @@ export type SharedPacketSettings = {
      * Each batched packet is counted towards the rate limit.
      */
     dataBatching?: number;
-    /** If data batching is on, this will limit the amount of packets that can be batched into one (only effects the client). Defaults to 10. */
+    /** If data batching is on, this will limit the amount of packets that can be batched into one (only effects the client). Defaults to 10. 0 for unlimited. */
     maxBatchSize?: number;
 
     /** The amount of times this packet can be sent every second, or 0 for infinite. */

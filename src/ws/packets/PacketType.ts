@@ -26,12 +26,12 @@ export enum PacketType {
     RAW = 1,
 
     /** 8 byte string data (0-255 codes) */
-    STRINGS_UTF8 = 2,
+    STRINGS_ASCII = 2,
     /** 16 byte string data (0-65535 codes) */
     STRINGS_UTF16 = 3,
 
     /** Strings; defaults to UTF8 (0-255 codes) */
-    STRINGS = STRINGS_UTF8,
+    STRINGS = STRINGS_ASCII,
 
     /** Constant primitive data; strings, numbers, booleans, null, undefined */
     ENUMS = 4,

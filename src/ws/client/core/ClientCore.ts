@@ -20,7 +20,7 @@ import { listenPacket, processPacket } from '../../util/packets/PacketUtils';
 import { SERVER_SUFFIX, VERSION } from '../../../version';
 import { Packet } from '../../packets/Packets';
 import { BatchHelper } from '../../util/packets/BatchHelper';
-import { asString, toPacketBuffer } from '../../util/BufferUtil';
+import { as8String, toPacketBuffer } from '../../util/BufferUtil';
 import { Connection } from '../../Connection';
 
 export abstract class SonicWSCore implements Connection {
@@ -81,7 +81,7 @@ export abstract class SonicWSCore implements Connection {
         this.reading = true;
         const data: Uint8Array = await this.bufferHandler(event);
 
-        if(data.length < 3 || asString(data.slice(0, 3)) != SERVER_SUFFIX) {
+        if(data.length < 3 || as8String(data.slice(0, 3)) != SERVER_SUFFIX) {
             this.socket.close(1000);
             throw new Error("The server requested is not a Sonic WS server.");
         }

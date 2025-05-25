@@ -73,10 +73,6 @@ for(let i = 0; i <= 3; i++) {
     twoPow(i);
 }
 
-export function processCharCodes(text: string) {
-    return Array.from(text, char => char.charCodeAt(0));
-}
-
 export type SHORT_BITS = [high: number, low: number];
 
 // reconstruction
@@ -313,7 +309,7 @@ export function readVarInt(arr: number[] | Uint8Array, off: number, signed: bool
     return [off, number];
 }
 
-export function deconvertVarInts(arr: number[], signed: boolean): number[] {
+export function deconvertVarInts(arr: Uint8Array | number[], signed: boolean): number[] {
     let res = [];
     let i = 0;
     while(i < arr.length) {

@@ -20,7 +20,7 @@ import { listenPacket, processPacket } from '../util/packets/PacketUtils';
 import { BatchHelper } from '../util/packets/BatchHelper';
 import { Packet } from '../packets/Packets';
 import { RateHandler } from '../util/packets/RateHandler';
-import { asString, toPacketBuffer } from '../util/BufferUtil';
+import { as8String, toPacketBuffer } from '../util/BufferUtil';
 import { Connection } from '../Connection';
 
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
@@ -188,7 +188,7 @@ export class SonicWSConnection implements Connection {
     }
 
     private hideNewLines(str: Uint8Array): string {
-        return Array.from(asString(str)).map(x => x == "\n" ? "☺" : x).join("");
+        return Array.from(as8String(str)).map(x => x == "\n" ? "☺" : x).join("");
     }
 
     /** Sends raw data to the user; will likely fail validity checks if used externally */

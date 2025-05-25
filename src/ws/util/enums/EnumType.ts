@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { processCharCodes } from "../packets/CompressionUtil";
+import { processCharCodes } from "../StringUtil";
 
 const TYPE_INDEX_MAP: Record<string, number> = { 
     'string': 0,

@@ -15,6 +15,8 @@
  */
 
 import { splitArray } from "./ArrayUtil";
+import { fromShort, SHORT_BITS } from "./packets/CompressionUtil";
+import { convertCharCodes, convertCodePoints } from "./StringUtil";
 
 export function toPacketBuffer(code: number, data: number[]): Uint8Array {
     const buffer = new Uint8Array(1 + data.length);
@@ -26,6 +28,10 @@ export function splitBuffer(arr: Uint8Array, x: number): number[][] {
     return splitArray(Array.from(arr), x) as number[][];
 }
 
-export function asString(data: Uint8Array | number[]): string {
-    return String.fromCharCode(...Array.from(data));
+export function as8String(data: Uint8Array): string {
+    return convertCharCodes(Array.from(data));
+}
+export function as16String(data: Uint8Array): string {
+    const codePoints = splitBuffer(data, 2).map((short: number[]) => fromShort(short as SHORT_BITS));
+    return convertCodePoints(codePoints);
 }

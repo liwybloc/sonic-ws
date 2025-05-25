@@ -17,11 +17,12 @@
 import { DefineEnum } from "../util/enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../util/enums/EnumType";
 import { SonicWSConnection } from "../server/SonicWSConnection";
-import { convertVarInt, processCharCodes, readVarInt } from "../util/packets/CompressionUtil";
+import { convertVarInt, readVarInt } from "../util/packets/CompressionUtil";
 import { UnFlattenData } from "../util/packets/PacketUtils";
-import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, PacketReceiveProcessors, PacketSendProcessors, PacketValidityProcessors } from "./PacketProcessors";
+import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, createReceiveProcessor, createSendProcessor, createValidator, PacketReceiveProcessor, PacketSendProcessor, PacketTypeValidator } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
-import { asString } from "../util/BufferUtil";
+import { as8String } from "../util/BufferUtil";
+import { processCharCodes } from "../util/StringUtil";
 
 export type ValidatorFunction = ((socket: SonicWSConnection, values: any[]) => boolean) | null;
 
@@ -47,12 +48,13 @@ export class Packet {
     public rateLimit: number;
 
     public object: boolean;
+    public client: boolean;
     
-    private receiveProcessor: (data: Uint8Array, cap: any, packet: Packet, index: number) => any;
-    private sendProcessor: (...data: any[]) => number[];
-    private validifier: (data: Uint8Array, cap: any, min: any, packet: Packet, index: number) => boolean;
+    private receiveProcessor: PacketReceiveProcessor;
+    private sendProcessor: PacketSendProcessor;
+    private validator: PacketTypeValidator;
 
-    public processReceive: (data: Uint8Array) => any;
+    public processReceive: (data: Uint8Array, validationResult: any) => any;
     public processSend: (data: any[]) => number[];
     public validate: (data: Uint8Array) => boolean;
     public customValidator: ((socket: SonicWSConnection, ...values: any[]) => boolean) | null;
@@ -60,6 +62,7 @@ export class Packet {
     constructor(tag: string, schema: PacketSchema, customValidator: ValidatorFunction, enabled: boolean, client: boolean) {
         this.tag = tag;
         this.defaultEnabled = enabled;
+        this.client = client;
         
         this.enumData     = schema.enumData;
         this.rateLimit    = schema.rateLimit;
@@ -68,16 +71,16 @@ export class Packet {
         this.dataBatching = schema.dataBatching;
         this.maxBatchSize = client ? Infinity : schema.maxBatchSize;
 
-        if(schema.object) {
+        this.object = schema.object;
+        if(this.object) {
             this.type    = schema.types;
             this.dataMax = schema.dataMaxes;
             this.dataMin = schema.dataMins;
             this.maxSize = this.type.length;
             this.minSize = this.type.length;
-            this.object  = true;
 
-            this.receiveProcessor = createObjReceiveProcessor(this.type);
-            this.validifier       = createObjValidator(this.type);
+            this.receiveProcessor = createObjReceiveProcessor(this);
+            this.validator        = createObjValidator(this);
             this.sendProcessor    = createObjSendProcessor(this);
         } else {
             this.type    = schema.type;
@@ -85,16 +88,15 @@ export class Packet {
             this.dataMin = schema.dataMin;
             this.maxSize = this.dataMax;
             this.minSize = this.dataMin;
-            this.object  = false;
 
-            this.receiveProcessor = PacketReceiveProcessors[this.type];
-            this.validifier       = PacketValidityProcessors[this.type];
-            this.sendProcessor    = PacketSendProcessors[this.type];
+            this.receiveProcessor = createReceiveProcessor(this.type, this.enumData, this.dataMax);
+            this.validator        = createValidator(this.type, this.dataMax, this.dataMin, this.enumData);
+            this.sendProcessor    = createSendProcessor(this.type);
         }
         
-        this.processReceive  = (data: Uint8Array) => this.receiveProcessor(data, this.dataMax, this, 0);
+        this.processReceive  = (data: Uint8Array, validationResult: any) => this.receiveProcessor(data, validationResult, 0);
         this.processSend     = (data: any[]) => this.sendProcessor(data);
-        this.validate        = client ? () => true : (data: Uint8Array) => this.validifier(data, this.dataMax, this.dataMin, this, 0);
+        this.validate        = (data: Uint8Array) => this.validator(data, 0);
         this.customValidator = customValidator;
         
         this.serializeNumber = this.serializeNumber.bind(this);
@@ -102,9 +104,10 @@ export class Packet {
 
     public listen(value: Uint8Array, socket: SonicWSConnection | null): [processed: any, flatten: boolean] | string {
         try {
-            if(!this.validate(value)) return "Invalid packet";
+            const validationResult = this.validate(value);
+            if(!this.client && validationResult == false) return "Invalid packet";
 
-            const processed = this.processReceive(value);
+            const processed = this.processReceive(value, validationResult);
 
             const useableData = this.autoFlatten ? UnFlattenData(processed) : processed;
 
@@ -175,7 +178,7 @@ export class Packet {
         // read length, go up 1
         const tagLength: number = data[offset++];
         // read tag as it's up 1, and add offset
-        const tag: string = asString(data.slice(offset, offset += tagLength));
+        const tag: string = as8String(data.slice(offset, offset += tagLength));
 
         // then read dont spread, go up 1
         const dontSpread: boolean = data[offset++] == 1;
@@ -193,7 +196,7 @@ export class Packet {
             // read tag length, go up 1
             const enumTagLength = data[offset++];
             // up 1 so read offset -> offset += tag length, to add tag length and skip over it
-            const enumTag = asString(data.slice(offset, offset += enumTagLength));
+            const enumTag = as8String(data.slice(offset, offset += enumTagLength));
             // read amount of values
             const valueCount = data[offset++];
             const values = [];
@@ -203,7 +206,7 @@ export class Packet {
                 // then read the type of value, up 1
                 const valueType = data[offset++];
                 // now can just read the values, increase offset for later use
-                const value = asString(data.slice(offset, offset += valueLength));
+                const value = as8String(data.slice(offset, offset += valueLength));
                 // process it
                 values.push(TYPE_CONVERSION_MAP[valueType](value));
             }

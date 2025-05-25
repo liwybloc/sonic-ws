@@ -63,7 +63,7 @@ export class BatchHelper {
     public static unravelBatch(packet: Packet, data: Uint8Array, socket: SonicWSConnection | null): any[] | string {
         const result: any[] = [];
         for(let i=0;i<data.length;) {
-            if(result.length > packet.maxBatchSize) return "Too big of batch";
+            if(packet.maxBatchSize != 0 && result.length > packet.maxBatchSize) return "Too big of batch";
             const [off, varint] = readVarInt(data, i, false);
             i = off;
             if(i + varint > data.length) return "Tampered batch length";

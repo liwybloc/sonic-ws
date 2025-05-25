@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { processCharCodes } from "./ws/util/packets/CompressionUtil";
+import { processCharCodes } from "./ws/util/StringUtil";
 
 /** Current protocol version */
 export const VERSION = 9;
