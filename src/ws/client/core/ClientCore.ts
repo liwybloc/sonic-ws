@@ -108,10 +108,8 @@ export abstract class SonicWSCore implements Connection {
         this.batcher.registerSendPackets(this.clientPackets, this);
 
         Object.keys(this.preListen!).forEach(tag => this.preListen![tag].forEach(listener => {
-            const key = this.serverPackets.getKey(tag);
             // print the error to console without halting execution
-            if(key == null) return console.error(new Error(`The server does not send the packet with tag "${tag}"!`));
-
+            if(!this.serverPackets.hasTag(tag)) return console.error(new Error(`The server does not send the packet with tag "${tag}"!`));
             this.listen(tag, listener);
         }));
         this.preListen = null; // clear
@@ -161,7 +159,7 @@ export abstract class SonicWSCore implements Connection {
 
     protected listen(key: string, listener: (data: any[]) => void) {
         const skey = this.serverPackets.getKey(key);
-        if (!skey) {
+        if (skey == null) {
             console.log("Key is not available on server: " + key);
             return;
         }

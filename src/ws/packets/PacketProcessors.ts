@@ -16,7 +16,7 @@
 
 import { EnumPackage } from "../util/enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertFloat, convertBytePows, decompressBools, deconvertFloat, deconvertBytePows, demapShort_ZZ, demapZigZag, fromShort, fromSignedByte, fromSignedShort, mapShort_ZZ, mapZigZag, byteOverflowPow, sectorSize, SHORT_BITS, toByte, toShort, toSignedByte, toSignedShort, MAX_DSECT_SIZE, convertVarInt, MAX_BYTE, readVarInt, MAX_UVARINT } from "../util/packets/CompressionUtil";
+import { compressBools, convertFloat, convertBytePows, decompressBools, deconvertFloat, deconvertBytePows, demapShort_ZZ, demapZigZag, fromShort, fromSignedByte, fromSignedShort, mapShort_ZZ, mapZigZag, byteOverflowPow, sectorSize, SHORT_BITS, toByte, toShort, MAX_DSECT_SIZE, convertVarInt, MAX_BYTE, readVarInt, MAX_UVARINT } from "../util/packets/CompressionUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 import { as16String, as8String, splitBuffer } from "../util/BufferUtil";
@@ -190,11 +190,11 @@ export function createSendProcessor(type: PacketType): PacketSendProcessor {
 
         case PacketType.ENUMS        : return (enums: number[]) => enums;
 
-        case PacketType.BYTES        : return (numbers: number[]) => numbers.map(toSignedByte);
+        case PacketType.BYTES        : return (numbers: number[]) => numbers.map(n => toByte(n, true));
         case PacketType.UBYTES       : return (numbers: number[]) => numbers.map(n => toByte(n, false));
         case PacketType.BYTES_ZZ     : return (numbers: number[]) => numbers.map(mapZigZag);
 
-        case PacketType.SHORTS       : return (numbers: number[]) => numbers.map(toSignedShort).flat();
+        case PacketType.SHORTS       : return (numbers: number[]) => numbers.map(n => toShort(n, true)).flat();
         case PacketType.USHORTS      : return (numbers: number[]) => numbers.map(n => toShort(n, false)).flat();
         case PacketType.SHORTS_ZZ    : return (numbers: number[]) => numbers.map(mapShort_ZZ).flat();
 

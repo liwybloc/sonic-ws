@@ -45,7 +45,3 @@ export function WrapEnum(tag: string, value: any): number {
     if(!(value in ENUM_TAG_TO_KEY[tag])) throw new Error(`Value "${value}" does not exist in enum "${tag}"`);
     return ENUM_TAG_TO_KEY[tag][value];
 }
-
-export function fromIndex(tag: string, index: number): string {
-    return ENUM_KEY_TO_TAG[tag][index];
-}

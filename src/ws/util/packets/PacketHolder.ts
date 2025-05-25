@@ -37,7 +37,7 @@ export class PacketHolder {
      * @param packets Array of packets to register
      */
     constructor(packets?: Packet[]) {
-        this.key = 1;
+        this.key = 0;
 
         this.keys = {};
         this.tags = {};

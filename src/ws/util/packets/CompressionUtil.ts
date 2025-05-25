@@ -88,6 +88,10 @@ export function toShort(n: number, signed: boolean): SHORT_BITS {
     const lim = signed ? NEGATIVE_SHORT : MAX_SHORT;
     const min = signed ? -NEGATIVE_SHORT - 1 : 0;
     if (n > lim || n < min) throw new Error(`${signed ? "Signed " : " "}Short Numbers must be within range ${min} and ${lim}`);
+    // positive numbers are returned as-is
+    // negative numbers are made positive and offset above NEGATIVE_SHORT to mark them
+    if(signed) n = n < 0 ? -n + NEGATIVE_SHORT : n;
+
     // how many times it passes SHORT_OVERFLOW and the remainder
     return [Math.floor(n / SHORT_CC_OVERFLOW), n % SHORT_CC_OVERFLOW];
 }
@@ -100,13 +104,6 @@ export function fromSignedShort(short: SHORT_BITS) {
     // if it's above or equal to NEGATIVE_SHORT, it was originally negative, so we reverse the offset
     return point <= NEGATIVE_SHORT ? point : -point + NEGATIVE_SHORT;
 }
-// this converts a signed number into a non-negative integer that fits in a short
-export function toSignedShort(number: number): SHORT_BITS {
-    // positive numbers are returned as-is
-    // negative numbers are made positive and offset above NEGATIVE_SHORT to mark them
-    // ugh fix this shit
-    return toShort(number < 0 ? -number + NEGATIVE_SHORT : number, false);
-}
 
 // checks
 export function toByte(n: number, signed: boolean): number {
@@ -115,6 +112,8 @@ export function toByte(n: number, signed: boolean): number {
     // limit check
     const lim = signed ? NEGATIVE_BYTE : MAX_BYTE;
     if (n > lim || n < -lim - 1) throw new Error(`${signed ? "Signed " : " "}Byte Numbers must be within range -${lim + 1} and ${lim}: ${n}`);
+    // mark with NEGATIVE_BYTE
+    if(signed) n = n < 0 ? -n + NEGATIVE_BYTE : n;
     return n;
 }
 // this converts a byte back to a signed number
@@ -122,13 +121,6 @@ export function fromSignedByte(point: number) {
     // if the number is below NEGATIVE_BYTE, it's a positive number and can be returned directly
     // if it's above or equal to NEGATIVE_BYTE, it was originally negative, so we reverse the offset
     return point <= NEGATIVE_BYTE ? point : -point + NEGATIVE_BYTE;
-}
-// this converts a signed number into a non-negative integer that fits in a byte
-export function toSignedByte(number: number) {
-    // positive numbers are returned as-is
-    // negative numbers are made positive and offset above NEGATIVE_BYTE to mark them
-    number = toByte(number, true);
-    return number < 0 ? -number + NEGATIVE_BYTE : number;
 }
 
 // calculate how many characters (digits) are needed to store this number in OVERFLOW base
@@ -188,7 +180,7 @@ export function convertBase(number: number, chars: number, single: any, neg: num
 // im sleepy go aways..
 
 export function convertBytePows(number: number, chars: number): number[] {
-    return convertBase(number, chars, toSignedByte, NEGATIVE_BYTE, BYTE_OVERFLOW, byteOverflowPow);
+    return convertBase(number, chars, (n: number) => toByte(n, true), NEGATIVE_BYTE, BYTE_OVERFLOW, byteOverflowPow);
 }
 
 // decodes a string created by convertINT_D back into the original signed integer
