@@ -27,10 +27,10 @@ export enum PacketType {
 
     /** 8 byte string data (0-255 codes) */
     STRINGS_ASCII = 2,
-    /** 16 byte string data (0-65535 codes) */
+    /** Code point UTF16 data; up to 0x10FFFF */
     STRINGS_UTF16 = 3,
 
-    /** Strings; defaults to UTF8 (0-255 codes) */
+    /** Strings; defaults to ASCII (0-255 codes). Use STRINGS_UTF16 for more codes. */
     STRINGS = STRINGS_ASCII,
 
     /** Constant primitive data; strings, numbers, booleans, null, undefined */
