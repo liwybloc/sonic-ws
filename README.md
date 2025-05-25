@@ -14,6 +14,7 @@ Developer Friendly:
 - Predefined data types of various sized integers, decimals, strings, enums, etc. and RAW for any special cases
 - Keys are automatically indexed before transfer, improving readability and efficiency (for example, send("pixel") and send("p") use the same bandwidth)
 - Data is validated and supports custom validation, ensuring only valid, safe, and untampered packets ever call your listeners
+- Edge cases are heavily tested with heavy data ranges; supports code points fully up to the max of 0x10FFFF
 
 Security:
 - Tamper-proof; any invalid packet instantly causes closure, and tampering becomes incredibly difficult
@@ -55,11 +56,11 @@ Browser (Client):
 ```js
 const wss = new SonicWSServer({
     clientPackets: [
-        CreatePacket({tag: "pong", type: PacketType.VARINT, dataMax: 1})
+        CreatePacket({tag: "pong", type: PacketType.UVARINT, dataMax: 1})
     ],
     serverPackets: [
-        CreatePacket({tag: "ping", type: PacketType.VARINT, dataMax: 1}),
-        CreateObjPacket({tag: "data", types: [PacketType.BYTES, PacketTypes.STRINGS], dataMaxes: [2, 3]})
+        CreatePacket({tag: "ping", type: PacketType.UVARINT, dataMax: 1}),
+        CreateObjPacket({tag: "data", types: [PacketType.UBYTES, PacketTypes.STRINGS], dataMaxes: [2, 3]})
     ],
     websocketOptions: { port: 1234 }
 });
