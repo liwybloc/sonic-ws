@@ -109,8 +109,6 @@ ws.on_close((event) => {
 
 ## KNOWN ISSUES
 
-Varint max is off by a bit
-
 ## PLANNED FEATURES
 
 More data checking and better error handling
