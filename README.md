@@ -111,6 +111,4 @@ ws.on_close((event) => {
 
 ## PLANNED FEATURES
 
-More data checking and better error handling
-
-Implement a better system for data min/max
+Better error handling
