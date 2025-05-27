@@ -86,11 +86,6 @@ export abstract class SonicWSCore implements Connection {
             throw new Error("The server requested is not a Sonic WS server.");
         }
 
-        if(data.length == 3) {
-            // todo: queue
-            return;
-        }
-
         const version = data[3];
         if(version != VERSION) {
             this.socket.close(1000);
