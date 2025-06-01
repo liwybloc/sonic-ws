@@ -14,22 +14,46 @@
  * limitations under the License.
  */
 
+/**
+ * Holds shared connection values. Lets helper functions work on client and server.
+ */
 export interface Connection {
     
+    /**
+     * List of timers, in object just for efficiency.
+     */
     timers: Record<number, number>;
 
-    /** Sets an auto closing timer on the connection. Use connection.clearTimeout to prevent memory waste. */
+    /**
+     * Sets a timeout that will automatically end when the socket closes
+     * @param call The function to call
+     * @param time The time between now and the call (ms)
+     * @returns The timeout id to be used with socket.clearInterval(id)
+     */
     setTimeout(call: () => void, time: number): number;
-    /** Sets an auto closing interval on the connection. Use connection.clearInterval to prevent memory waste. */
+    /**
+     * Sets an interval that will automatically end when the socket closes
+     * @param call The function to call
+     * @param time The time between calls (ms)
+     * @returns The interval id to be used with socket.clearInterval(id)
+     */
     setInterval(call: () => void, time: number): number;
 
-    /** Safely clears a timer */
+    /**
+     * Clears a timeout/interval
+     * @param id The timeout id
+     */
     clearTimeout(index: number): void;
-    /** Safely clears an interval */
+    /**
+     * Clears an interval
+     * 
+     * Delegates to `clearTimeout`
+     * @param id The interval id
+     */
     clearInterval(index: number): void;
 
     /**
-     * Sends the uint8array through the connection
+     * Sends raw uint8array data through the connection
      */
     raw_send(data: Uint8Array): void;
 
