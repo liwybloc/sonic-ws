@@ -284,8 +284,8 @@ function convertSVarInt(num: number, min: number, max: number, overflowFunc: (n:
 }
 
 export function convertVarInt(num: number, signed: boolean) {
-    return signed ? convertSVarInt(num, -MAX_UVARINT - 1, MAX_UVARINT, varIntOverflowPow , VARINT_OVERFLOW , true )
-                  : convertSVarInt(num, 0               , MAX_UVARINT, uvarIntOverflowPow, UVARINT_OVERFLOW, false);
+    return signed ? convertSVarInt(num, -MAX_VARINT - 1, MAX_VARINT , varIntOverflowPow , VARINT_OVERFLOW , true )
+                  : convertSVarInt(num, 0              , MAX_UVARINT, uvarIntOverflowPow, UVARINT_OVERFLOW, false);
 }
 
 export function readVarInt(arr: number[] | Uint8Array, off: number, signed: boolean): [offset: number, number: number] {
