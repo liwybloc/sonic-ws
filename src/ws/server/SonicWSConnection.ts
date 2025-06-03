@@ -58,7 +58,7 @@ export class SonicWSConnection implements Connection {
     /** The index of the connection; unique for all connected, recycles old disconnected ids. Should be safe for INTS_C unless you have more than 27,647 connected at once. */
     public id: number;
 
-    timers: Record<number, number> = {};
+    _timers: Record<number, number> = {};
 
     constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number) {
         this.socket = socket;
@@ -98,7 +98,7 @@ export class SonicWSConnection implements Connection {
         }
 
         this.socket.on('close', () => {
-            Object.values(this.timers).forEach(clearTimeout);
+            Object.values(this._timers).forEach(clearTimeout);
         });
     }
 
@@ -293,19 +293,19 @@ export class SonicWSConnection implements Connection {
             call();
             this.clearTimeout(timeout);
         }, time) as unknown as number;
-        this.timers[timeout] = timeout;
+        this._timers[timeout] = timeout;
         return timeout;
     }
 
     public setInterval(call: () => void, time: number): number {
         const interval = setInterval(call, time) as unknown as number;
-        this.timers[interval] = interval;
+        this._timers[interval] = interval;
         return interval;
     }
 
     public clearTimeout(id: number): void {
         clearTimeout(id);
-        delete this.timers[id];
+        delete this._timers[id];
     }
 
     public clearInterval(id: number): void {

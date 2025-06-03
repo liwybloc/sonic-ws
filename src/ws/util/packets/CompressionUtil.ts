@@ -26,7 +26,7 @@ export const NEGATIVE_BYTE = Math.floor(MAX_BYTE / 2);
 // we use this to reduce the number of characters needed to represent large numbers
 export const BYTE_OVERFLOW = NEGATIVE_BYTE + 1;
 
-// the highest16-bit
+// the highest 16-bit
 export const MAX_SHORT = 0xFFFF;
 // we split the usable range in half to separate positive and negative encodings
 export const NEGATIVE_SHORT = Math.floor(MAX_SHORT / 2);

@@ -47,7 +47,7 @@ export abstract class SonicWSCore implements Connection {
 
     public id: number = -1;
 
-    timers: Record<number, number> = {};
+    _timers: Record<number, number> = {};
 
     constructor(ws: WebSocket, bufferHandler: (val: MessageEvent) => Promise<Uint8Array>) {
         this.socket = ws;
@@ -68,7 +68,7 @@ export abstract class SonicWSCore implements Connection {
 
         this.socket.addEventListener('close', (event: CloseEvent) => {
             this.listeners.close.forEach(listener => listener(event));
-            Object.values(this.timers).forEach(clearTimeout);
+            Object.values(this._timers).forEach(clearTimeout);
         });
 
         this.bufferHandler = bufferHandler;
@@ -236,12 +236,12 @@ export abstract class SonicWSCore implements Connection {
     }
 
     private setTimer(id: number) {
-        this.timers[id] = id;
+        this._timers[id] = id;
     }
 
     public clearTimeout(id: number): void {
         clearTimeout(id);
-        delete this.timers[id];
+        delete this._timers[id];
     }
     public clearInterval(id: number): void {
         this.clearTimeout(id);

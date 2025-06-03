@@ -18,11 +18,12 @@
  * Holds shared connection values. Lets helper functions work on client and server.
  */
 export interface Connection {
-    
+
     /**
      * List of timers, in object just for efficiency.
+     * For internal use only.
      */
-    timers: Record<number, number>;
+    _timers: Record<number, number>;
 
     /**
      * Sets a timeout that will automatically end when the socket closes
