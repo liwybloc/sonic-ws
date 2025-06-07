@@ -57,18 +57,14 @@ export const MAX_VARINT = Math.floor(MAX_UVARINT / 2);
 const BYTE_OVERFLOW_POWS: number[] = [];
 export const byteOverflowPow = (num: number) => BYTE_OVERFLOW_POWS[num] ??= BYTE_OVERFLOW ** num;
 
-const UVARINT_OVERFLOW_POWS: number[] = [];
-export const uvarIntOverflowPow = (num: number) => UVARINT_OVERFLOW_POWS[num] ??= UVARINT_OVERFLOW ** num;
-
 const VARINT_OVERFLOW_POWS: number[] = [];
-export const varIntOverflowPow = (num: number) => VARINT_OVERFLOW_POWS[num] ??= VARINT_OVERFLOW ** num;
+export const varIntOverflowPow = (num: number) => VARINT_OVERFLOW_POWS[num] ??= UVARINT_OVERFLOW ** num;
 
 const TWO_POWS: number[] = [];
 const twoPow = (num: number) => TWO_POWS[num] ??= Math.pow(2, num);
 
 for(let i = 0; i <= 3; i++) {
     byteOverflowPow(i);
-    uvarIntOverflowPow(i);
     varIntOverflowPow(i);
     twoPow(i);
 }
@@ -81,16 +77,11 @@ export function fromShort(short: SHORT_BITS) {
     return short[0] * SHORT_CC_OVERFLOW + short[1];
 }
 // checks, conversion
-export function toShort(n: number, signed: boolean): SHORT_BITS {
+export function toShort(n: number): SHORT_BITS {
     // no nan/infinity
     if(!isFinite(n)) throw new Error("Can only use real numbers in shorts: " + n);
     // limit check
-    const lim = signed ? NEGATIVE_SHORT : MAX_SHORT;
-    const min = signed ? -NEGATIVE_SHORT - 1 : 0;
-    if (n > lim || n < min) throw new Error(`${signed ? "Signed " : " "}Short Numbers must be within range ${min} and ${lim}`);
-    // positive numbers are returned as-is
-    // negative numbers are made positive and offset above NEGATIVE_SHORT to mark them
-    if(signed) n = n < 0 ? -n + NEGATIVE_SHORT : n;
+    if (n > MAX_SHORT || n < 0) throw new Error(`Short Numbers must be within range 0 and ${MAX_SHORT}`);
 
     // how many times it passes SHORT_OVERFLOW and the remainder
     return [Math.floor(n / SHORT_CC_OVERFLOW), n % SHORT_CC_OVERFLOW];
@@ -106,21 +97,12 @@ export function fromSignedShort(short: SHORT_BITS) {
 }
 
 // checks
-export function toByte(n: number, signed: boolean): number {
+export function toByte(n: number): number {
     // no nan/infinity
     if(!isFinite(n)) throw new Error("Can only use real numbers in bytes: " + n);;
     // limit check
-    const lim = signed ? NEGATIVE_BYTE : MAX_BYTE;
-    if (n > lim || n < -lim - 1) throw new Error(`${signed ? "Signed " : " "}Byte Numbers must be within range -${lim + 1} and ${lim}: ${n}`);
-    // mark with NEGATIVE_BYTE
-    if(signed) n = n < 0 ? -n + NEGATIVE_BYTE : n;
+    if (n > MAX_BYTE || n < -MAX_BYTE - 1) throw new Error(`Byte Numbers must be within range -${MAX_BYTE + 1} and ${MAX_BYTE}: ${n}`);
     return n;
-}
-// this converts a byte back to a signed number
-export function fromSignedByte(point: number) {
-    // if the number is below NEGATIVE_BYTE, it's a positive number and can be returned directly
-    // if it's above or equal to NEGATIVE_BYTE, it was originally negative, so we reverse the offset
-    return point <= NEGATIVE_BYTE ? point : -point + NEGATIVE_BYTE;
 }
 
 // calculate how many characters (digits) are needed to store this number in OVERFLOW base
@@ -138,13 +120,13 @@ export function sectorSize(number: number, pow: any) {
 export const MAX_DSECT_SIZE = sectorSize(MAX_INT_D, byteOverflowPow);
 
 // encodes a number into a safe array using a large base (OVERFLOW)
-export function convertBase(number: number, chars: number, single: any, neg: number, overflow: number, overflowFunc: any): number[] {
+export function convertBase(number: number, chars: number, neg: number, overflow: number, overflowFunc: any): number[] {
     // no nan/infinity
     if(!isFinite(number)) throw new Error("Cannot use a non-finite number: " + number);
     // zero is just null
     if(number == 0) return Array.from({length: chars}).map(() => 0);
     // any 1 char will just be INT_C anyway
-    if(chars == 1) return [single(number)];
+    if(chars == 1) return [number];
 
     // store the sign and work with the absolute value
     const negative = number < 0;
@@ -180,15 +162,7 @@ export function convertBase(number: number, chars: number, single: any, neg: num
 // im sleepy go aways..
 
 export function convertBytePows(number: number, chars: number): number[] {
-    return convertBase(number, chars, (n: number) => toByte(n, true), NEGATIVE_BYTE, BYTE_OVERFLOW, byteOverflowPow);
-}
-
-// decodes a string created by convertINT_D back into the original signed integer
-export function deconvertBytePows(codes: any) {
-    if(codes.length == 0) return fromSignedByte(codes[0]);
-    // for each code point in the string, reverse the sign encoding if necessary,
-    // multiply by the positional weight based on its place (most-significant-digit first)
-    return codes.reduce((c: number, n: number, i: number, arr: any) => c + fromSignedByte(n) * byteOverflowPow(arr.length - i - 1), 0);
+    return convertBase(number, chars, NEGATIVE_BYTE, BYTE_OVERFLOW, byteOverflowPow);
 }
 
 // boolean stuff
@@ -265,30 +239,18 @@ export function demapShort_ZZ(short: SHORT_BITS) {
     return demapZigZag(fromShort(short));
 }
 export function mapShort_ZZ(short: number): SHORT_BITS {
-    return toShort(mapZigZag(short), false);
+    return toShort(mapZigZag(short));
 }
 
 // yeah!
 
-export function toSignedVarInt(n: number) {
-    return n < 0 ? n | VARINT_OVERFLOW : n;
-}
-export function fromSignedVarInt(n: number, signed: boolean) {
-    return signed && (n & VARINT_OVERFLOW) != 0 ? -(n ^ VARINT_OVERFLOW) : n;
-}
-
-function convertSVarInt(num: number, min: number, max: number, overflowFunc: (n: number) => number, overflow: number, signed: boolean) {
-    if(num > max || num < min) throw new Error(`${signed ? "Signed " : ""}Variable Ints must be within range ${min} and ${max}: ${num}`);
-    const chars = sectorSize(num, overflowFunc);
-    return convertBase(num, chars, toSignedVarInt, VARINT_OVERFLOW, overflow, overflowFunc).map((x, i) => i == 0 ? x : x | VARINT_CHAIN_FLAG).reverse();
+export function convertVarInt(num: number) {
+    if(num > MAX_UVARINT || num < 0) throw new Error(`Variable Ints must be within range 0 and ${MAX_VARINT}: ${num}`);
+    const chars = sectorSize(num, varIntOverflowPow);
+    return convertBase(num, chars, VARINT_OVERFLOW, UVARINT_OVERFLOW, varIntOverflowPow).map((x, i) => i == 0 ? x : x | VARINT_CHAIN_FLAG).reverse();
 }
 
-export function convertVarInt(num: number, signed: boolean) {
-    return signed ? convertSVarInt(num, -MAX_VARINT - 1, MAX_VARINT , varIntOverflowPow , VARINT_OVERFLOW , true )
-                  : convertSVarInt(num, 0              , MAX_UVARINT, uvarIntOverflowPow, UVARINT_OVERFLOW, false);
-}
-
-export function readVarInt(arr: number[] | Uint8Array, off: number, signed: boolean): [offset: number, number: number] {
+export function readVarInt(arr: number[] | Uint8Array, off: number): [offset: number, number: number] {
     let num = [];
     let cont;
     do {
@@ -296,16 +258,15 @@ export function readVarInt(arr: number[] | Uint8Array, off: number, signed: bool
         cont = (part & VARINT_CHAIN_FLAG) != 0;
         num.push(cont ? part ^ VARINT_CHAIN_FLAG : part);
     } while (cont);
-    const func = signed ? varIntOverflowPow : uvarIntOverflowPow;
-    const number = num.reduce((p, c, i) => p + fromSignedVarInt(c, signed) * func(i), 0);
+    const number = num.reduce((p, c, i) => p + c * varIntOverflowPow(i), 0);
     return [off, number];
 }
 
-export function deconvertVarInts(arr: Uint8Array | number[], signed: boolean): number[] {
+export function deconvertVarInts(arr: Uint8Array | number[]): number[] {
     let res = [];
     let i = 0;
     while(i < arr.length) {
-        const [off, varint] = readVarInt(arr, i, signed);
+        const [off, varint] = readVarInt(arr, i);
         res.push(varint);
         i = off;
     }

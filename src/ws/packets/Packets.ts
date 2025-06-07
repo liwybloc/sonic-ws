@@ -98,8 +98,6 @@ export class Packet {
         this.processSend     = (data: any[]) => this.sendProcessor(data);
         this.validate        = (data: Uint8Array) => this.validator(data, 0);
         this.customValidator = customValidator;
-        
-        this.serializeNumber = this.serializeNumber.bind(this);
     }
 
     public listen(value: Uint8Array, socket: SonicWSConnection | null): [processed: any, flatten: boolean] | string {
@@ -125,10 +123,6 @@ export class Packet {
         }
     }
 
-    private serializeNumber(n: number): number[] {
-        return convertVarInt(n, false);
-    }
-
     public serialize(): number[] {
 
         // shared values for both
@@ -144,8 +138,8 @@ export class Packet {
             return [
                 ...sharedData,           // shared
                 0,                       // dummy byte flag for consistent deserialization; becomes -1 to indicate single
-                ...this.serializeNumber(this.dataMax as number),  // the data max
-                ...this.serializeNumber(this.dataMin as number),  // the data min
+                ...convertVarInt(this.dataMax as number),  // the data max
+                ...convertVarInt(this.dataMin as number),  // the data min
                 this.type as PacketType, // type
             ];
         }
@@ -155,8 +149,8 @@ export class Packet {
             ...sharedData,
             this.maxSize + 1,                                                 // size, and +1 because of 0 for single
             this.autoFlatten ? 1 : 0,                                         // auto flatten flag
-            ...(this.dataMax as number[]).map(this.serializeNumber).flat(), // all data maxes, serialized
-            ...(this.dataMin as number[]).map(this.serializeNumber).flat(), // all data mins, serialized
+            ...(this.dataMax as number[]).map(convertVarInt).flat(), // all data maxes, serialized
+            ...(this.dataMin as number[]).map(convertVarInt).flat(), // all data mins, serialized
             ...(this.type as PacketType[]),                                   // all types, offset by 1 for NULL
             this.tag.length,                                                  // tag length, offset by 1 for NULL
         ];
@@ -165,7 +159,7 @@ export class Packet {
     private static readVarInts(data: Uint8Array, offset: number, size: number): [res: number[], offset: number] {
         const res: number[] = [];
         for(let i=0;i<size;i++) {
-            const [off, varint] = readVarInt(data, offset, false);
+            const [off, varint] = readVarInt(data, offset);
             offset = off;
             res.push(varint);
         }
@@ -248,11 +242,11 @@ export class Packet {
         // single packet
 
         // read varint for datamax
-        const [o1, dataMax] = readVarInt(data, offset, false);
+        const [o1, dataMax] = readVarInt(data, offset);
         offset = o1;
 
         // read varint for datamin
-        const [o2, dataMin] = readVarInt(data, offset, false);
+        const [o2, dataMin] = readVarInt(data, offset);
         offset = o2;
 
         // read type, no more so no +1

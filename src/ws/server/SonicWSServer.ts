@@ -70,7 +70,7 @@ export class SonicWSServer {
         const s_clientPackets = this.clientPackets.serialize();
         const s_serverPackets = this.serverPackets.serialize();
 
-        const keyData: number[] = [...SERVER_SUFFIX_NUMS, VERSION, ...convertVarInt(s_clientPackets.length, false), ...s_clientPackets, ...s_serverPackets];
+        const keyData: number[] = [...SERVER_SUFFIX_NUMS, VERSION, ...convertVarInt(s_clientPackets.length), ...s_clientPackets, ...s_serverPackets];
 
         this.wss.on('connection', (socket) => {
             const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket, this.clientRateLimit, this.serverRateLimit);

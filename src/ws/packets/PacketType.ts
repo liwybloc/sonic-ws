@@ -36,36 +36,27 @@ export enum PacketType {
     /** Constant primitive data; strings, numbers, booleans, null, undefined */
     ENUMS = 4,
 
-    /** One or more bytes; -128 to 127 */
+    /** One or more bytes; -128 to 127 | zig-zag encoded */
     BYTES = 5,
     /** One or more bytes; 0 to 255 */
     UBYTES = 6,
-    /** One or more bytes; -128 to 127 | zig-zag encoded for small negatives (good for deltas; maps like -1->1, 1->2, -2->3, 2->4, etc.) */
-    BYTES_ZZ = 7,
 
-    /** One or more shorts; -32,768 to 32,767 */
-    SHORTS = 8,
+    /** One or more shorts; -32,768 to 32,767 | zig-zag encoded */
+    SHORTS = 7,
     /** One or more shorts; 0 to 65,535 */
-    USHORTS = 9,
-    /** One or more shorts; -32,768 to 32,767 | zig-zag encoded for small negatives (good for deltas; maps like -1->1, 1->2, -2->3, 2->4, etc.) */
-    SHORTS_ZZ = 10,
+    USHORTS = 8,
 
-    /** One or more integers up to MAX_SAFE_INTEGER | 9,007,199,254,740,991 (or negative). Similar maximum size will produce maximum efficiency */
-    NUMBERS = 11,
-
-    /** One or more integers between -281,474,976,710,656 and 281,474,976,710,655. */
-    VARINT = 12,
+    /** One or more integers between -281,474,976,710,656 and 281,474,976,710,655 | zig-zag encoded */
+    VARINT = 9,
     /** One or more integers up to 562,949,953,421,311. */
-    UVARINT = 13,
-    /** One or more integers between -281,474,976,710,656 and 281,474,976,710,655 | zig-zag encoded (good for deltas; maps like -1->1, 1->2, -2->3, 2->4, etc.)  */
-    VARINT_ZZ = 14,
+    UVARINT = 10,
     /** Var ints that use deltas; each value will show the difference from the last value. Good for close numbers */
-    DELTAS = 15,
+    DELTAS = 11,
 
     /** One or more single precision floating point numbers. Only up to 7 digits of accuracy. */
-    FLOAT = 16,
+    FLOAT = 12,
 
     /** One or more true/false */
-    BOOLEANS = 17,
+    BOOLEANS = 13,
     
 }

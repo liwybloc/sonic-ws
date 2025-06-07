@@ -92,7 +92,7 @@ export abstract class SonicWSCore implements Connection {
             throw new Error(`Version mismatch: ${version > VERSION ? "client" : "server"} is outdated (server: ${version}, client: ${VERSION})`);              
         }
 
-        const [off,ckLength] = readVarInt(data, 4, false);
+        const [off,ckLength] = readVarInt(data, 4);
         
         const ckData = data.slice(off, off + ckLength);
         this.clientPackets.holdPackets(Packet.deserializeAll(ckData, true));

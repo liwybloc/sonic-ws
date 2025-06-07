@@ -54,7 +54,7 @@ export class BatchHelper {
 
     public batchPacket(code: number, data: number[]) {
         const batch = this.batchedData[code];
-        batch.push(...convertVarInt(data.length, false));
+        batch.push(...convertVarInt(data.length));
         data.forEach(val => batch.push(val));
 
         if(!this.batchTimeouts[code]) this.startBatch(code);
@@ -67,7 +67,7 @@ export class BatchHelper {
             if(packet.maxBatchSize > 0 && result.length > packet.maxBatchSize) return "Too big of batch";
 
             // read batch length
-            const [off, varint] = readVarInt(data, i, false);
+            const [off, varint] = readVarInt(data, i);
             i = off;
 
             // if it goes oob it's invalid
