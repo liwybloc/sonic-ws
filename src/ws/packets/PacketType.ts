@@ -54,9 +54,12 @@ export enum PacketType {
     DELTAS = 11,
 
     /** One or more single precision floating point numbers. Only up to 7 digits of accuracy. */
-    FLOAT = 12,
+    FLOATS = 12,
+
+    /** One or more double precision floating point numbers. */
+    DOUBLES = 13,
 
     /** One or more true/false */
-    BOOLEANS = 13,
+    BOOLEANS = 14,
     
 }

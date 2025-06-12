@@ -53,10 +53,11 @@ export const MAX_UVARINT = (UVARINT_OVERFLOW ** MAX_VSECT_SIZE) - 1;
 // max for negatives
 export const MAX_VARINT = Math.floor(MAX_UVARINT / 2);
 
-// precompute powers
-const BYTE_OVERFLOW_POWS: number[] = [];
-export const byteOverflowPow = (num: number) => BYTE_OVERFLOW_POWS[num] ??= BYTE_OVERFLOW ** num;
+// constants
+export const ONE_EIGHT = 1/8;
+export const ONE_FOURTH = 1/4;
 
+// precompute powers
 const VARINT_OVERFLOW_POWS: number[] = [];
 export const varIntOverflowPow = (num: number) => VARINT_OVERFLOW_POWS[num] ??= UVARINT_OVERFLOW ** num;
 
@@ -64,9 +65,7 @@ const TWO_POWS: number[] = [];
 const twoPow = (num: number) => TWO_POWS[num] ??= Math.pow(2, num);
 
 for(let i = 0; i <= 3; i++) {
-    byteOverflowPow(i);
     varIntOverflowPow(i);
-    twoPow(i);
 }
 
 export type SHORT_BITS = [high: number, low: number];
@@ -85,15 +84,6 @@ export function toShort(n: number): SHORT_BITS {
 
     // how many times it passes SHORT_OVERFLOW and the remainder
     return [Math.floor(n / SHORT_CC_OVERFLOW), n % SHORT_CC_OVERFLOW];
-}
-
-// this converts an encoded code point back to a signed number
-export function fromSignedShort(short: SHORT_BITS) {
-    // convert to number
-    const point = fromShort(short);
-    // if the number is below NEGATIVE_SHORT, it's a positive number and can be returned directly
-    // if it's above or equal to NEGATIVE_SHORT, it was originally negative, so we reverse the offset
-    return point <= NEGATIVE_SHORT ? point : -point + NEGATIVE_SHORT;
 }
 
 // checks
@@ -116,8 +106,6 @@ export function sectorSize(number: number, pow: any) {
 
     return count;
 }
-
-export const MAX_DSECT_SIZE = sectorSize(MAX_INT_D, byteOverflowPow);
 
 // encodes a number into a safe array using a large base (OVERFLOW)
 export function convertBase(number: number, chars: number, neg: number, overflow: number, overflowFunc: any): number[] {
@@ -159,12 +147,6 @@ export function convertBase(number: number, chars: number, neg: number, overflow
     return bits;
 }
 
-// im sleepy go aways..
-
-export function convertBytePows(number: number, chars: number): number[] {
-    return convertBase(number, chars, NEGATIVE_BYTE, BYTE_OVERFLOW, byteOverflowPow);
-}
-
 // boolean stuff
 export const compressBools = (array: boolean[]) => array.reduce((byte: number, val: any, i: number) => byte | (val << (7 - i)), 0);
 export const decompressBools = (byte: number) => [...Array(8)].map((_, i) => (byte & (1 << (7 - i))) !== 0);
@@ -174,7 +156,7 @@ export const decompressBools = (byte: number) => [...Array(8)].map((_, i) => (by
 const MAN_BITS = 23;
 
 function parseBin(str: string) {
-    return Number("0b" + str);
+    return parseInt(str, 2);
 }
 
 function parseMan(bin: string, isNormal: boolean) {
@@ -189,39 +171,107 @@ function parseMan(bin: string, isNormal: boolean) {
     return (isNormal ? 1 : 0) + fraction;
 }
 
-function assembleFloat(sign: number, exponent: number, mantissa: number): number[] {
-    const bin = sign.toString(2) + exponent.toString(2).padStart(8, "0") + mantissa.toString(2).padStart(23, "0");
+// constants for floating point numbers
+const FLOAT_EXPSIZE = 8, FLOAT_FRACTSIZE = 23;
+const DOUBLE_EXPSIZE = 11, DOUBLE_FRACTSIZE = 52;
+
+const FLOAT_SPECIAL = 0xFF, DOUBLE_SPECIAL = 0x7FF;
+
+// assembles floating point values into 4 bytes
+function assembleFloatingPoint(expSize: number, fractSize: number, sign: number, exponent: number, mantissa: number) {
+    const bin = sign.toString(2) + exponent.toString(2).padStart(expSize, "0") + mantissa.toString(2).padStart(fractSize, "0");
     return splitArray(bin, 8).map((x: string) => parseBin(x));
+}
+
+function assembleSingleFloat(sign: number, exponent: number, mantissa: number) {
+    return assembleFloatingPoint(FLOAT_EXPSIZE, FLOAT_FRACTSIZE, sign, exponent, mantissa);
+}
+function assembleDoubleFloat(sign: number, exponent: number, mantissa: number) {
+    return assembleFloatingPoint(DOUBLE_EXPSIZE, DOUBLE_FRACTSIZE, sign, exponent, mantissa);
 }
 
 // https://stackoverflow.com/questions/3096646/how-to-convert-a-floating-point-number-to-its-binary-representation-ieee-754-i
 // edited for clarity
-export function convertFloat(flt: number): number[] {
+export function convertFloat(flt: number){
     if (isNaN(flt)) // Special case: NaN
-        return assembleFloat(0, 0xFF, 0x1337); // Mantissa is nonzero for NaN
+        return assembleSingleFloat(0, FLOAT_SPECIAL, 1); // Mantissa is nonzero for NaN
 
     const sign = (flt < 0) ? 1 : 0;
     flt = Math.abs(flt);
     if (flt == 0.0) // Special case: +-0
-        return assembleFloat(sign, 0, 0);
+        return assembleSingleFloat(sign, 0, 0);
 
     const exponent = Math.floor(Math.log(flt) / Math.LN2);
     if (exponent > 127 || exponent < -126) // Special case: +-Infinity (and huge numbers)
-        return assembleFloat(sign, 0xFF, 0); // Mantissa is zero for +-Infinity
+        return assembleSingleFloat(sign, 0xFF, 0); // Mantissa is zero for +-Infinity
 
     const mantissa = flt / twoPow(exponent);
     const roundMan = Math.round((mantissa - 1) * twoPow(23));
 
-    return assembleFloat(sign, exponent + 127, roundMan & 0x7FFFFF);
+    return assembleSingleFloat(sign, exponent + 127, roundMan & 0x7FFFFF);
 }
 
-export function deconvertFloat(str: number[]) {
-    const bin = str.map(x => x.toString(2).padStart(8, "0")).join("");
+export function deconvertFloat(bytes: number[]) {
+    const bin = bytes.map(x => x.toString(2).padStart(8, "0")).join("");
+
+    // bit 1 = sign
+    // bits 2-9 = exponent
+    // bits 10-32 = mantissa
     const sign = parseBin(bin[0]);
     const rawExp = parseBin(bin.slice(1, 9));
-    const exp = rawExp === 0 ? -126 : rawExp - 127;
-    const man = parseMan(bin.slice(9, 32), rawExp !== 0); // whether to add the implicit 1
-    return (sign == 0 ? 1 : -1) * man * twoPow(exp);
+    const exp = rawExp == 0 ? -126 : rawExp - 127;
+    const man = parseMan(bin.slice(9, 32), rawExp != 0); // whether to add the implicit 1
+
+    let result;
+    if(rawExp == FLOAT_SPECIAL) {
+        result = man == 0 ? Infinity : NaN;
+    } else {
+        result = man * twoPow(exp);
+    }
+
+    return sign == 1 ? -result : result;
+}
+
+// https://stackoverflow.com/questions/72659156/convert-double-to-integer-mantissa-and-exponents
+// turned to javascript
+export function convertDouble(double: number) {
+    if(isNaN(double)) return assembleDoubleFloat(0, DOUBLE_SPECIAL, 1); // nonzero for nan. sign doesnt effect anything
+
+    const sign = double < 0 ? 1 : 0;
+    if(!isFinite(double)) return assembleDoubleFloat(sign, DOUBLE_SPECIAL, 0); // zero for infinity
+
+    double = Math.abs(double);
+
+    let exponent, significand;
+    if (double == 0) {
+        exponent = 0;
+        significand = 0;
+    } else {
+        exponent = Math.floor(Math.log2(double)) - 51;
+        significand = Math.floor(double / twoPow(exponent));
+    }
+    return assembleDoubleFloat(sign, exponent + 1023, significand);
+}
+
+export function deconvertDouble(bytes: number[]) {
+    const bin = bytes.map(x => x.toString(2).padStart(8, "0")).join("");
+
+    // bit 1 = sign
+    // bits 2-12 = exponent
+    // bits 13-64 = mantissa
+    const sign = parseBin(bin[0]);
+    const rawExp = parseBin(bin.slice(1, 12));
+    const exp = rawExp == 0 ? -1022 : rawExp - 1023;
+    const man = parseBin(bin.slice(12, 64));
+
+    let result;
+    if(rawExp == DOUBLE_SPECIAL) {
+        result = man == 0 ? Infinity : NaN;
+    } else {
+        result = man * twoPow(exp);
+    }
+
+    return sign == 1 ? -result : result;
 }
 
 // zig_zag

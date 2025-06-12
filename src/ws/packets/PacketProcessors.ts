@@ -16,7 +16,7 @@
 
 import { EnumPackage } from "../util/enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertFloat, decompressBools, deconvertFloat, demapShort_ZZ, demapZigZag, fromShort, mapZigZag, SHORT_BITS, toByte, toShort, convertVarInt, MAX_BYTE, readVarInt, MAX_UVARINT, mapShort_ZZ } from "../util/packets/CompressionUtil";
+import { compressBools, convertFloat, decompressBools, deconvertFloat, demapShort_ZZ, demapZigZag, fromShort, mapZigZag, SHORT_BITS, toByte, toShort, convertVarInt, MAX_BYTE, readVarInt, MAX_UVARINT, mapShort_ZZ, convertDouble, deconvertDouble, ONE_FOURTH, ONE_EIGHT } from "../util/packets/CompressionUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 import { as16String, as8String, splitBuffer } from "../util/BufferUtil";
@@ -78,16 +78,22 @@ export function createValidator(type: PacketType, dataCap: number, dataMin: numb
         case PacketType.UVARINT      : return VARINT_VERIF(dataCap, dataMin);
         case PacketType.DELTAS       : return VARINT_VERIF(dataCap, dataMin);
 
-        case PacketType.FLOAT        : return (data: Uint8Array) => {
+        case PacketType.FLOATS       : return (data: Uint8Array) => {
             if (data.length % 4 !== 0) return false;
-            const sectors = data.length / 4;
+            const sectors = data.length * ONE_FOURTH;
+            if (sectors > dataCap || sectors < dataMin) return false;
+            return undefined;
+        };
+        case PacketType.DOUBLES       : return (data: Uint8Array) => {
+            if (data.length % 8 !== 0) return false;
+            const sectors = data.length * ONE_EIGHT;
             if (sectors > dataCap || sectors < dataMin) return false;
             return undefined;
         };
 
         case PacketType.BOOLEANS     : {
-            const min = Math.floor(dataMin / 8);
-            const cap = Math.floor(dataCap / 8);
+            const min = Math.floor(dataMin * ONE_EIGHT);
+            const cap = Math.floor(dataCap * ONE_EIGHT);
             return (data: Uint8Array) => data.length >= min && data.length <= cap;
         };
 
@@ -137,7 +143,8 @@ export function createReceiveProcessor(type: PacketType, enumData: EnumPackage[]
         case PacketType.UVARINT      : return (_, computed) => computed;
         case PacketType.DELTAS       : return (_, computed) => computed.map((x: number, i: number) => computed[i] = (computed[i - 1] || 0) + demapZigZag(x));
 
-        case PacketType.FLOAT        : return (data) => splitBuffer(data, 4).map(deconvertFloat);
+        case PacketType.FLOATS       : return (data) => splitBuffer(data, 4).map(deconvertFloat);
+        case PacketType.DOUBLES      : return (data) => splitBuffer(data, 8).map(deconvertDouble);
 
         case PacketType.BOOLEANS     : return (data) => Array.from(data).map(d => decompressBools(d)).flat().splice(0, cap);
 
@@ -177,7 +184,9 @@ export function createSendProcessor(type: PacketType): PacketSendProcessor {
         case PacketType.UVARINT      : return (numbers: number[]) => numbers.map(convertVarInt).flat();
         case PacketType.DELTAS       : return (numbers: number[]) => numbers.map((n, i) => convertVarInt(mapZigZag(n - (numbers[i - 1] || 0)))).flat();
         
-        case PacketType.FLOAT        : return (floats: number[]) => floats.map(convertFloat).flat();
+        case PacketType.FLOATS       : return (singles: number[]) => singles.map(convertFloat).flat();
+        case PacketType.DOUBLES      : return (doubles: number[]) => doubles.map(convertDouble).flat(); 
+
         case PacketType.BOOLEANS     : return (bools: boolean[]) => splitArray(bools, 8).map((bools: boolean[]) => compressBools(bools)).flat();
 
         case PacketType.STRINGS_ASCII: return (strings: any[]) => {
