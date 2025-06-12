@@ -108,7 +108,7 @@ export function createValidator(type: PacketType, dataCap: number, dataMin: numb
                 if(index > data.length) return false;
             }
             if(sectors < dataMin) return false;
-            return computed; // todo
+            return computed;
         };
         case PacketType.STRINGS_UTF16: return (data: Uint8Array) => {
             let sectors = 0, index = 0, computed = [];
@@ -121,7 +121,7 @@ export function createValidator(type: PacketType, dataCap: number, dataMin: numb
                 if(index > data.length) return false;
             }
             if(sectors < dataMin) return false;
-            return computed; // todo
+            return computed;
         };
 
         default: throw new Error("Unknown type: " + type);
@@ -274,7 +274,7 @@ export function createObjValidator(packet: Packet): PacketTypeValidator {
             const sector = data.subarray(index, index += sectorLength);
 
             const result = validators[computedData.length](sector, types[computedData.length] == PacketType.ENUMS ? enums++ : 0);
-            if(result == false) return false;
+            if(result === false) return false; // chat i used === to fix a bug !!!!
 
             computedData.push(result);
         }

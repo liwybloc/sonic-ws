@@ -20,7 +20,7 @@ import { listenPacket, processPacket } from '../util/packets/PacketUtils';
 import { BatchHelper } from '../util/packets/BatchHelper';
 import { Packet } from '../packets/Packets';
 import { RateHandler } from '../util/packets/RateHandler';
-import { as8String, toPacketBuffer } from '../util/BufferUtil';
+import { stringifyBuffer, toPacketBuffer } from '../util/BufferUtil';
 import { Connection } from '../Connection';
 
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
@@ -108,7 +108,7 @@ export class SonicWSConnection implements Connection {
 
         const message = new Uint8Array(event.data);
 
-        if(this.print) console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${message.byteLength})\x1b[0m ${this.hideNewLines(message)}`);
+        if(this.print) console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${message.byteLength})\x1b[0m`, stringifyBuffer(message));
 
         if (message.byteLength < 1) {
             this.socket.close(4001);
@@ -182,10 +182,6 @@ export class SonicWSConnection implements Connection {
         for(const data of batchData) {
             this.listenPacket(data, tag);
         }
-    }
-
-    private hideNewLines(str: Uint8Array): string {
-        return Array.from(as8String(str)).map(x => x == "\n" ? "☺" : x).join("");
     }
 
     /**
@@ -280,7 +276,7 @@ export class SonicWSConnection implements Connection {
     public raw_send(data: Uint8Array): void {
         if(this.isClosed()) throw new Error("Connection is already closed!");
         if(this.rater.trigger(SERVER_RATELIMIT_TAG)) return;
-        if(this.print) console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${data.byteLength})\x1b[0m ${this.hideNewLines(data)}`);
+        if(this.print) console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${data.byteLength})\x1b[0m`, stringifyBuffer(data));
         this.socket.send(data);
     }
 

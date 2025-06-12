@@ -17,7 +17,7 @@
 import { processCharCodes } from "./ws/util/StringUtil";
 
 /** Current protocol version */
-export const VERSION = 10;
+export const VERSION = 11;
 /** Server data suffix */
 export const SERVER_SUFFIX = "SWS";
 /** Server data suffix in array */

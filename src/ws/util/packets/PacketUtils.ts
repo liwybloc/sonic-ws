@@ -81,8 +81,8 @@ export function listenPacket(listened: string | [any[], boolean], listeners: ((.
 }
 
 /** Determines if a type is a valid packet type */
-function isValidType(type: any): boolean {
-    return (typeof type == 'number' && type in PacketType) || type instanceof EnumPackage;
+function isInvalidType(type: any): boolean {
+    return !(typeof type == 'number' && type in PacketType) && !(type instanceof EnumPackage);
 }
 
 const MAX_DATA_MAX = 2048383;
@@ -203,7 +203,7 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
         dataMax = MAX_DATA_MAX;
     } else if(dataMin == undefined) dataMin = type == PacketType.NONE ? 0 : dataMax;
 
-    if (!isValidType(type)) {
+    if (isInvalidType(type)) {
         throw new Error(`Invalid packet type: ${type}`);
     }
 
@@ -223,9 +223,9 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     let { tag, types, dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false,
           validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
 
-    const invalid = types.find((type) => !isValidType(type));
-    if (invalid) {
-        throw new Error(`Invalid packet type: ${invalid}`);
+    for(const type of types) {
+        if (!isInvalidType(type)) continue;
+        throw new Error(`Invalid packet type in "${tag}" packet: ${type}`);
     }
 
     if(noDataRange) {
@@ -242,7 +242,6 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     const clampedDataMaxes = dataMaxes.map(clampDataMax);
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
-    // largepacket could be turned bigger if i ever need it, and this'll be easier impl anyway
     const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten, dataBatching, maxBatchSize, rateLimit);
 
     return new Packet(tag, schema, validator, enabled, false);

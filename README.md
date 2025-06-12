@@ -11,7 +11,7 @@ Compression:
 - Uses raw binary bytes to transmit data as efficiently as possible while still using high level readable code
 
 Developer Friendly:
-- Predefined data types of various sized integers, decimals, strings, enums, etc. and RAW for any special cases
+- Predefined data types of various sized integers, single and double precision floating point numbers, strings, enums, etc. and RAW to allow for developers to do anything they want
 - Keys are automatically indexed before transfer, improving readability and efficiency (for example, send("pixel") and send("p") use the same bandwidth)
 - Data is validated and supports custom validation, ensuring only valid, safe, and untampered packets ever call your listeners
 - Edge cases are heavily tested with heavy data ranges; supports code points fully up to the max of 0x10FFFF

@@ -35,3 +35,8 @@ export function as16String(data: Uint8Array): string {
     const codePoints = splitBuffer(data, 2).map((short: number[]) => fromShort(short as SHORT_BITS));
     return convertCodePoints(codePoints);
 }
+
+export function stringifyBuffer(data: Uint8Array): string {
+    const contents = Array.from(data).map(n => n.toString(16).padStart(2, "0")).join(" ");
+    return `Buffer<${contents}>`;
+}
