@@ -38,5 +38,5 @@ export function as16String(data: Uint8Array): string {
 
 export function stringifyBuffer(data: Uint8Array): string {
     const contents = Array.from(data).map(n => n.toString(16).padStart(2, "0")).join(" ");
-    return `Buffer<${contents}>`;
+    return `<Buffer ${contents}>`;
 }
