@@ -178,9 +178,7 @@ export type MultiPacketSettings = SharedPacketSettings & {
 /** Settings for single-typed enum packets */
 export type EnumPacketSettings = SharedPacketSettings & {
     /** The tag of the enum; used for WrapEnum(enumTag) */
-    enumTag: string;
-    /** The possible values of the enum */
-    values: any[];
+    enumData: EnumPackage;
     /** The maximum amount of values that can be sent through this packet; defaults to 1 */
     dataMax?: number;
     /** The minimum amount of values that can be sent through this packet; defaults to the max */
@@ -254,12 +252,12 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
  * @returns The constructed packet structure data.
  */
 export function CreateEnumPacket(settings: EnumPacketSettings): Packet {
-    const { tag, enumTag, values, dataMax = 1, dataMin = 0, noDataRange = false, dontSpread = false,
+    const { tag, enumData, dataMax = 1, dataMin = 0, noDataRange = false, dontSpread = false,
             validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
 
     return CreatePacket({
         tag: tag,
-        type: DefineEnum(enumTag, values),
+        type: enumData,
         dataMax,
         dataMin,
         noDataRange,

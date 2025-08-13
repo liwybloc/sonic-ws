@@ -22,6 +22,8 @@ export const MAX_ENUM_SIZE = MAX_BYTE;
 export const ENUM_TAG_TO_KEY: Record<string, Record<any, number>> = {};
 export const ENUM_KEY_TO_TAG: Record<string, Record<number, any>> = {};
 
+export const SET_PACKAGES: Record<string, EnumPackage> = {};
+
 /**
  * Defines an enum with its tag and values
  * @param tag The tag of the enum; used for WrapEnum(tag, ...)
@@ -29,10 +31,15 @@ export const ENUM_KEY_TO_TAG: Record<string, Record<number, any>> = {};
  * @returns A packaged enum
  */
 export function DefineEnum(tag: string, values: any[]): EnumPackage {
+    const setPkg = SET_PACKAGES[tag];
+    if(setPkg) {
+        if(setPkg.values.find((n, i) => values[i] != n)) throw new Error(`Pre-existing enum package of tag '${tag}' is set and different!`);
+        return setPkg;
+    }
     if(values.length > MAX_ENUM_SIZE) throw new Error(`An enum can only hold ${MAX_ENUM_SIZE} possible values.`);
     ENUM_TAG_TO_KEY[tag] = Object.fromEntries(values.map((v, i) => [v, i]));
     ENUM_KEY_TO_TAG[tag] = Object.fromEntries(values.map((v, i) => [i, v]));
-    return new EnumPackage(tag, values);
+    return SET_PACKAGES[tag] = new EnumPackage(tag, values);
 }
 
 /**

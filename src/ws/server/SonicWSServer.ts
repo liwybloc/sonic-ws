@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-import fetch from 'node-fetch';
 import * as WS from 'ws';
 import { SonicWSConnection } from './SonicWSConnection';
 import { PacketHolder } from '../util/packets/PacketHolder';
@@ -91,13 +90,13 @@ export class SonicWSServer {
         });
 
         fetch('https://raw.githubusercontent.com/cutelittlelily/sonic-ws/refs/heads/main/release/version')
-            .then(res => res.text())
-            .then(ver => {
+            .then((res: Response) => res.text())
+            .then((ver: string) => {
                 if(parseInt(ver) != VERSION) {
                     console.warn(`SonicWS is currently running outdated! (current: ${VERSION}, latest: ${ver}) Update with "npm update sonic-ws"`)
                 }
             })
-            .catch(err => {
+            .catch((err: Error) => {
                 console.error(err);
                 console.warn(`Could not check SonicWS version.`);
             });

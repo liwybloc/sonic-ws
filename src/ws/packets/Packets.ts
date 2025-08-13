@@ -90,7 +90,7 @@ export class Packet {
             this.minSize = this.dataMin;
 
             this.receiveProcessor = createReceiveProcessor(this.type, this.enumData, this.dataMax);
-            this.validator        = createValidator(this.type, this.dataMax, this.dataMin, this.enumData);
+            this.validator        = createValidator(this.type, this.dataMax, this.dataMin, this);
             this.sendProcessor    = createSendProcessor(this.type);
         }
         
@@ -206,6 +206,8 @@ export class Packet {
             enums.push(DefineEnum(enumTag, values));
         }
 
+        console.log(tag, enums);
+
         // read type count; prob should change sometime
         const size: number = data[offset++] - 1;
 
@@ -254,6 +256,8 @@ export class Packet {
 
         // do enum stuff
         const finalType = type == PacketType.ENUMS ? enums[0] : type; // convert enum to enum package
+
+        console.log(tag, finalType, data, offset, data[offset]);
 
         // make schema
         const schema = PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, -1, -1);

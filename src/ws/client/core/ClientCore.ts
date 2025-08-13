@@ -99,7 +99,7 @@ export abstract class SonicWSCore implements Connection {
         
         const ckData = data.slice(valuesOff, valuesOff + ckLength);
         this.clientPackets.holdPackets(Packet.deserializeAll(ckData, true));
-        const skData = data.slice(valuesOff + ckLength, data.length - 1);
+        const skData = data.slice(valuesOff + ckLength, data.length);
         this.serverPackets.holdPackets(Packet.deserializeAll(skData, true));
 
         this.batcher.registerSendPackets(this.clientPackets, this);

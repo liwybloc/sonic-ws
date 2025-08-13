@@ -52,20 +52,20 @@ function VARINT_VERIF(cap: number, min: number): PacketTypeValidator {
     }
 };
 
-export function createValidator(type: PacketType, dataCap: number, dataMin: number, enumData: EnumPackage[]): PacketTypeValidator {
+export function createValidator(type: PacketType, dataCap: number, dataMin: number, packet: Packet): PacketTypeValidator {
     switch(type) {
         case PacketType.NONE        : return (data: Uint8Array) => data.length == 0;
         case PacketType.RAW         : return () => undefined;
 
         case PacketType.ENUMS       : return (data: Uint8Array, index: number) => {
-            if (data.length < dataMin || data.length > dataCap || index >= enumData.length) return false;
+            if (data.length < dataMin || data.length > dataCap || index >= packet.enumData.length) return false;
             
-            const pkg = enumData[index];
+            console.log("~~ENUM~~", packet, packet.enumData, index);
+
+            const pkg = packet.enumData[index];
             for(let i=0;i<data.length;i++) {
                 if(pkg.values.length <= data[i]) return false;
             }
-
-            return undefined;
         }
 
         case PacketType.BYTES        : return BYTE_LEN(dataCap, dataMin);
@@ -258,7 +258,7 @@ export function createObjReceiveProcessor(packet: Packet): PacketReceiveProcesso
 }
 export function createObjValidator(packet: Packet): PacketTypeValidator {
     const types = (packet.type as PacketType[]), dataMaxes = (packet.dataMax as number[]), dataMins = (packet.dataMin as number[]);
-    const validators = types.map((t, i) => createValidator(t, dataMaxes[i], dataMins[i], packet.enumData));
+    const validators = types.map((t, i) => createValidator(t, dataMaxes[i], dataMins[i], packet));
     
     return (data: Uint8Array) => {
         let index = 0, enums = 0, computedData = [];

@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "webpack": "webpack --mode production",
-    "build_web": "rimraf ./html && tsc --target ES6 --module ES6 --outdir ./html src/ws/client/browser/ClientBrowser.ts && npm run webpack",
+    "build_web": "rimraf ./html && tsc --moduleResolution nodenext --module nodenext --target ES6 --outdir ./html src/ws/client/browser/ClientBrowser.ts && npm run webpack",
     "build_node": "rimraf ./dist && tsc -d",
     "build": "npm run build_node && npm run build_web",
     "test_web": "npm run build && node test-site/server.mjs",
@@ -24,18 +24,18 @@
   "author": "lily",
   "license": "Apache-2.0",
   "dependencies": {
-    "node-fetch": "^2.7.0",
     "ws": "^8.18.2"
   },
   "devDependencies": {
-    "@types/node": "^22.15.17",
-    "@types/node-fetch": "^2.6.12",
+    "@types/node": "^24.2.1",
     "@types/ws": "^8.18.1",
     "cpy-cli": "^5.0.0",
+    "form-data": "^4.0.4",
+    "rimraf": "^6.0.1",
     "ts-loader": "^9.5.2",
     "typescript": "^5.8.3",
     "undici": "^7.8.0",
-    "undici-types": "^7.8.0",
+    "undici-types": "^7.13.0",
     "webpack": "^5.99.8",
     "webpack-cli": "^6.0.1",
     "webpack-dev-server": "^5.2.1"
