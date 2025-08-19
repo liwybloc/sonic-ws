@@ -206,8 +206,6 @@ export class Packet {
             enums.push(DefineEnum(enumTag, values));
         }
 
-        console.log(tag, enums);
-
         // read type count; prob should change sometime
         const size: number = data[offset++] - 1;
 
