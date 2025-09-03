@@ -37,7 +37,11 @@ export class PacketHolder {
      * @param packets Array of packets to register
      */
     constructor(packets?: Packet[]) {
-        this.key = 0;
+
+        // reserves:
+        // 0 - enum update
+
+        this.key = 1;
 
         this.keys = {};
         this.tags = {};

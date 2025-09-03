@@ -17,7 +17,6 @@
 import { PacketHolder } from "./PacketHolder";
 import { Packet, PacketSchema, ValidatorFunction } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
-import { DefineEnum } from "../enums/EnumHandler";
 import { EnumPackage } from "../enums/EnumType";
 
 /**
