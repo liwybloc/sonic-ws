@@ -15,9 +15,10 @@
  */
 
 import { PacketHolder } from "./PacketHolder";
-import { Packet, PacketSchema, ValidatorFunction } from "../../packets/Packets";
+import { ConvertType, Packet, PacketSchema, ValidatorFunction } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
 import { EnumPackage } from "../enums/EnumType";
+import { PacketTypings } from "../../server/SonicWSServer";
 
 /**
  * Processes and verifies values into a sendable format
@@ -26,7 +27,9 @@ import { EnumPackage } from "../enums/EnumType";
  * @param values The values
  * @returns The indexed code, the data, and the packet schema
  */
-export function processPacket(packets: PacketHolder, tag: string, values: any[]): [code: number, data: number[], packet: Packet] {
+export function processPacket(
+    packets: PacketHolder, tag: string, values: any[]
+):[code: number, data: number[], packet: Packet<any>] {
     const code = packets.getKey(tag);
 
     const packet = packets.getPacket(tag);
@@ -165,7 +168,7 @@ export type SinglePacketSettings = SharedPacketSettings & {
 /** Settings for multi-typed packets */
 export type MultiPacketSettings = SharedPacketSettings & {
     /** The data types of the packet */
-    types: ArguableType[];
+    readonly types: readonly ArguableType[];
     /** The maximum amount of values that can be sent through each type of packet; defaults to 1 for each. Non-array will fill all for that amount */
     dataMaxes?: number[] | number;
     /** The minimum amount of values that can be sent through each type of packet; defaults to the max for each Non-array will fill all for that amount */
@@ -191,7 +194,9 @@ export type EnumPacketSettings = SharedPacketSettings & {
  * @returns The constructed packet structure data.
  * @throws {Error} If the `type` is invalid.
  */
-export function CreatePacket(settings: SinglePacketSettings): Packet {
+export function CreatePacket<T extends ArguableType>(
+    settings: SinglePacketSettings & { type: T }
+): Packet<ConvertType<T>> {
     let { tag, type = PacketType.NONE, dataMax = 1, dataMin, noDataRange = false, dontSpread = false,
           validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
 
@@ -206,7 +211,7 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
 
     const schema = PacketSchema.single(type, clampDataMax(dataMax), clampDataMin(dataMin, dataMax), dontSpread, dataBatching, maxBatchSize, rateLimit);
 
-    return new Packet(tag, schema, validator, enabled, false);
+    return new Packet<ConvertType<T>>(tag, schema, validator, enabled, false);
 }
 
 /**
@@ -216,7 +221,9 @@ export function CreatePacket(settings: SinglePacketSettings): Packet {
  * @returns The constructed packet structure data.
  * @throws {Error} If any type in `types` is invalid.
  */
-export function CreateObjPacket(settings: MultiPacketSettings): Packet {
+export function CreateObjPacket<T extends readonly ArguableType[], V extends readonly PacketType[] = {[K in keyof T]: ConvertType<T[K]>}>(
+    settings: MultiPacketSettings & { readonly types: T }
+): Packet<V> {
     let { tag, types, dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false,
           validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
 
@@ -239,9 +246,9 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
     const clampedDataMaxes = dataMaxes.map(clampDataMax);
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
-    const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten, dataBatching, maxBatchSize, rateLimit);
+    const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten, dataBatching, maxBatchSize, rateLimit) as unknown as PacketSchema<V>;
 
-    return new Packet(tag, schema, validator, enabled, false);
+    return new Packet<V>(tag, schema, validator, enabled, false);
 }
 
 /**
@@ -250,7 +257,7 @@ export function CreateObjPacket(settings: MultiPacketSettings): Packet {
  * @param settings The settings object containing `tag`, `enumTag`, `values`, `dataMax`, `dataMin`, `noDataRange`, `dontSpread`, `validator`, `dataBatching`, and/or `maxBatchSize`.
  * @returns The constructed packet structure data.
  */
-export function CreateEnumPacket(settings: EnumPacketSettings): Packet {
+export function CreateEnumPacket(settings: EnumPacketSettings): Packet<PacketType.ENUMS> {
     const { tag, enumData, dataMax = 1, dataMin = 0, noDataRange = false, dontSpread = false,
             validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
 

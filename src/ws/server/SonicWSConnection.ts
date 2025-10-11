@@ -15,14 +15,13 @@
  */
 
 import * as WS from 'ws';
-import { SonicWSServer } from './SonicWSServer';
+import { PacketTypings, SonicWSServer } from './SonicWSServer';
 import { listenPacket, processPacket } from '../util/packets/PacketUtils';
 import { BatchHelper } from '../util/packets/BatchHelper';
 import { Packet } from '../packets/Packets';
 import { RateHandler } from '../util/packets/RateHandler';
 import { stringifyBuffer, toPacketBuffer } from '../util/BufferUtil';
 import { Connection } from '../Connection';
-
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
 
 export class SonicWSConnection implements Connection {
@@ -42,7 +41,7 @@ export class SonicWSConnection implements Connection {
     private messageLambda = (data: WS.MessageEvent) => this.messageHandler(this.parseData(data));
     private handshakedMessageLambda = (data: WS.MessageEvent) => {
         const parsed = this.parseData(data);
-        if(parsed == null) return;
+        if(parsed == null) return this.socket.close(4004);
         if(parsed[0] == this.handshakePacket) return this.socket.close(4005);
         this.messageHandler(parsed);
     }
@@ -139,7 +138,7 @@ export class SonicWSConnection implements Connection {
 
     private handshakeHandler(data: WS.MessageEvent): void {
         const parsed = this.parseData(data);
-        if(parsed == null) return;
+        if(parsed == null) return this.socket.close(4004);
 
         if(parsed[0] != this.handshakePacket) {
             this.socket.close(4004);
@@ -155,8 +154,8 @@ export class SonicWSConnection implements Connection {
     }
 
     private invalidPacket(listened: string) {
-        this.socket.close(4003);
-        console.log("Closure cause:", listened);
+        console.log("Closure cause", listened);
+        this.socket.close(4003, listened);
     }
 
     private listenPacket(data: string | [any[], boolean], tag: string) {
@@ -211,26 +210,26 @@ export class SonicWSConnection implements Connection {
      * Listens for when the connection closes
      * @param listener Called when it closes
      */
-    public on_close(listener: (code: number, reason: Buffer) => void): void {
-        this.socket.on('close', listener);
+    public on_close(listener: (code: number, reason: string) => void): void {
+        this.socket.on('close', (code, reason) => listener(code, String(reason)));
     }
 
     /**
      * Listens for a packet
      * @param tag The tag of the key to listen for
-     * @param listener A function to listen for it
+     * @param listener A function to listen for it 
      */
     public on(tag: string, listener: (...values: any) => void): void {
-        if (!this.host.clientPackets.hasTag(tag)) throw new Error(`Tag "${tag}" has not been created!`);
-
-        if (!this.listeners[tag]) this.listeners[tag] = [];
-        this.listeners[tag].push(listener);
+        if (!this.host.clientPackets.hasTag(tag as string))
+            throw new Error(`Tag "${String(tag)}" has not been created!`);
+        this.listeners[tag as string] ??= [];
+        this.listeners[tag as string].push(listener as any);
     }
 
     /**
      * For internal use.
      */
-    public send_processed(code: number, data: number[], packet: Packet) {
+    public send_processed(code: number, data: number[], packet: Packet<any>) {
         if(this.rater.trigger("server" + code)) return;
 
         if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
@@ -274,13 +273,16 @@ export class SonicWSConnection implements Connection {
     /* JSDocs in Connection.ts class */
 
     public raw_send(data: Uint8Array): void {
-        if(this.isClosed()) throw new Error("Connection is already closed!");
+        if(this.isClosed()) {
+            console.warn("WARN! Connection already closed when trying to send message!", this.id, stringifyBuffer(data));
+            return;
+        }
         if(this.rater.trigger(SERVER_RATELIMIT_TAG)) return;
         if(this.print) console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${data.byteLength})\x1b[0m`, stringifyBuffer(data));
         this.socket.send(data);
     }
 
-    public close(code?: number, reason?: string): void {
+    public close(code: number = 1000, reason?: string | Buffer): void {
         this.socket.close(code, reason);
     }
 
@@ -306,6 +308,15 @@ export class SonicWSConnection implements Connection {
 
     public clearInterval(id: number): void {
         this.clearTimeout(id);
+    }
+
+    /**
+     * Tags the socket with a key
+     * @param tag The tag to add
+     * @param replace If it should replace a previous tag; defaults to true. If using false, you can add multiple tags.
+     */
+    public tag(tag: string, replace: boolean = true) {
+        this.host.tag(this, tag, replace);
     }
 
 }

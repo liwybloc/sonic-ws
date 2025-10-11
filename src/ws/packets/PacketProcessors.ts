@@ -16,11 +16,11 @@
 
 import { EnumPackage } from "../util/enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertFloat, decompressBools, deconvertFloat, demapShort_ZZ, demapZigZag, fromShort, mapZigZag, SHORT_BITS, toByte, toShort, convertVarInt, MAX_BYTE, readVarInt, MAX_UVARINT, mapShort_ZZ, convertDouble, deconvertDouble, ONE_FOURTH, ONE_EIGHT } from "../util/packets/CompressionUtil";
+import { compressBools, convertFloat, decompressBools, deconvertFloat, demapShort_ZZ, demapZigZag, fromShort, mapZigZag, SHORT_BITS, toByte, toShort, convertVarInt, MAX_BYTE, readVarInt, MAX_UVARINT, mapShort_ZZ, convertDouble, deconvertDouble, ONE_FOURTH, ONE_EIGHT, encodeHuffman, bytesToBits, decodeHuffman } from "../util/packets/CompressionUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
-import { as16String, as8String, splitBuffer } from "../util/BufferUtil";
-import { processCharCodes, splitCodePoint } from "../util/StringUtil";
+import { as8String, splitBuffer } from "../util/BufferUtil";
+import { processCharCodes } from "../util/StringUtil";
 
 export type PacketTypeValidator = (data: Uint8Array, index: number) => false | any;
 export type PacketReceiveProcessor = (data: Uint8Array, validationResult: any, index: number) => any;
@@ -37,7 +37,7 @@ function SHORT_LEN(cap: number, min: number): PacketTypeValidator {
 
 function VARINT_VERIF(cap: number, min: number): PacketTypeValidator {
     return (data: Uint8Array) => {
-        if(data.length == 0) return false;
+        if(data.length == 0) return min <= 0 ? [] : false;
 
         let sectors = 0, i = 0, computed = [];
         while(i < data.length) {
@@ -52,7 +52,7 @@ function VARINT_VERIF(cap: number, min: number): PacketTypeValidator {
     }
 };
 
-export function createValidator(type: PacketType, dataCap: number, dataMin: number, packet: Packet): PacketTypeValidator {
+export function createValidator<T extends PacketType>(type: T, dataCap: number, dataMin: number, packet: Packet<T | T[]>): PacketTypeValidator {
     switch(type) {
         case PacketType.NONE        : return (data: Uint8Array) => data.length == 0;
         case PacketType.RAW         : return () => undefined;
@@ -60,8 +60,6 @@ export function createValidator(type: PacketType, dataCap: number, dataMin: numb
         case PacketType.ENUMS       : return (data: Uint8Array, index: number) => {
             if (data.length < dataMin || data.length > dataCap || index >= packet.enumData.length) return false;
             
-            console.log("~~ENUM~~", packet, packet.enumData, index);
-
             const pkg = packet.enumData[index];
             for(let i=0;i<data.length;i++) {
                 if(pkg.values.length <= data[i]) return false;
@@ -92,37 +90,57 @@ export function createValidator(type: PacketType, dataCap: number, dataMin: numb
         };
 
         case PacketType.BOOLEANS     : {
-            const min = Math.floor(dataMin * ONE_EIGHT);
-            const cap = Math.floor(dataCap * ONE_EIGHT);
+            const min = Math.ceil(dataMin * ONE_EIGHT);
+            const cap = Math.ceil(dataCap * ONE_EIGHT);
             return (data: Uint8Array) => data.length >= min && data.length <= cap;
         };
 
         case PacketType.STRINGS_ASCII: return (data: Uint8Array) => {
-            let sectors = 0, index = 0, computed = [];
-            while(index < data.length) {
-                sectors++;
-                if(sectors > dataCap) return false;
-                const [off, varint] = readVarInt(data, index);
-                index = off + varint;
-                computed.push(varint);
-                if(index > data.length) return false;
+            let index = 0;
+            const [offCount, stringCount] = readVarInt(data, index);
+            index = offCount;
+
+            if (stringCount < dataMin || stringCount > dataCap) return false;
+
+            const lengths: number[] = [];
+            let totalLength = 0;
+            for (let i = 0; i < stringCount; i++) {
+                const [offLen, strLen] = readVarInt(data, index);
+                index = offLen;
+                lengths.push(strLen);
+                totalLength += strLen;
             }
-            if(sectors < dataMin) return false;
-            return computed;
+
+            if (index + Math.ceil(totalLength / 8) > data.length) return false;
+
+            return [ stringCount, lengths, index ];
         };
         case PacketType.STRINGS_UTF16: return (data: Uint8Array) => {
-            let sectors = 0, index = 0, computed = [];
-            while(index < data.length) {
+            let sectors = 0, index = 0, computed: number[][] = [];
+
+            while (index < data.length) {
                 sectors++;
-                if(sectors > dataCap) return false;
-                const [off, varint] = readVarInt(data, index);
-                index = off + varint * 2;
-                computed.push(varint);
-                if(index > data.length) return false;
+                if (sectors > dataCap) return false;
+
+                const [off, strLength] = readVarInt(data, index);
+                index = off;
+
+                let string: number[] = [];
+                for (let i = 0; i < strLength; i++) {
+                    const [newOff, char] = readVarInt(data, index);
+                    index = newOff;
+                    if (index > data.length) return false;
+                    string.push(char);
+                }
+
+                computed.push(string);
             }
-            if(sectors < dataMin) return false;
+
+            if (sectors < dataMin) return false;
+
             return computed;
         };
+
 
         default: throw new Error("Unknown type: " + type);
     }
@@ -153,13 +171,25 @@ export function createReceiveProcessor(type: PacketType, enumData: EnumPackage[]
             return Array.from(data).map(code => pkg.values[code]);
         };
 
-        case PacketType.STRINGS_ASCII: return (data: Uint8Array, computed: number[]) => {
-            let off = 0;
-            return computed.map(len => as8String(data.subarray(++off, off += len)));
+        case PacketType.STRINGS_ASCII: return (data: Uint8Array, validationResult: [number, number[], number]) => {
+            const [ stringCount, lengths, dataStart ] = validationResult;
+            const bitString = bytesToBits(data.subarray(dataStart));
+
+            const decoded = decodeHuffman(bitString);
+            if (!decoded) return [];
+
+            const strings: string[] = [];
+            let offset = 0;
+            for (let i = 0; i < stringCount; i++) {
+                strings.push(decoded.slice(offset, offset + lengths[i]));
+                offset += lengths[i];
+            }
+
+            return strings;
         };
-        case PacketType.STRINGS_UTF16: return (data: Uint8Array, computed: number[]) => {
-            let off = 0;
-            return computed.map(len => as16String(data.subarray(++off, off += len * 2)));
+
+        case PacketType.STRINGS_UTF16: return (data: Uint8Array, computed: number[][]) => {
+            return computed.map(codes => String.fromCodePoint(...codes));
         }
 
         default: throw new Error("Unknown type: " + type);
@@ -190,26 +220,21 @@ export function createSendProcessor(type: PacketType): PacketSendProcessor {
         case PacketType.BOOLEANS     : return (bools: boolean[]) => splitArray(bools, 8).map((bools: boolean[]) => compressBools(bools)).flat();
 
         case PacketType.STRINGS_ASCII: return (strings: any[]) => {
-            const res: number[] = [];
-            for(const v of strings) {
-                const string = String(v);
-                res.push(...convertVarInt(string.length));
-
-                const codes = processCharCodes(string);
-
-                const highCode = codes.find(x => x > MAX_BYTE)
-                if(highCode) throw new Error(`Cannot store code ${highCode} (${String.fromCharCode(highCode)}) in a UTF-8 String! Use STRINGS_UTF16.`);
-
-                codes.map(c => res.push(c));
-            }
-            return res;
+            return [
+                ...convertVarInt(strings.length),
+                ...strings.map(str => convertVarInt(str.length)).flat(),
+                ...encodeHuffman(strings.reduce((a, b) => a + String(b), "")),
+            ];
         };
         case PacketType.STRINGS_UTF16: return (strings: any[]) => {
             const res: number[] = [];
             for(const v of strings) {
                 const string = String(v);
-                res.push(...convertVarInt(string.length));
-                processCharCodes(string).map(c => res.push(...splitCodePoint(c).map(p => toShort(p)).flat()));
+                const charCodes = processCharCodes(string);
+                // hate js man
+                const length = charCodes.length;
+                res.push(...convertVarInt(length));
+                res.push(...charCodes.map(convertVarInt).flat());
             }
             return res;
         };
@@ -218,11 +243,9 @@ export function createSendProcessor(type: PacketType): PacketSendProcessor {
     }
 }
 
-export function createObjSendProcessor(packet: Packet): PacketSendProcessor {
-    const types = (packet.type as PacketType[]);
-
-    const size = types.length;
-    const processors = types.map(t => createSendProcessor(t));
+export function createObjSendProcessor(packet: Packet<PacketType[]>): PacketSendProcessor {
+    const size = packet.type.length;
+    const processors = packet.type.map(t => createSendProcessor(t));
     
     return (data: any[]) => {
         let result: number[] = [];
@@ -238,33 +261,34 @@ export function createObjSendProcessor(packet: Packet): PacketSendProcessor {
         return result;
     };
 }
-export function createObjReceiveProcessor(packet: Packet): PacketReceiveProcessor {
-    const types = (packet.type as PacketType[]), dataMaxes = (packet.dataMax as number[]);
-    const processors = types.map((t, i) => createReceiveProcessor(t, packet.enumData, dataMaxes[i]));
+export function createObjReceiveProcessor(packet: Packet<PacketType[]>): PacketReceiveProcessor {
+    const processors = packet.type.map((t, i) => createReceiveProcessor(t, packet.enumData, packet.dataMax[i]));
 
     return (data: Uint8Array, validationResult: any) => {
         let index = 0, enums = 0, result: any[] = [];
 
         while(index < data.length) {
+            // TODO: this does not need sector length because objects are actually deterministically sized in each one!!
             const [off, sectorLength] = readVarInt(data, index);
             index = off;
 
             const sector = data.subarray(index, index += sectorLength);
-            result.push(processors[result.length](sector, validationResult[result.length], types[result.length] == PacketType.ENUMS ? enums++ : 0));
+            // basically make this return the ending index
+            // *only works if dataMax=dataMin
+            result.push(processors[result.length](sector, validationResult[result.length], packet.type[result.length] == PacketType.ENUMS ? enums++ : 0));
         }
 
         return result;
     };
 }
-export function createObjValidator(packet: Packet): PacketTypeValidator {
-    const types = (packet.type as PacketType[]), dataMaxes = (packet.dataMax as number[]), dataMins = (packet.dataMin as number[]);
-    const validators = types.map((t, i) => createValidator(t, dataMaxes[i], dataMins[i], packet));
+export function createObjValidator(packet: Packet<PacketType[]>): PacketTypeValidator {
+    const validators = packet.type.map((t, i) => createValidator(t, packet.dataMax[i], packet.dataMin[i], packet));
     
     return (data: Uint8Array) => {
         let index = 0, enums = 0, computedData = [];
 
         while(index < data.length) {
-            if(computedData.length > types.length) return false; // only types amount of values
+            if(computedData.length > packet.type.length) return false; // only types amount of values
 
             const [off, sectorLength] = readVarInt(data, index);
             index = off;
@@ -273,7 +297,7 @@ export function createObjValidator(packet: Packet): PacketTypeValidator {
 
             const sector = data.subarray(index, index += sectorLength);
 
-            const result = validators[computedData.length](sector, types[computedData.length] == PacketType.ENUMS ? enums++ : 0);
+            const result = validators[computedData.length](sector, packet.type[computedData.length] == PacketType.ENUMS ? enums++ : 0);
             if(result === false) return false; // chat i used === to fix a bug !!!!
 
             computedData.push(result);
@@ -282,3 +306,33 @@ export function createObjValidator(packet: Packet): PacketTypeValidator {
         return computedData;
     };
 }
+
+type BuildTuple<T, N extends number, R extends unknown[] = []> = 
+    R['length'] extends N ? R : BuildTuple<T, N, [T, ...R]>;
+
+export type PacketResponse<
+    T extends PacketType | readonly PacketType[],
+    N extends number | readonly number[]
+> =
+    T extends PacketType[]
+        ? N extends number[]
+            ? PacketResponseArray<T, N>
+            : never
+        : BuildTuple<
+            T extends PacketType.NONE ? undefined :
+            T extends PacketType.RAW ? Uint8Array :
+            T extends PacketType.BYTES | PacketType.UBYTES ? number :
+            T extends PacketType.SHORTS | PacketType.USHORTS ? number :
+            T extends PacketType.VARINT | PacketType.UVARINT | PacketType.DELTAS ? number :
+            T extends PacketType.FLOATS | PacketType.DOUBLES ? number :
+            T extends PacketType.BOOLEANS ? boolean :
+            T extends PacketType.STRINGS_ASCII | PacketType.STRINGS_UTF16 ? string :
+            T extends PacketType.ENUMS ? any
+            : never,
+            N extends number ? N : never
+        >;
+
+type PacketResponseArray<
+    T extends PacketType[],
+    N extends number[]
+> = { [K in keyof T]: K extends number ? PacketResponse<T[K], N[K] & number> : never };

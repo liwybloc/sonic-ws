@@ -21,18 +21,21 @@ import { convertVarInt, MAX_BYTE } from '../util/packets/CompressionUtil';
 import { SERVER_SUFFIX_NUMS, VERSION } from '../../version';
 import { processPacket } from '../util/packets/PacketUtils';
 import { Packet } from '../packets/Packets';
+import { PacketType } from '../packets/PacketType';
 
 /**
  * Sonic WS Server Options
  */
 export type SonicServerOptions = {
     /** An array of packets the client can send and server can listen for; using CreatePacket(), CreateObjPacket(), and CreateEnumPacket() */
-    clientPackets?: Packet[],
+    readonly clientPackets?: PacketTypings,
     /** An array of packets the server can send and client can listen for; using CreatePacket(), CreateObjPacket(), and CreateEnumPacket() */
-    serverPackets?: Packet[],
+    readonly serverPackets?: PacketTypings,
     /** Default WS Options */
-    websocketOptions?: WS.ServerOptions;
+    readonly websocketOptions?: WS.ServerOptions;
 }
+
+export type PacketTypings = readonly Packet<PacketType | readonly PacketType[]>[];
 
 export class SonicWSServer {
     private wss: WS.WebSocketServer;
@@ -45,7 +48,7 @@ export class SonicWSServer {
     public clientPackets: PacketHolder;
     public serverPackets: PacketHolder;
 
-    private connections: SonicWSConnection[] = [];
+    connections: SonicWSConnection[] = [];
     private connectionMap: Record<number, SonicWSConnection> = {};
 
     private clientRateLimit: number = 500;
@@ -53,11 +56,14 @@ export class SonicWSServer {
 
     private handshakePacket: string | null = null;
 
+    tags: Map<SonicWSConnection, Set<String>> = new Map();
+    tagsInv: Map<String, Set<SonicWSConnection>> = new Map();
+
     /**
      * Initializes and hosts a websocket with sonic protocol
      * Rate limits can be set with wss.setClientRateLimit(x) and wss.setServerRateLimit(x); it is defaulted at 500/second per both
      * @param settings Sonic Server Options such as schema data for client and server packets, alongside websocket options
-     */
+     */ 
     constructor(settings: SonicServerOptions) {
         const { clientPackets = [], serverPackets = [], websocketOptions = {} } = settings;
  
@@ -89,7 +95,7 @@ export class SonicWSServer {
             });
         });
 
-        fetch('https://raw.githubusercontent.com/cutelittlelily/sonic-ws/refs/heads/main/release/version')
+        fetch('https://raw.githubusercontent.com/liwybloc/sonic-ws/refs/heads/main/release/version')
             .then((res: Response) => res.text())
             .then((ver: string) => {
                 if(parseInt(ver) != VERSION) {
@@ -203,6 +209,19 @@ export class SonicWSServer {
     }
 
     /**
+     * Broadcasts a packet to tagged users; this is fast as it is a record rather than looping and filtering
+     * @param tag The tag to send packets to
+     * @param packetTag Packet tag to send
+     * @param values Values to send
+     */
+    public broadcastTagged(tag: string, packetTag: string, ...values: any): void {
+        if(!this.tagsInv.has(tag)) return;
+
+        const data = processPacket(this.serverPackets, packetTag, values);
+        this.tagsInv.get(tag)!.forEach(conn => conn.send_processed(...data));
+    }
+
+    /**
      * Broadcasts a packet to all users connected, but with a filter
      * @param tag The tag to send
      * @param filter The filter for who to send to
@@ -241,8 +260,24 @@ export class SonicWSServer {
      * Closes a socket by id
      * @param id The socket id
      */
-    public closeSocket(id: number): void {
-        this.getSocket(id).close();
+    public closeSocket(id: number, code: number = 1000, reason?: string | Buffer): void {
+        this.getSocket(id).close(code, reason);
+    }
+
+    /**
+     * Tags the socket with a key
+     * @param socket The socket to tag
+     * @param tag The tag to add
+     * @param replace If it should replace a previous tag; defaults to true. If using false, you can add multiple tags.
+     */
+    public tag(socket: SonicWSConnection, tag: string, replace: boolean = true) {
+        if(!this.tags.get(socket)) this.tags.set(socket, new Set());
+        if(!this.tagsInv.get(tag)) this.tagsInv.set(tag, new Set());
+        if(replace) {
+            this.tags.get(socket)!.forEach(v => this.tagsInv.get(v)?.delete(socket));
+        }
+        this.tags.get(socket)!.add(tag);
+        this.tagsInv.get(tag)!.add(socket);
     }
 
 }

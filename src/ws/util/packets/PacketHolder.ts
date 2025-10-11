@@ -15,6 +15,8 @@
  */
 
 import { Packet } from "../../packets/Packets";
+import { PacketType } from "../../packets/PacketType";
+import { PacketTypings } from "../../server/SonicWSServer";
 
 /**
  * Holds and maps packets to indexed keys and tags for serialization and lookup
@@ -28,24 +30,24 @@ export class PacketHolder {
     /** Maps keys to tags */
     private tags: Record<number, string>;
     /** Maps tags to packet instances */
-    private packetMap: Record<string, Packet>;
+    private packetMap: Record<string, Packet<PacketType | readonly PacketType[]>>;
     /** List of all packet instances */
-    private packets!: Packet[];
+    private packets!: PacketTypings;
 
     /**
      * Creates a new PacketHolder with an array of packets
      * @param packets Array of packets to register
      */
-    constructor(packets?: Packet[]) {
+    constructor(packets?: PacketTypings) {
 
         // reserves:
         // 0 - enum update
 
         this.key = 1;
 
-        this.keys = {};
+        this.keys = {} as any;
         this.tags = {};
-        this.packetMap = {};
+        this.packetMap = {} as any;
 
         if(!packets) return;
         this.packets = packets;
@@ -63,7 +65,7 @@ export class PacketHolder {
      * Registers an array of packets and assigns them keys
      * @param packets Array of packets to register
      */
-    public holdPackets(packets: Packet[]): void {
+    public holdPackets(packets: PacketTypings): void {
         for (const packet of packets)
             this.createKey(packet.tag), this.packetMap[packet.tag] = packet;
     }
@@ -89,7 +91,7 @@ export class PacketHolder {
      * Returns the packet instance associated with a tag
      * @param tag The packet tag
      */
-    public getPacket(tag: string): Packet {
+    public getPacket(tag: string): Packet<any> {
         if(!(tag in this.packetMap)) throw new Error("Unknown packet tag: " + tag);
         return this.packetMap[tag];
     }
@@ -126,7 +128,7 @@ export class PacketHolder {
     }
 
     /** Returns the list of all registered packets */
-    public getPackets(): Packet[] {
+    public getPackets(): PacketTypings {
         return this.packets;
     }
 

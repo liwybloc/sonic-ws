@@ -17,6 +17,7 @@
 import { Connection } from "../../Connection";
 import { Packet } from "../../packets/Packets";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
+import { SonicWSServer } from "../../server/SonicWSServer";
 import { toPacketBuffer } from "../BufferUtil";
 import { convertVarInt, readVarInt } from "./CompressionUtil";
 import { PacketHolder } from "./PacketHolder";
@@ -60,7 +61,7 @@ export class BatchHelper {
         if(!this.batchTimeouts[code]) this.startBatch(code);
     }
 
-    public static unravelBatch(packet: Packet, data: Uint8Array, socket: SonicWSConnection | null): any[] | string {
+    public static unravelBatch(packet: Packet<any>, data: Uint8Array, socket: SonicWSConnection | null): any[] | string {
         const result: any[] = [];
         for(let i=0;i<data.length;) {
             // must be >0 for it to apply

@@ -30,7 +30,7 @@ export const SET_PACKAGES: Record<string, EnumPackage> = {};
  * @param values The possible values of the enum
  * @returns A packaged enum
  */
-export function DefineEnum(tag: string, values: any[]): EnumPackage {
+export function DefineEnum(tag: string, values: any[] | readonly any[]): EnumPackage {
     const setPkg = SET_PACKAGES[tag];
     if(setPkg) {
         if(setPkg.values.find((n, i) => values[i] != n)) throw new Error(`Pre-existing enum package of tag '${tag}' is set and different!`);
@@ -51,4 +51,8 @@ export function DefineEnum(tag: string, values: any[]): EnumPackage {
 export function WrapEnum(tag: string, value: any): number {
     if(!(value in ENUM_TAG_TO_KEY[tag])) throw new Error(`Value "${value}" does not exist in enum "${tag}"`);
     return ENUM_TAG_TO_KEY[tag][value];
+}
+
+export function DeWrapEnum(tag: string, value: number): any {
+    return ENUM_KEY_TO_TAG[tag][value];
 }

@@ -14,28 +14,56 @@
  * limitations under the License.
  */
 
-import { WrapEnum } from "../../util/enums/EnumHandler";
+import { WrapEnum, DeWrapEnum } from "../../util/enums/EnumHandler";
 import { FlattenData, UnFlattenData } from "../../util/packets/PacketUtils";
 import { SonicWSCore } from "../core/ClientCore";
 
 // Defines SonicWS class in the browser and gives delegation of functions
+// types are here so you can do /** @type */
 
-const w = window as any;
-w.SonicWS = class SonicWS extends SonicWSCore {
+export class SonicWS extends SonicWSCore {
+
+    /**
+     * Creates a connection to the url
+     * @param url The url to connect to
+     * @param options The websocket options
+     */
     constructor(url: string, protocols?: string | string[]) {
         const ws = new WebSocket(url, protocols);
         super(ws, async (val: MessageEvent) => new Uint8Array(await (val.data as Blob).arrayBuffer()));
     }
 
+    /**
+     * Wraps an enum into a transmittable format
+     * @param tag The tag of the enum
+     * @param value The value to send
+     * @returns A transmittable enum value
+     */
     WrapEnum(tag: string, value: string) {
         return WrapEnum(tag, value);
     }
 
+    DeWrapEnum(tag: string, value: number) {
+        return DeWrapEnum(tag, value);
+    }
+
+    /**
+     * Flattens a 2-depth array for efficient wire transfer
+     * Turns [[x,y,z],[x,y,z]...] to [[x,x...],[y,y...],[z,z...]]
+     * @param array A 2-depth array of multi-valued
+     */
     FlattenData(array: any[][]): any[] {
         return FlattenData(array);
     }
 
+    /**
+     * Unflattens an array into 2-depth; reverse of FlattenData()
+     * turns [[x,x...],[y,y...],[z,z...]] to [[x,y,z],[x,y,z]...]
+     * @param array A flattened array
+     */
     UnFlattenData(array: any[]): any[][] {
         return UnFlattenData(array);
     }
 }
+
+(window as any).SonicWS = SonicWS;

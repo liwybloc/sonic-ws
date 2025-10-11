@@ -1,6 +1,6 @@
 {
   "name": "sonic-ws",
-  "version": "1.0.3",
+  "version": "1.0.6",
   "description": "Ultra-lightweight, high-performance, and bandwidth efficient websocket library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,16 +11,16 @@
     "build": "npm run build_node && npm run build_web",
     "test_web": "npm run build && node test-site/server.mjs",
     "test_node": "npm run build_node && node test.mjs",
-    "publish": "npm run build && copy .\\bundled\\SonicWS_bundle.js .\\release\\SonicWS_bundle.js"
+    "publish": "npm run build && cp ./bundled/SonicWS_bundle.js ./release/SonicWS_bundle.js"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cutelittlelily/sonic-ws.git"
+    "url": "git+https://github.com/liwybloc/sonic-ws.git"
   },
   "bugs": {
-    "url": "https://github.com/cutelittlelily/sonic-ws/issues"
+    "url": "https://github.com/liwybloc/sonic-ws/issues"
   },
-  "homepage": "https://github.com/cutelittlelily/sonic-ws#readme",
+  "homepage": "https://github.com/liwybloc/sonic-ws#readme",
   "author": "lily",
   "license": "Apache-2.0",
   "dependencies": {

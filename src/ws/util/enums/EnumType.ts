@@ -15,6 +15,7 @@
  */
 
 import { processCharCodes } from "../StringUtil";
+import { WrapEnum } from "./EnumHandler";
 
 const TYPE_INDEX_MAP: Record<string, number> = { 
     'string': 0,
@@ -41,11 +42,13 @@ export type EnumValue = string | number | boolean | undefined | null;
 
 export class EnumPackage {
     public tag: string;
-    public values: EnumValue[];
+    public values: EnumValue[] | readonly EnumValue[];
 
-    constructor(tag: string, values: any[]) {
+    constructor(tag: string, values: any[] | readonly any[]) {
         this.tag = tag;
         this.values = values;
+
+        this.wrap = this.wrap.bind(this);
     }
 
     public serialize(): number[] {
@@ -61,4 +64,14 @@ export class EnumPackage {
                 ]).flat(),
                ];
     }
+
+    /**
+     * Wraps a value with this enum package
+     * @param value Value to wrap
+     * @returns Network encoded value
+     */
+    public wrap(value: any): number {
+        return WrapEnum(this.tag, value);
+    }
+
 }

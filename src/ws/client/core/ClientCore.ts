@@ -30,6 +30,7 @@ export abstract class SonicWSCore implements Connection {
 
     protected listeners: {
         message: Array<(data: Uint8Array) => void>,
+        send: Array<(data: Uint8Array) => void>,
         close: Array<(event: CloseEvent) => void>,
         event: { [key: number]: Array<(...data: any[]) => void> }
     };
@@ -53,6 +54,7 @@ export abstract class SonicWSCore implements Connection {
         this.socket = ws;
         this.listeners = {
             message: [],
+            send: [],
             close: [],
             event: {},
         };
@@ -121,8 +123,8 @@ export abstract class SonicWSCore implements Connection {
     }
 
     private invalidPacket(listened: string) {
-        console.log(listened);
-        throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/cutelittlelily/sonic-ws");
+        console.error(listened);
+        throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/liwybloc/sonic-ws");
     }
 
     private listenPacket(data: string | [any[], boolean], code: number): void {
@@ -174,6 +176,14 @@ export abstract class SonicWSCore implements Connection {
     }
 
     /**
+     * Listens for all sent messages rawly
+     * @param listener Callback for when data is received
+     */
+    public raw_onsend(listener: (data: Uint8Array) => void): void {
+        this.listeners.send.push(listener);
+    }
+
+    /**
      * Sends a packet to the server
      * @param tag The tag of the packet
      * @param values The values to send
@@ -218,6 +228,7 @@ export abstract class SonicWSCore implements Connection {
     /* JSDocs in Connection.ts class */
 
     public raw_send(data: Uint8Array): void {
+        this.listeners.send.forEach(d => d(data));
         this.socket.send(data);
     }
 
