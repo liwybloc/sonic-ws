@@ -164,7 +164,7 @@ export class SonicWSConnection implements Connection {
     }
 
     private listenPacket(data: string | [any[], boolean], tag: string) {
-        if(closed) return;
+        if(this.closed) return;
         listenPacket(data, this.listeners[tag], this.invalidPacket);
     }
 
@@ -209,7 +209,7 @@ export class SonicWSConnection implements Connection {
      * @returns If it's closed or not
      */
     public isClosed(): boolean {
-        return closed || this.socket.readyState == WS.CLOSED;
+        return this.closed || this.socket.readyState == WS.CLOSED;
     }
 
     /**
@@ -289,7 +289,7 @@ export class SonicWSConnection implements Connection {
     }
 
     public close(code: number = 1000, reason?: string | Buffer): void {
-        closed = true;
+        this.closed = true;
         this.socket.close(code, reason);
     }
 
