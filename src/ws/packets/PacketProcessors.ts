@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Lily (liwybloc)
+ * Copyright 2026 Lily (liwybloc)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ import { splitArray } from "../util/ArrayUtil";
 import { compressBools, convertFloat, decompressBools, deconvertFloat, demapShort_ZZ, demapZigZag, fromShort, mapZigZag, SHORT_BITS, toByte, toShort, convertVarInt, MAX_BYTE, readVarInt, MAX_UVARINT, mapShort_ZZ, convertDouble, deconvertDouble, ONE_FOURTH, ONE_EIGHT, encodeHuffman, bytesToBits, decodeHuffman } from "../util/packets/CompressionUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
-import { as8String, splitBuffer } from "../util/BufferUtil";
+import { splitBuffer } from "../util/BufferUtil";
 import { processCharCodes } from "../util/StringUtil";
 
 export type PacketTypeValidator = (data: Uint8Array, index: number) => false | any;

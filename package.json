@@ -1,6 +1,6 @@
 {
   "name": "sonic-ws",
-  "version": "1.0.6",
+  "version": "1.1.0",
   "description": "Ultra-lightweight, high-performance, and bandwidth efficient websocket library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -24,7 +24,8 @@
   "author": "lily",
   "license": "Apache-2.0",
   "dependencies": {
-    "ws": "^8.18.2"
+    "ws": "^8.18.2",
+    "zstd-codec": "^0.1.5"
   },
   "devDependencies": {
     "@types/node": "^24.2.1",

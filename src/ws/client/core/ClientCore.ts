@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Lily (liwybloc)
+ * Copyright 2026 Lily (liwybloc)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ export abstract class SonicWSCore implements Connection {
 
     public id: number = -1;
 
-    _timers: Record<number, number> = {};
+    _timers: Record<number, [number, (closed: boolean) => void, boolean]> = {};
 
     constructor(ws: WebSocket, bufferHandler: (val: MessageEvent) => Promise<Uint8Array>) {
         this.socket = ws;
@@ -70,7 +70,10 @@ export abstract class SonicWSCore implements Connection {
 
         this.socket.addEventListener('close', (event: CloseEvent) => {
             this.listeners.close.forEach(listener => listener(event));
-            Object.values(this._timers).forEach(clearTimeout);
+            for(const [id, callback, shouldCall] of Object.values(this._timers)) {
+                this.clearTimeout(id);
+                if(shouldCall) callback(true);
+            }
         });
 
         this.bufferHandler = bufferHandler;
@@ -232,23 +235,19 @@ export abstract class SonicWSCore implements Connection {
         this.socket.send(data);
     }
 
-    public setTimeout(call: () => void, time: number): number {
+    public setTimeout(call: () => void, time: number, callOnClose: boolean = false): number {
         const timeout = setTimeout(() => {
             call();
             this.clearTimeout(timeout);
         }, time) as unknown as number;
-        this.setTimer(timeout);
+        this._timers[timeout] = [timeout, call, callOnClose];
         return timeout;
     }
 
-    public setInterval(call: () => void, time: number): number {
+    public setInterval(call: () => void, time: number, callOnClose: boolean = false): number {
         const interval = setInterval(call, time) as unknown as number;
-        this.setTimer(interval);
+        this._timers[interval] = [interval, call, callOnClose];
         return interval;
-    }
-
-    private setTimer(id: number) {
-        this._timers[id] = id;
     }
 
     public clearTimeout(id: number): void {

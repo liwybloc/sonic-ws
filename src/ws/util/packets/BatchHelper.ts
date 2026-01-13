@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Lily (liwybloc)
+ * Copyright 2026 Lily (liwybloc)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,13 +47,13 @@ export class BatchHelper {
 
     private startBatch(code: number) {
         this.batchTimeouts[code] = this.conn.setTimeout(() => {
-            this.conn.raw_send(toPacketBuffer(code, this.batchedData[code]));
+            this.conn.raw_send(toPacketBuffer(code, new Uint8Array(this.batchedData[code])));
             this.batchedData[code] = [];
             delete this.batchTimeouts[code];
-        }, this.batchTimes[code]) as unknown as number;
+        }, this.batchTimes[code], false) as unknown as number;
     }
 
-    public batchPacket(code: number, data: number[]) {
+    public batchPacket(code: number, data: Uint8Array) {
         const batch = this.batchedData[code];
         batch.push(...convertVarInt(data.length));
         data.forEach(val => batch.push(val));

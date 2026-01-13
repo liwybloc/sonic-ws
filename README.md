@@ -18,6 +18,7 @@ Developer Friendly:
 
 Security:
 - Tamper-proof; any invalid packet instantly causes closure, and tampering becomes incredibly difficult
+- Basic but immensely effective anti-tampering for browser clients
 - Built-in ability for handshake packets, preventing repetitive initiation checks in listeners (for example, removes if(!init) everywhere)
 - Built-in rate limiting for packets; ability for global send & receive, alongside per-packet rate limiting
 - Built-in disabling & enabling of packets to prevent abuse
@@ -35,7 +36,7 @@ Developer Experience:
 - Many data types to maximize speed, clarity, bandwidth, and security
 - Debug tools for socket ids, byte size, data logging, etc. for troubleshooting
 - Very minimal learning curve, easy to work in
-- JSDoc's for understanding
+- JSDoc's for understanding; immensely intuitive (personally, I took a break for half a year and came back and snapped right back in)
 
 Whether you're making a real-time game, a dashboard, a distributed system, or anything else, SonicWS gets you safe, structured packets, fast.
 
@@ -109,6 +110,10 @@ ws.on_close((event) => {
 
 ## KNOWN ISSUES
 
+Some weird error messages when invalid inputs are in like CreatePacket() and stuff
+
 ## PLANNED FEATURES
 
 Better error handling
+
+ZLib/gzip compression

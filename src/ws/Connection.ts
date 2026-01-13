@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Lily (liwybloc)
+ * Copyright 2026 Lily (liwybloc)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,18 +20,19 @@
 export interface Connection {
 
     /**
-     * List of timers, in object just for efficiency.
+     * List of timers.
      * For internal use only.
      */
-    _timers: Record<number, number>;
+    _timers: Record<number, [number, (closed: boolean) => void, boolean]>;
 
     /**
      * Sets a timeout that will automatically end when the socket closes
      * @param call The function to call
      * @param time The time between now and the call (ms)
+     * @param callOnClose If the callback should be fired anyways when the socket closes
      * @returns The timeout id to be used with socket.clearInterval(id)
      */
-    setTimeout(call: () => void, time: number): number;
+    setTimeout(call: () => void, time: number, callOnClose: boolean): number;
     /**
      * Sets an interval that will automatically end when the socket closes
      * @param call The function to call

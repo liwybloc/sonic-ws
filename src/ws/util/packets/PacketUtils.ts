@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Lily (liwybloc)
+ * Copyright 2026 Lily (liwybloc)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ import { PacketHolder } from "./PacketHolder";
 import { ConvertType, Packet, PacketSchema, ValidatorFunction } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
 import { EnumPackage } from "../enums/EnumType";
-import { PacketTypings } from "../../server/SonicWSServer";
 
 /**
  * Processes and verifies values into a sendable format
@@ -29,7 +28,7 @@ import { PacketTypings } from "../../server/SonicWSServer";
  */
 export function processPacket(
     packets: PacketHolder, tag: string, values: any[]
-):[code: number, data: number[], packet: Packet<any>] {
+):[code: number, data: Uint8Array, packet: Packet<any>] {
     const code = packets.getKey(tag);
 
     const packet = packets.getPacket(tag);
@@ -60,7 +59,7 @@ export function processPacket(
         }
     }
 
-    return [code, values.length > 0 ? packet.processSend(values) : [], packet];
+    return [code, values.length > 0 ? packet.processSend(values)! : new Uint8Array([]), packet];
 }
 
 /**
@@ -197,8 +196,10 @@ export type EnumPacketSettings = SharedPacketSettings & {
 export function CreatePacket<T extends ArguableType>(
     settings: SinglePacketSettings & { type: T }
 ): Packet<ConvertType<T>> {
-    let { tag, type = PacketType.NONE, dataMax = 1, dataMin, noDataRange = false, dontSpread = false,
-          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
+    let { tag, type = PacketType.NONE, dataMax = 1, dataMin = 1, noDataRange = false, dontSpread = false,
+          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, } = settings;
+
+    if(!tag) throw new Error("Tag not selected!");
 
     if(noDataRange) {
         dataMin = 0;
@@ -209,7 +210,8 @@ export function CreatePacket<T extends ArguableType>(
         throw new Error(`Invalid packet type: ${type}`);
     }
 
-    const schema = PacketSchema.single(type, clampDataMax(dataMax), clampDataMin(dataMin, dataMax), dontSpread, dataBatching, maxBatchSize, rateLimit);
+    const schema = PacketSchema.single(type, clampDataMax(dataMax), clampDataMin(dataMin, dataMax),
+                    dontSpread, dataBatching, maxBatchSize, rateLimit);
 
     return new Packet<ConvertType<T>>(tag, schema, validator, enabled, false);
 }
@@ -224,8 +226,11 @@ export function CreatePacket<T extends ArguableType>(
 export function CreateObjPacket<T extends readonly ArguableType[], V extends readonly PacketType[] = {[K in keyof T]: ConvertType<T[K]>}>(
     settings: MultiPacketSettings & { readonly types: T }
 ): Packet<V> {
-    let { tag, types, dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false,
+    let { tag, types = [], dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false,
           validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
+
+    if(!tag) throw new Error("Tag not selected!");
+    if(types.length == 0) throw new Error("Types is set to 0 length");
 
     for(const type of types) {
         if (!isInvalidType(type)) continue;
@@ -246,7 +251,8 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
     const clampedDataMaxes = dataMaxes.map(clampDataMax);
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
-    const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins, dontSpread, autoFlatten, dataBatching, maxBatchSize, rateLimit) as unknown as PacketSchema<V>;
+    const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins,
+        dontSpread, autoFlatten, dataBatching, maxBatchSize, rateLimit) as unknown as PacketSchema<V>;
 
     return new Packet<V>(tag, schema, validator, enabled, false);
 }

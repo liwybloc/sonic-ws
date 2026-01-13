@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Lily (liwybloc)
+ * Copyright 2026 Lily (liwybloc)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,6 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public readonly autoFlatten: boolean;
 
     public readonly rateLimit: number;
-
     public readonly object: boolean;
     public readonly client: boolean;
     
@@ -58,7 +57,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     private validator: PacketTypeValidator;
 
     public processReceive: (data: Uint8Array, validationResult: any) => any;
-    public processSend: (data: any[]) => number[];
+    public processSend: (data: any[]) => Uint8Array;
     public validate: (data: Uint8Array) => boolean;
     public customValidator: ((socket: SonicWSConnection, ...values: any[]) => boolean) | null;
 
@@ -103,8 +102,9 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             this.sendProcessor    = createSendProcessor(this.type);
         }
         
+        
         this.processReceive  = (data: Uint8Array, validationResult: any) => this.receiveProcessor(data, validationResult, 0);
-        this.processSend     = (data: any[]) => this.sendProcessor(data);
+        this.processSend     = (data: any[]) => new Uint8Array(this.sendProcessor(data));
         this.validate        = (data: Uint8Array) => this.validator(data, 0);
         this.customValidator = customValidator;
     }
@@ -116,7 +116,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             if(!this.client && validationResult === false) return "Invalid packet";
 
             const processed = this.processReceive(value, validationResult);
-
+            
             const useableData = this.autoFlatten ? UnFlattenData(processed) : processed;
 
             if(this.customValidator != null) {

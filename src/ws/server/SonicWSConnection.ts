@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Lily (liwybloc)
+ * Copyright 2026 Lily (liwybloc)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,8 +56,9 @@ export class SonicWSConnection implements Connection {
     
     /** The index of the connection; unique for all connected, recycles old disconnected ids. Should be safe for INTS_C unless you have more than 27,647 connected at once. */
     public id: number;
+    _timers: Record<number, [number, (closed: boolean) => void, boolean]> = {};
 
-    _timers: Record<number, number> = {};
+    private closed: boolean = false;
 
     constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number) {
         this.socket = socket;
@@ -97,7 +98,11 @@ export class SonicWSConnection implements Connection {
         }
 
         this.socket.on('close', () => {
-            Object.values(this._timers).forEach(clearTimeout);
+            this.closed = true;
+            for(const [id, callback, shouldCall] of Object.values(this._timers)) {
+                this.clearTimeout(id);
+                if(shouldCall) callback(true);
+            }
         });
     }
 
@@ -159,6 +164,7 @@ export class SonicWSConnection implements Connection {
     }
 
     private listenPacket(data: string | [any[], boolean], tag: string) {
+        if(closed) return;
         listenPacket(data, this.listeners[tag], this.invalidPacket);
     }
 
@@ -203,7 +209,7 @@ export class SonicWSConnection implements Connection {
      * @returns If it's closed or not
      */
     public isClosed(): boolean {
-        return this.socket.readyState == WS.CLOSED;
+        return closed || this.socket.readyState == WS.CLOSED;
     }
 
     /**
@@ -229,7 +235,7 @@ export class SonicWSConnection implements Connection {
     /**
      * For internal use.
      */
-    public send_processed(code: number, data: number[], packet: Packet<any>) {
+    public send_processed(code: number, data: Uint8Array, packet: Packet<any>) {
         if(this.rater.trigger("server" + code)) return;
 
         if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
@@ -283,21 +289,22 @@ export class SonicWSConnection implements Connection {
     }
 
     public close(code: number = 1000, reason?: string | Buffer): void {
+        closed = true;
         this.socket.close(code, reason);
     }
 
-    public setTimeout(call: () => void, time: number): number {
+    public setTimeout(call: () => void, time: number, callOnClose: boolean = false): number {
         const timeout = setTimeout(() => {
             call();
             this.clearTimeout(timeout);
         }, time) as unknown as number;
-        this._timers[timeout] = timeout;
+        this._timers[timeout] = [timeout, call, callOnClose];
         return timeout;
     }
 
-    public setInterval(call: () => void, time: number): number {
+    public setInterval(call: () => void, time: number, callOnClose: boolean = false): number {
         const interval = setInterval(call, time) as unknown as number;
-        this._timers[interval] = interval;
+        this._timers[interval] = [interval, call, callOnClose];
         return interval;
     }
 

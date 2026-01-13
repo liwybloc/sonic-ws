@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Lily (liwybloc)
+ * Copyright 2026 Lily (liwybloc)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import { splitArray } from "./ArrayUtil";
 import { fromShort, SHORT_BITS } from "./packets/CompressionUtil";
 import { convertCharCodes, convertCodePoints } from "./StringUtil";
 
-export function toPacketBuffer(code: number, data: number[]): Uint8Array {
+export function toPacketBuffer(code: number, data: Uint8Array): Uint8Array {
     const buffer = new Uint8Array(1 + data.length);
     buffer[0] = code;
     buffer.set(data, 1);

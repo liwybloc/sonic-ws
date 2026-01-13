@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Lily (liwybloc)
+ * Copyright 2026 Lily (liwybloc)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 import { processCharCodes } from "./ws/util/StringUtil";
 
 /** Current protocol version */
-export const VERSION = 13;
+export const VERSION = 14;
 /** Server data suffix */
 export const SERVER_SUFFIX = "SWS";
 /** Server data suffix in array */
