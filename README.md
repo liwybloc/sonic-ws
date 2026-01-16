@@ -23,7 +23,8 @@ Security:
 - Built-in ability for handshake packets, preventing repetitive initiation checks in listeners (for example, removes if(!init) everywhere)
 - Built-in rate limiting for packets; ability for global send & receive, alongside per-packet rate limiting
 - Built-in disabling & enabling of packets to prevent abuse
-- Prevents any race conditions; your callbacks will not be called until they finish.
+- Prevents any race conditions; your callbacks will not be called until the last one finishes. (Alongside async options!)
+- Prevents niche bugs found in other websocket libraries, such as functions calling after the socket already closed.
 
 Performance & Scaling:
 - Can handle very large packets in microseconds

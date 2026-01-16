@@ -53,7 +53,7 @@ function VARINT_VERIF(cap: number, min: number): PacketTypeSubValidator {
     }
 };
 
-export function createValidator<T extends PacketType>(type: T, dataCap: number, dataMin: number, packet: Packet<T | T[]>, gzipCompression: boolean, rereference: boolean): PacketTypeValidator {
+export function createValidator<T extends PacketType>(type: T, dataCap: number, dataMin: number, packet: Packet<T | T[]>, gzipCompression: boolean): PacketTypeValidator {
     function genFunc(): PacketTypeSubValidator {
         switch(type) {
             case PacketType.NONE        : return (data: Uint8Array) => data.length == 0;
@@ -156,26 +156,17 @@ export function createValidator<T extends PacketType>(type: T, dataCap: number, 
         }
     }
     const fn = genFunc();
-    let parsed: any = null;
     return gzipCompression
             ? async (data: Uint8Array, index: number) => {
-                if(rereference && data.length == 0) {
-                    if(parsed == null) return [data, false];
-                    return parsed;
-                }
                 try {
                     const dec = await decompressGzip(data);
-                    return parsed = [dec, fn(dec, index)];
+                    return [dec, fn(dec, index)];
                 } catch {
                     return [data, false];
                 }
             }
             : async (data: Uint8Array, index: number) => {
-                if(rereference && data.length == 0) {
-                    if(parsed == null) return [data, false];
-                    return parsed;
-                }
-                return parsed = [data, fn(data, index)]
+                return [data, fn(data, index)];
             };
 }
 
@@ -233,7 +224,7 @@ export function createReceiveProcessor(type: PacketType, enumData: EnumPackage[]
 }
 
 /** Creates a function that processes a packet type */
-export function createSendProcessor(type: PacketType, gzipCompression: boolean, rereference: boolean): PacketSendProcessor {
+export function createSendProcessor(type: PacketType, gzipCompression: boolean): PacketSendProcessor {
     function genFunc() {
         switch(type) {
             case PacketType.NONE         : return () => [];
@@ -289,29 +280,13 @@ export function createSendProcessor(type: PacketType, gzipCompression: boolean, 
         }
     }
     const fn = genFunc();
-    let lastSent: any;
-
     if (!gzipCompression) {
         return async (_, data) => {
-            if(rereference) {
-                const jstr = JSON.stringify(data);
-                if(jstr == lastSent) {
-                    return EMPTY_UINT8;
-                }
-                lastSent = jstr;
-            }
             return new Uint8Array(fn(data));
         }
     }
 
     return async (ident, data) => {
-        if(rereference) {
-            const jstr = JSON.stringify(data);
-            if(jstr == lastSent) {
-                return EMPTY_UINT8;
-            }
-            lastSent = jstr;
-        }
         return compressGzip(new Uint8Array(fn(data)), ident);
     }
 }
@@ -319,7 +294,7 @@ export function createSendProcessor(type: PacketType, gzipCompression: boolean, 
 export function createObjSendProcessor(packet: Packet<PacketType[]>): PacketSendProcessor {
     const size = packet.type.length;
     // TODO: Add compression and add rereferences[]
-    const processors = packet.type.map(t => createSendProcessor(t, false, false));
+    const processors = packet.type.map(t => createSendProcessor(t, false));
     
     return async (ident: string, data: any[]) => {
         let result: number[] = [];
@@ -356,7 +331,7 @@ export function createObjReceiveProcessor(packet: Packet<PacketType[]>): PacketR
     };
 }
 export function createObjValidator(packet: Packet<PacketType[]>): PacketTypeValidator {
-    const validators = packet.type.map((t, i) => createValidator(t, packet.dataMax[i], packet.dataMin[i], packet, false, false));
+    const validators = packet.type.map((t, i) => createValidator(t, packet.dataMax[i], packet.dataMin[i], packet, false));
     
     return async (data: Uint8Array) => {
         let index = 0, enums = 0, computedData: (false | any)[] = [];

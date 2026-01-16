@@ -226,7 +226,7 @@ export class SonicWSServer {
     public async broadcastTagged(tag: string, packetTag: string, ...values: any): Promise<void> {
         if(!this.tagsInv.has(tag)) return;
 
-        const data = await processPacket(this.serverPackets, packetTag, values);
+        const data = await processPacket(this.serverPackets, packetTag, values, -1);
         this.tagsInv.get(tag)!.forEach(conn => conn.send_processed(...data));
     }
 
@@ -237,7 +237,7 @@ export class SonicWSServer {
      * @param values The values to send
      */
     public async broadcastFiltered(tag: string, filter: (socket: SonicWSConnection) => boolean, ...values: any): Promise<void> {
-        const data = await processPacket(this.serverPackets, tag, values);
+        const data = await processPacket(this.serverPackets, tag, values, -1);
         this.connections.filter(filter).forEach(conn => conn.send_processed(...data));
     }
 

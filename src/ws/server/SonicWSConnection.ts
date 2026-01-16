@@ -75,6 +75,7 @@ export class SonicWSConnection implements Connection {
         for (const tag of host.clientPackets.getTags()) {
             this.listeners[tag] = [];
             const pack = host.clientPackets.getPacket(tag);
+            pack.lastReceived[this.id] = undefined;
             this.enabledPackets[tag] = pack.defaultEnabled;
             this.asyncMap[tag] = pack.async;
             if(pack.async) this.asyncData[tag] = [false, []];
@@ -108,6 +109,9 @@ export class SonicWSConnection implements Connection {
             for(const [id, callback, shouldCall] of Object.values(this._timers)) {
                 this.clearTimeout(id);
                 if(shouldCall) callback(true);
+            }
+            for (const packet of host.clientPackets.getPackets()) {
+                delete packet.lastReceived[this.id];
             }
         });
     }
@@ -221,8 +225,14 @@ export class SonicWSConnection implements Connection {
 
         const packet = this.host.clientPackets.getPacket(tag);
 
+        if(packet.rereference && value.length == 0) {
+            if(packet.lastReceived[this.id] === undefined) return this.invalidPacket("No previous value to rereference");
+            this.listenPacket(packet.lastReceived[this.id] as any, tag);
+            return;
+        }
+
         if(packet.dataBatching == 0) {
-            const res = await packet.listen(value, this);
+            const res = packet.lastReceived[this.id] = await packet.listen(value, this);
             this.listenPacket(res, tag);
             return;
         }
@@ -294,7 +304,7 @@ export class SonicWSConnection implements Connection {
      * @param values The values to send
      */
     public async send(tag: string, ...values: any[]) {
-        this.send_processed(...await processPacket(this.host.serverPackets, tag, values));
+        this.send_processed(...await processPacket(this.host.serverPackets, tag, values, this.id));
     }
 
     /**

@@ -18,6 +18,7 @@ import { PacketHolder } from "./PacketHolder";
 import { ConvertType, Packet, PacketSchema, ValidatorFunction } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
 import { EnumPackage } from "../enums/EnumType";
+import { EMPTY_UINT8 } from "./CompressionUtil";
 
 /**
  * Processes and verifies values into a sendable format
@@ -27,7 +28,7 @@ import { EnumPackage } from "../enums/EnumType";
  * @returns The indexed code, the data, and the packet schema
  */
 export async function processPacket(
-    packets: PacketHolder, tag: string, values: any[]
+    packets: PacketHolder, tag: string, values: any[], id: number
 ): Promise<[code: number, data: Uint8Array, packet: Packet<any>]> {
     const code = packets.getKey(tag);
 
@@ -61,7 +62,14 @@ export async function processPacket(
         }
     }
 
-    return [code, values.length > 0 ? await packet.processSend(values)! : new Uint8Array([]), packet];
+    const sendData = values.length > 0 ? await packet.processSend(values)! : EMPTY_UINT8;
+    if(packet.rereference) {
+        if(id == -1) throw new Error("Cannot broadcast a packet that is rereference-enabled");
+        if(packet.lastSent[id] == sendData) return [code, EMPTY_UINT8, packet];
+        packet.lastSent[id] = sendData;
+    }
+
+    return [code, sendData, packet];
 }
 
 /**

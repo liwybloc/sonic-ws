@@ -212,9 +212,16 @@ export abstract class SonicWSCore implements Connection {
         const value = data.slice(1);
 
         const packet = this.serverPackets.getPacket(this.serverPackets.getTag(key));
+
+        if(packet.rereference && value.length == 0) {
+            if(packet.lastReceived[0] === undefined) return this.invalidPacket("No previous value to rereference");
+            this.listenPacket(packet.lastReceived[0] as any, key);
+            return;
+        }
         
         if(packet.dataBatching == 0) {
-            this.listenPacket(await packet.listen(value, null), key);
+            const res = packet.lastReceived[0] = await packet.listen(value, null);
+            this.listenPacket(res, key);
             return;
         }
 
@@ -257,7 +264,7 @@ export abstract class SonicWSCore implements Connection {
      * @param values The values to send
      */
     public async send(tag: string, ...values: any[]): Promise<void> {
-        const [code, data, packet] = await processPacket(this.clientPackets, tag, values);
+        const [code, data, packet] = await processPacket(this.clientPackets, tag, values, 0);
         if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
         else this.batcher.batchPacket(code, data);
     }

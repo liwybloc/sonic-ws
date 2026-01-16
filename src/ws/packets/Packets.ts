@@ -23,6 +23,7 @@ import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, 
 import { PacketType } from "./PacketType";
 import { as8String } from "../util/BufferUtil";
 import { processCharCodes } from "../util/StringUtil";
+import { Connection } from "../Connection";
 
 export type ValidatorFunction = ((socket: SonicWSConnection, values: any) => boolean) | null;
 
@@ -66,6 +67,8 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public processSend: (data: any[]) => Promise<Uint8Array>;
     public validate: (data: Uint8Array) => Promise<[Uint8Array, boolean]>;
     public customValidator: ((socket: SonicWSConnection, ...values: any[]) => boolean) | null;
+    lastReceived: Record<number, any> = {};
+    lastSent: Record<number, any> = {};
 
     constructor(tag: string, schema: PacketSchema<T>, customValidator: ValidatorFunction, enabled: boolean, client: boolean) {
         this.tag = tag;
