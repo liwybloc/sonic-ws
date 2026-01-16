@@ -50,6 +50,9 @@ export abstract class SonicWSCore implements Connection {
 
     _timers: Record<number, [number, (closed: boolean) => void, boolean]> = {};
 
+    private asyncData: Record<number, [boolean, [data: string | [any[], boolean], code: number][]]> = {};
+    private asyncMap: Record<number, boolean> = {};
+
     constructor(ws: WebSocket, bufferHandler: (val: MessageEvent) => Promise<Uint8Array>) {
         this.socket = ws;
         this.listeners = {
@@ -109,6 +112,14 @@ export abstract class SonicWSCore implements Connection {
 
         this.batcher.registerSendPackets(this.clientPackets, this);
 
+        for(const p of this.serverPackets.getPackets()) {
+            const key = this.serverPackets.getKey(p.tag);
+            this.asyncMap[key] = p.async;
+            if(p.async) {
+                this.asyncData[key] = [false, []];
+            }
+        }
+
         Object.keys(this.preListen!).forEach(tag => this.preListen![tag].forEach(listener => {
             // print the error to console without halting execution
             if(!this.serverPackets.hasTag(tag)) return console.error(new Error(`The server does not send the packet with tag "${tag}"!`));
@@ -130,10 +141,60 @@ export abstract class SonicWSCore implements Connection {
         throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/liwybloc/sonic-ws");
     }
 
-    private listenPacket(data: string | [any[], boolean], code: number): void {
+    private listenLock: boolean = false;
+    private packetQueue: [data: string | [any[], boolean], code: number][] = [];
+    
+    public listenPacket(data: string | [any[], boolean], code: number): void {
         const listeners = this.listeners.event[code];
-        if(!listeners) return console.warn("Warn: No listener for packet " + this.serverPackets.getTag(code));
-        listenPacket(data, listeners, this.invalidPacket);
+        if (!listeners) return console.warn("Warn: No listener for packet " + code);
+
+        this.enqueuePacket(data, code, listeners);
+    }
+
+    private isAsync(code: number): boolean {
+        return this.asyncMap[code];
+    }
+    
+    private async enqueuePacket(
+        data: string | [any[], boolean],
+        code: number,
+        listeners: ((...args: any) => void | Promise<void>)[]
+    ): Promise<void> {
+        const isAsync = this.isAsync(code);
+
+        let locked: boolean;
+        let packetQueue: [data: string | [any[], boolean], code: number][];
+        let asyncData: [boolean, [data: string | [any[], boolean], code: number][]] | undefined;
+
+        if (isAsync) {
+            asyncData = this.asyncData[code];
+            locked = asyncData[0];
+            packetQueue = asyncData[1];
+        } else {
+            locked = this.listenLock;
+            packetQueue = this.packetQueue;
+        }
+
+        if (locked) {
+            packetQueue.push([data, code]);
+            return;
+        }
+
+        if (isAsync) asyncData![0] = true;
+        else this.listenLock = true;
+
+        let currentData = data;
+        let currentCode = code;
+
+        while (true) {
+            await listenPacket(currentData, listeners, this.invalidPacket);
+
+            if (packetQueue.length === 0) break;
+            [currentData, currentCode] = packetQueue.shift()!;
+        }
+
+        if (isAsync) asyncData![0] = false;
+        else this.listenLock = false;
     }
 
     private async messageHandler(event: MessageEvent) {
@@ -156,7 +217,6 @@ export abstract class SonicWSCore implements Connection {
         if(typeof batchData == 'string') return this.invalidPacket(batchData);
 
         batchData.forEach(data => this.listenPacket(data, key));
-        
     }
 
     protected listen(key: string, listener: (data: any[]) => void) {

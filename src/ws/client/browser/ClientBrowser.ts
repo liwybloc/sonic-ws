@@ -94,6 +94,14 @@ export class SonicWS extends SonicWSCore {
     UnFlattenData(array: any[]): any[][] {
         return UnFlattenData(array);
     }
+
+    /**
+     * Creates a debug menu iframe that shows information about the connection and packets.
+     */
+    OpenDebug() {
+        throw new Error("This is currently W.I.P, sorry!");
+    }
+
 }
 
 (window as any).SonicWS = SonicWS;

@@ -50,7 +50,6 @@ export class PacketHolder {
         this.packetMap = {} as any;
 
         if(!packets) return;
-        this.packets = packets;
         this.holdPackets(packets);
     }
 
@@ -66,6 +65,7 @@ export class PacketHolder {
      * @param packets Array of packets to register
      */
     public holdPackets(packets: PacketTypings): void {
+        this.packets = packets;
         for (const packet of packets)
             this.createKey(packet.tag), this.packetMap[packet.tag] = packet;
     }

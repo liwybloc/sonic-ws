@@ -30,8 +30,10 @@ export type ConvertType<T> = T extends EnumPackage ? PacketType.ENUMS : T;
 type ImpactType<T extends (PacketType | readonly PacketType[]), K> = T extends PacketType[] ? K[] : K;
 
 export class Packet<T extends (PacketType | readonly PacketType[])> {
-    public readonly tag: string;
     public defaultEnabled: boolean;
+
+    public readonly tag: string;
+    public readonly async: boolean;
 
     public readonly maxSize: number;
     public readonly minSize: number;
@@ -66,6 +68,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         this.defaultEnabled = enabled;
         this.client = client;
         
+        this.async        = schema.async;
         this.enumData     = schema.enumData;
         this.rateLimit    = schema.rateLimit;
         this.dontSpread   = schema.dontSpread;
@@ -139,6 +142,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         const sharedData: number[] = [
             this.tag.length, ...processCharCodes(this.tag),
             this.dontSpread ? 1 : 0,
+            this.async ? 1 : 0,
             this.dataBatching,
             this.enumData.length, ...this.enumData.map(x => x.serialize()).flat(),
         ];
@@ -186,6 +190,9 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
 
         // then read dont spread, go up 1
         const dontSpread: boolean = data[offset++] == 1;
+
+        // read async
+        const async: boolean = data[offset++] == 1;
 
         // read batching, up 1
         const dataBatching: number = data[offset++];
@@ -241,7 +248,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             const finalTypes: (PacketType | EnumPackage)[] = types.map(x => x == PacketType.ENUMS ? enums[index++] : x); // convert enums to their enum packages
 
             // make schema
-            const schema = PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, dataBatching, -1, -1);
+            const schema = PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, dataBatching, -1, -1, async);
             return [
                 new Packet(tag, schema, null, false, client),
                 // +1 to go next
@@ -266,7 +273,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         const finalType = type == PacketType.ENUMS ? enums[0] : type; // convert enum to enum package
 
         // make schema
-        const schema = PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, -1, -1);
+        const schema = PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, -1, -1, async);
         return [
             new Packet(tag, schema, null, false, client),
             // +1 to go next
@@ -303,6 +310,8 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
     public dontSpread: boolean = false;
     public autoFlatten: boolean = false;
 
+    public async: boolean = false;
+
     public object: boolean;
 
     constructor(object: boolean) {
@@ -314,7 +323,7 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
     }
 
     public static single<T extends PacketType | EnumPackage>(type: T, dataMax: number, dataMin: number, dontSpread: boolean, dataBatching: number,
-                         maxBatchSize: number, rateLimit: number): PacketSchema<ConvertType<T>> {
+                         maxBatchSize: number, rateLimit: number, async: boolean): PacketSchema<ConvertType<T>> {
         const schema = new PacketSchema(false);
 
         if(typeof type == 'number') {
@@ -331,13 +340,15 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
         schema.dataBatching = dataBatching;
         schema.maxBatchSize = maxBatchSize;
         schema.rateLimit = rateLimit;
+        schema.async = async;
 
         return schema;
     }
 
     public static object<T extends readonly (PacketType | EnumPackage)[]>(
         types: T, dataMaxes: number[], dataMins: number[], dontSpread: boolean,
-        autoFlatten: boolean, dataBatching: number, maxBatchSize: number, rateLimit: number
+        autoFlatten: boolean, dataBatching: number, maxBatchSize: number, rateLimit: number,
+        async: boolean,
     ): PacketSchema<ConvertType<T[number]>[]> {
         if(types.length != dataMaxes.length || types.length != dataMins.length)
             throw new Error("There is an inbalance between the amount of types, data maxes, and data mins!");
@@ -361,6 +372,7 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
         schema.dataBatching = dataBatching;
         schema.maxBatchSize = maxBatchSize;
         schema.rateLimit = rateLimit;
+        schema.async = async;
 
         return schema;
     }

@@ -68,15 +68,26 @@ export function processPacket(
  * @param listeners The listeners to run
  * @param errorCB The callback if something goes wrong
  */
-export function listenPacket(listened: string | [any[], boolean], listeners: ((...values: any) => void)[], errorCB: (data: string) => void) {
-    // if invalid then ignore it and call back
-    if(typeof listened == 'string') return errorCB(listened);
+export async function listenPacket(
+    listened: string | [any[], boolean],
+    listeners: ((...values: any) => void | Promise<void>)[],
+    errorCB: (data: string) => void
+): Promise<void> {
+    if (typeof listened === 'string') return errorCB(listened);
+
     const [processed, flatten] = listened;
 
     try {
-        if(flatten && Array.isArray(processed)) listeners.forEach(l => l(...processed));
-        else listeners.forEach(l => l(processed));
-    } catch(err) {
+        if (flatten && Array.isArray(processed)) {
+            for (const l of listeners) {
+                await l(...processed);
+            }
+        } else {
+            for (const l of listeners) {
+                await l(processed);
+            }
+        }
+    } catch (err) {
         errorCB(err as string);
     }
 }
@@ -152,6 +163,9 @@ export type SharedPacketSettings = {
 
     /** A validation function that is called whenever data is received. Return true for success, return false to kick socket. */
     validator?: ValidatorFunction;
+
+    /** If this is true, other packets will be processed even if this one isn't finished; it'll still prevent it from calling twice before this finishes though. Defaults to false. */
+    async?: boolean;
 };
 
 /** Settings for single-typed packets */
@@ -197,7 +211,7 @@ export function CreatePacket<T extends ArguableType>(
     settings: SinglePacketSettings & { type: T }
 ): Packet<ConvertType<T>> {
     let { tag, type = PacketType.NONE, dataMax = 1, dataMin = 1, noDataRange = false, dontSpread = false,
-          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, } = settings;
+          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false } = settings;
 
     if(!tag) throw new Error("Tag not selected!");
 
@@ -211,7 +225,7 @@ export function CreatePacket<T extends ArguableType>(
     }
 
     const schema = PacketSchema.single(type, clampDataMax(dataMax), clampDataMin(dataMin, dataMax),
-                    dontSpread, dataBatching, maxBatchSize, rateLimit);
+                    dontSpread, dataBatching, maxBatchSize, rateLimit, async);
 
     return new Packet<ConvertType<T>>(tag, schema, validator, enabled, false);
 }
@@ -227,7 +241,7 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
     settings: MultiPacketSettings & { readonly types: T }
 ): Packet<V> {
     let { tag, types = [], dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false,
-          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
+          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false } = settings;
 
     if(!tag) throw new Error("Tag not selected!");
     if(types.length == 0) throw new Error("Types is set to 0 length");
@@ -252,7 +266,7 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
     const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins,
-        dontSpread, autoFlatten, dataBatching, maxBatchSize, rateLimit) as unknown as PacketSchema<V>;
+        dontSpread, autoFlatten, dataBatching, maxBatchSize, rateLimit, async) as unknown as PacketSchema<V>;
 
     return new Packet<V>(tag, schema, validator, enabled, false);
 }
@@ -265,7 +279,7 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
  */
 export function CreateEnumPacket(settings: EnumPacketSettings): Packet<PacketType.ENUMS> {
     const { tag, enumData, dataMax = 1, dataMin = 0, noDataRange = false, dontSpread = false,
-            validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true } = settings;
+            validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false } = settings;
 
     return CreatePacket({
         tag: tag,
@@ -279,6 +293,7 @@ export function CreateEnumPacket(settings: EnumPacketSettings): Packet<PacketTyp
         maxBatchSize,
         rateLimit,
         enabled,
+        async,
     });
 }
 

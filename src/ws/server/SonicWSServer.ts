@@ -92,6 +92,10 @@ export class SonicWSServer {
                 this.connections.splice(this.connections.indexOf(sonicConnection), 1);
                 delete this.connectionMap[sonicConnection.id];
                 this.availableIds.push(sonicConnection.id);
+                if(this.tags.has(sonicConnection)) {
+                    for(const tag of this.tags.get(sonicConnection)!) this.tagsInv.get(tag)?.delete(sonicConnection);
+                    this.tags.delete(sonicConnection);
+                }
             });
         });
 

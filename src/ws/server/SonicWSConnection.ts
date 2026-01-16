@@ -58,6 +58,9 @@ export class SonicWSConnection implements Connection {
     public id: number;
     _timers: Record<number, [number, (closed: boolean) => void, boolean]> = {};
 
+    private asyncMap: Record<string, boolean> = {};
+    private asyncData: Record<string, [boolean, data: ([string | [any[], boolean], string])[]]> = {};
+
     private closed: boolean = false;
 
     constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number) {
@@ -69,9 +72,12 @@ export class SonicWSConnection implements Connection {
         this.handshakePacket = handshakePacket;
 
         this.listeners = {};
-        for (const key of host.clientPackets.getTags()) {
-            this.listeners[key] = [];
-            this.enabledPackets[key] = host.clientPackets.getPacket(key).defaultEnabled;
+        for (const tag of host.clientPackets.getTags()) {
+            this.listeners[tag] = [];
+            const pack = host.clientPackets.getPacket(tag);
+            this.enabledPackets[tag] = pack.defaultEnabled;
+            this.asyncMap[tag] = pack.async;
+            if(pack.async) this.asyncData[tag] = [false, []];
         }
 
         this.setInterval = this.setInterval.bind(this);
@@ -162,10 +168,50 @@ export class SonicWSConnection implements Connection {
         console.log("Closure cause", listened);
         this.socket.close(4003, listened);
     }
+    
+    private isAsync(tag: string): boolean {
+        return this.asyncMap[tag];
+    }
 
-    private listenPacket(data: string | [any[], boolean], tag: string) {
-        if(this.closed) return;
-        listenPacket(data, this.listeners[tag], this.invalidPacket);
+    private listenLock: boolean = false;
+    private packetQueue: [data: string | [any[], boolean], tag: string][] = [];
+
+    private async listenPacket(data: string | [any[], boolean], tag: string): Promise<void> {
+        if (this.closed) return;
+
+        const isAsync = this.isAsync(tag);
+
+        let locked, packetQueue, asyncData;
+        if(isAsync) {
+            asyncData = this.asyncData[tag];
+            locked = asyncData[0];
+            packetQueue = asyncData[1];
+        } else {
+            locked = this.listenLock;
+            packetQueue = this.packetQueue;
+        }
+
+        if (locked) {
+            packetQueue!.push([data, tag]);
+            return;
+        }
+
+        if (isAsync) asyncData![0] = true;
+        else this.listenLock = true;
+
+        let currentData = data;
+        let currentTag = tag;
+
+        while (true) {
+            await listenPacket(currentData, this.listeners[currentTag], this.invalidPacket);
+
+            if (packetQueue!.length === 0) break;
+
+            [currentData, currentTag] = packetQueue!.shift()!;
+        }
+
+        if (isAsync) asyncData![0] = false;
+        else this.listenLock = false;
     }
 
     private messageHandler(data: [tag: string, value: Uint8Array] | null): void {
