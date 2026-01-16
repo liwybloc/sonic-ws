@@ -17,7 +17,7 @@
 import { DefineEnum } from "../util/enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../util/enums/EnumType";
 import { SonicWSConnection } from "../server/SonicWSConnection";
-import { convertVarInt, readVarInt } from "../util/packets/CompressionUtil";
+import { compressBools, convertVarInt, decompressBools, readVarInt } from "../util/packets/CompressionUtil";
 import { UnFlattenData } from "../util/packets/PacketUtils";
 import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, createReceiveProcessor, createSendProcessor, createValidator, PacketReceiveProcessor, PacketSendProcessor, PacketTypeValidator } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
@@ -33,7 +33,6 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public defaultEnabled: boolean;
 
     public readonly tag: string;
-    public readonly async: boolean;
 
     public readonly maxSize: number;
     public readonly minSize: number;
@@ -51,6 +50,11 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public readonly autoFlatten: boolean;
 
     public readonly rateLimit: number;
+
+    public readonly async: boolean;
+    public readonly rereference: boolean;
+    public readonly gzipCompression: boolean;
+
     public readonly object: boolean;
     public readonly client: boolean;
     
@@ -59,8 +63,8 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     private validator: PacketTypeValidator;
 
     public processReceive: (data: Uint8Array, validationResult: any) => any;
-    public processSend: (data: any[]) => Uint8Array;
-    public validate: (data: Uint8Array) => boolean;
+    public processSend: (data: any[]) => Promise<Uint8Array>;
+    public validate: (data: Uint8Array) => Promise<[Uint8Array, boolean]>;
     public customValidator: ((socket: SonicWSConnection, ...values: any[]) => boolean) | null;
 
     constructor(tag: string, schema: PacketSchema<T>, customValidator: ValidatorFunction, enabled: boolean, client: boolean) {
@@ -68,13 +72,15 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         this.defaultEnabled = enabled;
         this.client = client;
         
-        this.async        = schema.async;
-        this.enumData     = schema.enumData;
-        this.rateLimit    = schema.rateLimit;
-        this.dontSpread   = schema.dontSpread;
-        this.autoFlatten  = schema.autoFlatten;
-        this.dataBatching = schema.dataBatching;
-        this.maxBatchSize = client ? Infinity : schema.maxBatchSize;
+        this.async           = schema.async;
+        this.enumData        = schema.enumData;
+        this.rateLimit       = schema.rateLimit;
+        this.dontSpread      = schema.dontSpread;
+        this.autoFlatten     = schema.autoFlatten;
+        this.rereference     = schema.rereference;
+        this.dataBatching    = schema.dataBatching;
+        this.maxBatchSize    = client ? Infinity : schema.maxBatchSize;
+        this.gzipCompression = schema.gzipCompression;
 
         this.object = schema.object;
         if(schema.testObject()) {
@@ -88,8 +94,8 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
 
             // trst me bro..
             this.receiveProcessor = createObjReceiveProcessor(this as any);
-            this.validator        = createObjValidator(this as any);
             this.sendProcessor    = createObjSendProcessor(this as any);
+            this.validator        = createObjValidator(this as any);
         } else {
             this.type    = schema.type as unknown as T;
             this.dataMax = schema.dataMax;
@@ -100,25 +106,24 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             // @ts-expect-error
             this.receiveProcessor = createReceiveProcessor(this.type, this.enumData, this.dataMax);
             // @ts-expect-error
-            this.validator        = createValidator(this.type, this.dataMax, this.dataMin, this);
+            this.sendProcessor    = createSendProcessor(this.type, this.gzipCompression, this.rereference);
             // @ts-expect-error
-            this.sendProcessor    = createSendProcessor(this.type);
+            this.validator        = createValidator(this.type, this.dataMax, this.dataMin, this, this.gzipCompression, this.rereference);
         }
         
-        
         this.processReceive  = (data: Uint8Array, validationResult: any) => this.receiveProcessor(data, validationResult, 0);
-        this.processSend     = (data: any[]) => new Uint8Array(this.sendProcessor(data));
+        this.processSend     = async (data: any[]) => new Uint8Array(await this.sendProcessor(tag, data));
         this.validate        = (data: Uint8Array) => this.validator(data, 0);
         this.customValidator = customValidator;
     }
 
-    public listen(value: Uint8Array, socket: SonicWSConnection | null): [processed: any, flatten: boolean] | string {
+    public async listen(value: Uint8Array, socket: SonicWSConnection | null): Promise<[processed: any, flatten: boolean] | string> {
         try {
-            const validationResult = this.validate(value);
+            const [dcData, validationResult] = await this.validate(value);
             // holy shit i used === to fix another bug
             if(!this.client && validationResult === false) return "Invalid packet";
 
-            const processed = this.processReceive(value, validationResult);
+            const processed = this.processReceive(dcData, validationResult);
             
             const useableData = this.autoFlatten ? UnFlattenData(processed) : processed;
 
@@ -141,8 +146,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         // shared values for both
         const sharedData: number[] = [
             this.tag.length, ...processCharCodes(this.tag),
-            this.dontSpread ? 1 : 0,
-            this.async ? 1 : 0,
+            compressBools([this.dontSpread, this.async, this.object, this.autoFlatten, this.gzipCompression, this.rereference]),
             this.dataBatching,
             this.enumData.length, ...this.enumData.map(x => x.serialize()).flat(),
         ];
@@ -150,23 +154,20 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         // single-value packet (not an object schema)
         if (!this.object) {
             return [
-                ...sharedData,           // shared
-                0,                       // dummy byte flag for consistent deserialization; becomes -1 to indicate single
+                ...sharedData,                             // shared
                 ...convertVarInt(this.dataMax as number),  // the data max
                 ...convertVarInt(this.dataMin as number),  // the data min
-                this.type as PacketType, // type
+                this.type as PacketType,                   // type
             ];
         }
 
         // object packet
         return [
             ...sharedData,
-            this.maxSize + 1,                                                 // size, and +1 because of 0 for single
-            this.autoFlatten ? 1 : 0,                                         // auto flatten flag
+            this.maxSize,                                            // size
             ...(this.dataMax as number[]).map(convertVarInt).flat(), // all data maxes, serialized
             ...(this.dataMin as number[]).map(convertVarInt).flat(), // all data mins, serialized
-            ...(this.type as PacketType[]),                                   // all types, offset by 1 for NULL
-            this.tag.length,                                                  // tag length, offset by 1 for NULL
+            ...(this.type as PacketType[]),                          // all types
         ];
     }
 
@@ -188,11 +189,8 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         // read tag as it's up 1, and add offset
         const tag: string = as8String(data.slice(offset, offset += tagLength));
 
-        // then read dont spread, go up 1
-        const dontSpread: boolean = data[offset++] == 1;
-
-        // read async
-        const async: boolean = data[offset++] == 1;
+        // then read dontSpread and async
+        const [dontSpread, async, isObject, autoFlatten, gzipCompression, rereference] = decompressBools(data[offset++]);
 
         // read batching, up 1
         const dataBatching: number = data[offset++];
@@ -223,14 +221,11 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             enums.push(DefineEnum(enumTag, values));
         }
 
-        // read type count; prob should change sometime
-        const size: number = data[offset++] - 1;
-
         // objects
-        // single packet is 0, 0 - 1 = -1
-        if (size != -1) {
-            // 1 for true, 0 for false
-            const autoFlatten: boolean = data[offset++] == 1;
+        if (isObject) {
+            
+            // read size
+            const size: number = data[offset++];
 
             // read var ints for the datamaxes
             const [dataMaxes, o1] = this.readVarInts(data, offset, size)
@@ -248,11 +243,11 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             const finalTypes: (PacketType | EnumPackage)[] = types.map(x => x == PacketType.ENUMS ? enums[index++] : x); // convert enums to their enum packages
 
             // make schema
-            const schema = PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, dataBatching, -1, -1, async);
+            const schema = PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, dataBatching, -1, -1, async, gzipCompression);
             return [
                 new Packet(tag, schema, null, false, client),
                 // +1 to go next
-                (offset - beginningOffset) + 1,
+                (offset - beginningOffset),
             ];
         }
 
@@ -266,18 +261,17 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         const [o2, dataMin] = readVarInt(data, offset);
         offset = o2;
 
-        // read type, no more so no +1
-        const type: PacketType = data[offset] as PacketType;
+        // read type
+        const type: PacketType = data[offset++] as PacketType;
 
         // do enum stuff
         const finalType = type == PacketType.ENUMS ? enums[0] : type; // convert enum to enum package
 
         // make schema
-        const schema = PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, -1, -1, async);
+        const schema = PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, -1, -1, async, gzipCompression, rereference);
         return [
             new Packet(tag, schema, null, false, client),
-            // +1 to go next
-            (offset - beginningOffset) + 1,
+            (offset - beginningOffset),
         ];
     }
     
@@ -311,6 +305,8 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
     public autoFlatten: boolean = false;
 
     public async: boolean = false;
+    public rereference: boolean = false;
+    public gzipCompression: boolean = false;
 
     public object: boolean;
 
@@ -323,7 +319,7 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
     }
 
     public static single<T extends PacketType | EnumPackage>(type: T, dataMax: number, dataMin: number, dontSpread: boolean, dataBatching: number,
-                         maxBatchSize: number, rateLimit: number, async: boolean): PacketSchema<ConvertType<T>> {
+                         maxBatchSize: number, rateLimit: number, async: boolean, gzipCompression: boolean, rereference: boolean): PacketSchema<ConvertType<T>> {
         const schema = new PacketSchema(false);
 
         if(typeof type == 'number') {
@@ -334,13 +330,15 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
             schema.enumData = [type as EnumPackage];
         }
 
-        schema.dataMax = dataMax;
+        schema.async = async;
         schema.dataMin = dataMin;
+        schema.dataMax = dataMax;
+        schema.rateLimit = rateLimit;
         schema.dontSpread = dontSpread;
+        schema.rereference = rereference;
         schema.dataBatching = dataBatching;
         schema.maxBatchSize = maxBatchSize;
-        schema.rateLimit = rateLimit;
-        schema.async = async;
+        schema.gzipCompression = gzipCompression;
 
         return schema;
     }
@@ -348,7 +346,7 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
     public static object<T extends readonly (PacketType | EnumPackage)[]>(
         types: T, dataMaxes: number[], dataMins: number[], dontSpread: boolean,
         autoFlatten: boolean, dataBatching: number, maxBatchSize: number, rateLimit: number,
-        async: boolean,
+        async: boolean, gzipCompression: boolean
     ): PacketSchema<ConvertType<T[number]>[]> {
         if(types.length != dataMaxes.length || types.length != dataMins.length)
             throw new Error("There is an inbalance between the amount of types, data maxes, and data mins!");
@@ -365,14 +363,15 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
             }
         });
 
-        schema.dataMax = dataMaxes;
+        schema.async = async;
         schema.dataMin = dataMins;
+        schema.dataMax = dataMaxes;
+        schema.rateLimit = rateLimit;
         schema.dontSpread = dontSpread;
         schema.autoFlatten = autoFlatten;
         schema.dataBatching = dataBatching;
         schema.maxBatchSize = maxBatchSize;
-        schema.rateLimit = rateLimit;
-        schema.async = async;
+        schema.gzipCompression = gzipCompression;
 
         return schema;
     }

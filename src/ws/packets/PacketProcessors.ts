@@ -16,26 +16,27 @@
 
 import { EnumPackage } from "../util/enums/EnumType";
 import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertFloat, decompressBools, deconvertFloat, demapShort_ZZ, demapZigZag, fromShort, mapZigZag, SHORT_BITS, toByte, toShort, convertVarInt, MAX_BYTE, readVarInt, MAX_UVARINT, mapShort_ZZ, convertDouble, deconvertDouble, ONE_FOURTH, ONE_EIGHT, encodeHuffman, bytesToBits, decodeHuffman } from "../util/packets/CompressionUtil";
+import { compressBools, convertFloat, decompressBools, deconvertFloat, demapShort_ZZ, demapZigZag, fromShort, mapZigZag, SHORT_BITS, toByte, toShort, convertVarInt, MAX_BYTE, readVarInt, MAX_UVARINT, mapShort_ZZ, convertDouble, deconvertDouble, ONE_FOURTH, ONE_EIGHT, encodeHuffman, bytesToBits, decodeHuffman, decompressJSON, compressJSON, compressGzip, decompressGzip, hexToBytes, bytesToHex, EMPTY_UINT8 } from "../util/packets/CompressionUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 import { splitBuffer } from "../util/BufferUtil";
 import { processCharCodes } from "../util/StringUtil";
 
-export type PacketTypeValidator = (data: Uint8Array, index: number) => false | any;
+type PacketTypeSubValidator = (data: Uint8Array, index: number) => false | any;
+export type PacketTypeValidator = (data: Uint8Array, index: number) => Promise<[Uint8Array, false | any]>;
 export type PacketReceiveProcessor = (data: Uint8Array, validationResult: any, index: number) => any;
-export type PacketSendProcessor = (...data: any) => number[];
+export type PacketSendProcessor = (ident: string, ...data: any[]) => Promise<Uint8Array>;
 
-function BYTE_LEN(cap: number, min: number): PacketTypeValidator {
+function BYTE_LEN(cap: number, min: number): PacketTypeSubValidator {
     return (data: Uint8Array) => data.length >= min && data.length <= cap;
 }
-function SHORT_LEN(cap: number, min: number): PacketTypeValidator {
+function SHORT_LEN(cap: number, min: number): PacketTypeSubValidator {
     min *= 2;
     cap *= 2;
     return (data: Uint8Array) => data.length >= min && data.length <= cap && data.length % 2 == 0;
 }
 
-function VARINT_VERIF(cap: number, min: number): PacketTypeValidator {
+function VARINT_VERIF(cap: number, min: number): PacketTypeSubValidator {
     return (data: Uint8Array) => {
         if(data.length == 0) return min <= 0 ? [] : false;
 
@@ -52,98 +53,130 @@ function VARINT_VERIF(cap: number, min: number): PacketTypeValidator {
     }
 };
 
-export function createValidator<T extends PacketType>(type: T, dataCap: number, dataMin: number, packet: Packet<T | T[]>): PacketTypeValidator {
-    switch(type) {
-        case PacketType.NONE        : return (data: Uint8Array) => data.length == 0;
-        case PacketType.RAW         : return () => undefined;
+export function createValidator<T extends PacketType>(type: T, dataCap: number, dataMin: number, packet: Packet<T | T[]>, gzipCompression: boolean, rereference: boolean): PacketTypeValidator {
+    function genFunc(): PacketTypeSubValidator {
+        switch(type) {
+            case PacketType.NONE        : return (data: Uint8Array) => data.length == 0;
+            case PacketType.RAW         : return () => undefined;
 
-        case PacketType.ENUMS       : return (data: Uint8Array, index: number) => {
-            if (data.length < dataMin || data.length > dataCap || index >= packet.enumData.length) return false;
-            
-            const pkg = packet.enumData[index];
-            for(let i=0;i<data.length;i++) {
-                if(pkg.values.length <= data[i]) return false;
-            }
-        }
-
-        case PacketType.BYTES        : return BYTE_LEN(dataCap, dataMin);
-        case PacketType.UBYTES       : return BYTE_LEN(dataCap, dataMin);
-
-        case PacketType.SHORTS       : return SHORT_LEN(dataCap, dataMin);
-        case PacketType.USHORTS      : return SHORT_LEN(dataCap, dataMin);
-
-        case PacketType.VARINT       : return VARINT_VERIF(dataCap, dataMin);
-        case PacketType.UVARINT      : return VARINT_VERIF(dataCap, dataMin);
-        case PacketType.DELTAS       : return VARINT_VERIF(dataCap, dataMin);
-
-        case PacketType.FLOATS       : return (data: Uint8Array) => {
-            if (data.length % 4 !== 0) return false;
-            const sectors = data.length * ONE_FOURTH;
-            if (sectors > dataCap || sectors < dataMin) return false;
-            return undefined;
-        };
-        case PacketType.DOUBLES       : return (data: Uint8Array) => {
-            if (data.length % 8 !== 0) return false;
-            const sectors = data.length * ONE_EIGHT;
-            if (sectors > dataCap || sectors < dataMin) return false;
-            return undefined;
-        };
-
-        case PacketType.BOOLEANS     : {
-            const min = Math.ceil(dataMin * ONE_EIGHT);
-            const cap = Math.ceil(dataCap * ONE_EIGHT);
-            return (data: Uint8Array) => data.length >= min && data.length <= cap;
-        };
-
-        case PacketType.STRINGS_ASCII: return (data: Uint8Array) => {
-            let index = 0;
-            const [offCount, stringCount] = readVarInt(data, index);
-            index = offCount;
-
-            if (stringCount < dataMin || stringCount > dataCap) return false;
-
-            const lengths: number[] = [];
-            let totalLength = 0;
-            for (let i = 0; i < stringCount; i++) {
-                const [offLen, strLen] = readVarInt(data, index);
-                index = offLen;
-                lengths.push(strLen);
-                totalLength += strLen;
+            case PacketType.ENUMS       : return (data: Uint8Array, index: number) => {
+                if (data.length < dataMin || data.length > dataCap || index >= packet.enumData.length) return false;
+                
+                const pkg = packet.enumData[index];
+                for(let i=0;i<data.length;i++) {
+                    if(pkg.values.length <= data[i]) return false;
+                }
             }
 
-            if (index + Math.ceil(totalLength / 8) > data.length) return false;
+            case PacketType.BYTES        : return BYTE_LEN(dataCap, dataMin);
+            case PacketType.UBYTES       : return BYTE_LEN(dataCap, dataMin);
+            case PacketType.HEX          : return BYTE_LEN(dataCap, dataMin);
 
-            return [ stringCount, lengths, index ];
-        };
-        case PacketType.STRINGS_UTF16: return (data: Uint8Array) => {
-            let sectors = 0, index = 0, computed: number[][] = [];
+            case PacketType.SHORTS       : return SHORT_LEN(dataCap, dataMin);
+            case PacketType.USHORTS      : return SHORT_LEN(dataCap, dataMin);
 
-            while (index < data.length) {
-                sectors++;
-                if (sectors > dataCap) return false;
+            case PacketType.VARINT       : return VARINT_VERIF(dataCap, dataMin);
+            case PacketType.UVARINT      : return VARINT_VERIF(dataCap, dataMin);
+            case PacketType.DELTAS       : return VARINT_VERIF(dataCap, dataMin);
 
-                const [off, strLength] = readVarInt(data, index);
-                index = off;
+            case PacketType.FLOATS       : return (data: Uint8Array) => {
+                if (data.length % 4 !== 0) return false;
+                const sectors = data.length * ONE_FOURTH;
+                if (sectors > dataCap || sectors < dataMin) return false;
+                return undefined;
+            };
+            case PacketType.DOUBLES       : return (data: Uint8Array) => {
+                if (data.length % 8 !== 0) return false;
+                const sectors = data.length * ONE_EIGHT;
+                if (sectors > dataCap || sectors < dataMin) return false;
+                return undefined;
+            };
 
-                let string: number[] = [];
-                for (let i = 0; i < strLength; i++) {
-                    const [newOff, char] = readVarInt(data, index);
-                    index = newOff;
-                    if (index > data.length) return false;
-                    string.push(char);
+            case PacketType.BOOLEANS     : {
+                const min = Math.ceil(dataMin * ONE_EIGHT);
+                const cap = Math.ceil(dataCap * ONE_EIGHT);
+                return (data: Uint8Array) => data.length >= min && data.length <= cap;
+            };
+
+            case PacketType.STRINGS_ASCII: return (data: Uint8Array) => {
+                let index = 0;
+                const [offCount, stringCount] = readVarInt(data, index);
+                index = offCount;
+
+                if (stringCount < dataMin || stringCount > dataCap) return false;
+
+                const lengths: number[] = [];
+                let totalLength = 0;
+                for (let i = 0; i < stringCount; i++) {
+                    const [offLen, strLen] = readVarInt(data, index);
+                    index = offLen;
+                    lengths.push(strLen);
+                    totalLength += strLen;
                 }
 
-                computed.push(string);
-            }
+                if (index + Math.ceil(totalLength / 8) > data.length) return false;
 
-            if (sectors < dataMin) return false;
+                return [ stringCount, lengths, index ];
+            };
+            case PacketType.STRINGS_UTF16: return (data: Uint8Array) => {
+                let sectors = 0, index = 0, computed: number[][] = [];
 
-            return computed;
-        };
+                while (index < data.length) {
+                    sectors++;
+                    if (sectors > dataCap) return false;
 
+                    const [off, strLength] = readVarInt(data, index);
+                    index = off;
 
-        default: throw new Error("Unknown type: " + type);
+                    let string: number[] = [];
+                    for (let i = 0; i < strLength; i++) {
+                        const [newOff, char] = readVarInt(data, index);
+                        index = newOff;
+                        if (index > data.length) return false;
+                        string.push(char);
+                    }
+
+                    computed.push(string);
+                }
+
+                if (sectors < dataMin) return false;
+
+                return computed;
+            };
+
+            case PacketType.JSON: return (data: Uint8Array) => {
+                try {
+                    return decompressJSON(data);
+                } catch {
+                    return false;
+                }
+            };
+
+            default: throw new Error("Unknown type: " + type);
+        }
     }
+    const fn = genFunc();
+    let parsed: any = null;
+    return gzipCompression
+            ? async (data: Uint8Array, index: number) => {
+                if(rereference && data.length == 0) {
+                    if(parsed == null) return [data, false];
+                    return parsed;
+                }
+                try {
+                    const dec = await decompressGzip(data);
+                    return parsed = [dec, fn(dec, index)];
+                } catch {
+                    return [data, false];
+                }
+            }
+            : async (data: Uint8Array, index: number) => {
+                if(rereference && data.length == 0) {
+                    if(parsed == null) return [data, false];
+                    return parsed;
+                }
+                return parsed = [data, fn(data, index)]
+            };
 }
 
 export function createReceiveProcessor(type: PacketType, enumData: EnumPackage[], cap: number): PacketReceiveProcessor {
@@ -153,6 +186,7 @@ export function createReceiveProcessor(type: PacketType, enumData: EnumPackage[]
 
         case PacketType.BYTES        : return (data) => Array.from(data).map(demapZigZag);
         case PacketType.UBYTES       : return (data) => Array.from(data);
+        case PacketType.HEX          : return (data) => bytesToHex(data);
 
         case PacketType.SHORTS       : return (data) => splitBuffer(data, 2).map(v => demapShort_ZZ(v as SHORT_BITS));
         case PacketType.USHORTS      : return (data) => splitBuffer(data, 2).map(v => fromShort(v as SHORT_BITS));
@@ -188,77 +222,117 @@ export function createReceiveProcessor(type: PacketType, enumData: EnumPackage[]
             return strings;
         };
 
-        case PacketType.STRINGS_UTF16: return (data: Uint8Array, computed: number[][]) => {
+        case PacketType.STRINGS_UTF16: return (_: Uint8Array, computed: number[][]) => {
             return computed.map(codes => String.fromCodePoint(...codes));
         }
+
+        case PacketType.JSON: return (_: Uint8Array, computed: any) => computed;
 
         default: throw new Error("Unknown type: " + type);
     }
 }
 
 /** Creates a function that processes a packet type */
-export function createSendProcessor(type: PacketType): PacketSendProcessor {
-    switch(type) {
-        case PacketType.NONE         : return () => [];
-        case PacketType.RAW          : return (data: Uint8Array | number[]) => Array.from(data);
+export function createSendProcessor(type: PacketType, gzipCompression: boolean, rereference: boolean): PacketSendProcessor {
+    function genFunc() {
+        switch(type) {
+            case PacketType.NONE         : return () => [];
+            case PacketType.RAW          : return (data: Uint8Array | number[]) => Array.from(data);
 
-        case PacketType.ENUMS        : return (enums: number[]) => enums;
+            case PacketType.ENUMS        : return (enums: number[]) => enums;
 
-        case PacketType.BYTES        : return (numbers: number[]) => numbers.map(mapZigZag);
-        case PacketType.UBYTES       : return (numbers: number[]) => numbers.map(toByte);
+            case PacketType.BYTES        : return (numbers: number[]) => numbers.map(mapZigZag);
+            case PacketType.UBYTES       : return (numbers: number[]) => numbers.map(toByte);
+            case PacketType.HEX          : return (hex: string)       => {
+                if(typeof hex != "string") {
+                    if((hex as any) instanceof Array && (hex as Array<string>).length == 1) return hexToBytes(hex[0]);
+                    throw new Error("Cannot send more than 1 hex string; this packet is equivalent to UBYTES: " + JSON.stringify(hex));
+                }
+                return hexToBytes(hex);
+            };
 
-        case PacketType.SHORTS       : return (numbers: number[]) => numbers.map(mapShort_ZZ).flat();
-        case PacketType.USHORTS      : return (numbers: number[]) => numbers.map(toShort).flat();
+            case PacketType.SHORTS       : return (numbers: number[]) => numbers.map(mapShort_ZZ).flat();
+            case PacketType.USHORTS      : return (numbers: number[]) => numbers.map(toShort).flat();
 
-        case PacketType.VARINT       : return (numbers: number[]) => numbers.map(n => convertVarInt(mapZigZag(n))).flat();
-        case PacketType.UVARINT      : return (numbers: number[]) => numbers.map(convertVarInt).flat();
-        case PacketType.DELTAS       : return (numbers: number[]) => numbers.map((n, i) => convertVarInt(mapZigZag(n - (numbers[i - 1] || 0)))).flat();
-        
-        case PacketType.FLOATS       : return (singles: number[]) => singles.map(convertFloat).flat();
-        case PacketType.DOUBLES      : return (doubles: number[]) => doubles.map(convertDouble).flat(); 
+            case PacketType.VARINT       : return (numbers: number[]) => numbers.map(n => convertVarInt(mapZigZag(n))).flat();
+            case PacketType.UVARINT      : return (numbers: number[]) => numbers.map(convertVarInt).flat();
+            case PacketType.DELTAS       : return (numbers: number[]) => numbers.map((n, i) => convertVarInt(mapZigZag(n - (numbers[i - 1] || 0)))).flat();
+            
+            case PacketType.FLOATS       : return (singles: number[]) => singles.map(convertFloat).flat();
+            case PacketType.DOUBLES      : return (doubles: number[]) => doubles.map(convertDouble).flat(); 
 
-        case PacketType.BOOLEANS     : return (bools: boolean[]) => splitArray(bools, 8).map((bools: boolean[]) => compressBools(bools)).flat();
+            case PacketType.BOOLEANS     : return (bools: boolean[])  => splitArray(bools, 8).map((bools: boolean[]) => compressBools(bools)).flat();
 
-        case PacketType.STRINGS_ASCII: return (strings: any[]) => {
-            return [
-                ...convertVarInt(strings.length),
-                ...strings.map(str => convertVarInt(str.length)).flat(),
-                ...encodeHuffman(strings.reduce((a, b) => a + String(b), "")),
-            ];
-        };
-        case PacketType.STRINGS_UTF16: return (strings: any[]) => {
-            const res: number[] = [];
-            for(const v of strings) {
-                const string = String(v);
-                const charCodes = processCharCodes(string);
-                // hate js man
-                const length = charCodes.length;
-                res.push(...convertVarInt(length));
-                res.push(...charCodes.map(convertVarInt).flat());
+            case PacketType.STRINGS_ASCII: return (strings: any[])    => {
+                return [
+                    ...convertVarInt(strings.length),
+                    ...strings.map(str => convertVarInt(str.length)).flat(),
+                    ...encodeHuffman(strings.reduce((a, b) => a + String(b), "")),
+                ];
+            };
+            case PacketType.STRINGS_UTF16: return (strings: any[])    => {
+                const res: number[] = [];
+                for(const v of strings) {
+                    const string = String(v);
+                    const charCodes = processCharCodes(string);
+                    // hate js man
+                    const length = charCodes.length;
+                    res.push(...convertVarInt(length));
+                    res.push(...charCodes.map(convertVarInt).flat());
+                }
+                return res;
+            };
+
+            case PacketType.JSON: return (value: JSON) => Array.from(compressJSON(value));
+
+            default: throw new Error("Unknown type: " + type);
+        }
+    }
+    const fn = genFunc();
+    let lastSent: any;
+
+    if (!gzipCompression) {
+        return async (_, data) => {
+            if(rereference) {
+                const jstr = JSON.stringify(data);
+                if(jstr == lastSent) {
+                    return EMPTY_UINT8;
+                }
+                lastSent = jstr;
             }
-            return res;
-        };
+            return new Uint8Array(fn(data));
+        }
+    }
 
-        default: throw new Error("Unknown type: " + type);
+    return async (ident, data) => {
+        if(rereference) {
+            const jstr = JSON.stringify(data);
+            if(jstr == lastSent) {
+                return EMPTY_UINT8;
+            }
+            lastSent = jstr;
+        }
+        return compressGzip(new Uint8Array(fn(data)), ident);
     }
 }
 
 export function createObjSendProcessor(packet: Packet<PacketType[]>): PacketSendProcessor {
     const size = packet.type.length;
-    const processors = packet.type.map(t => createSendProcessor(t));
+    // TODO: Add compression and add rereferences[]
+    const processors = packet.type.map(t => createSendProcessor(t, false, false));
     
-    return (data: any[]) => {
+    return async (ident: string, data: any[]) => {
         let result: number[] = [];
         for(let i=0;i<size;i++) {
             const sectorData = data[i];
 
-            const d = processors[i](Array.isArray(sectorData) ? sectorData : [sectorData]);
+            const d = await processors[i](ident, Array.isArray(sectorData) ? sectorData : [sectorData]);
             if(d.length > MAX_UVARINT) throw new Error(`Cannot send ${d.length}/${MAX_UVARINT} bytes of data!`);
 
             result.push(...convertVarInt(d.length));
             d.forEach(val => result.push(val));
         }
-        return result;
+        return new Uint8Array(result);
     };
 }
 export function createObjReceiveProcessor(packet: Packet<PacketType[]>): PacketReceiveProcessor {
@@ -282,57 +356,27 @@ export function createObjReceiveProcessor(packet: Packet<PacketType[]>): PacketR
     };
 }
 export function createObjValidator(packet: Packet<PacketType[]>): PacketTypeValidator {
-    const validators = packet.type.map((t, i) => createValidator(t, packet.dataMax[i], packet.dataMin[i], packet));
+    const validators = packet.type.map((t, i) => createValidator(t, packet.dataMax[i], packet.dataMin[i], packet, false, false));
     
-    return (data: Uint8Array) => {
-        let index = 0, enums = 0, computedData = [];
+    return async (data: Uint8Array) => {
+        let index = 0, enums = 0, computedData: (false | any)[] = [];
 
         while(index < data.length) {
-            if(computedData.length > packet.type.length) return false; // only types amount of values
+            if(computedData.length > packet.type.length) return [data, false]; // only types amount of values
 
             const [off, sectorLength] = readVarInt(data, index);
             index = off;
 
-            if(sectorLength + index > data.length) return false;
+            if(sectorLength + index > data.length) return [data, false];
 
             const sector = data.subarray(index, index += sectorLength);
 
-            const result = validators[computedData.length](sector, packet.type[computedData.length] == PacketType.ENUMS ? enums++ : 0);
-            if(result === false) return false; // chat i used === to fix a bug !!!!
+            const [, result] = await validators[computedData.length](sector, packet.type[computedData.length] == PacketType.ENUMS ? enums++ : 0);
+            if(result === false) return [data, false]; // chat i used === to fix a bug !!!!
 
             computedData.push(result);
         }
 
-        return computedData;
+        return [data, computedData];
     };
 }
-
-type BuildTuple<T, N extends number, R extends unknown[] = []> = 
-    R['length'] extends N ? R : BuildTuple<T, N, [T, ...R]>;
-
-export type PacketResponse<
-    T extends PacketType | readonly PacketType[],
-    N extends number | readonly number[]
-> =
-    T extends PacketType[]
-        ? N extends number[]
-            ? PacketResponseArray<T, N>
-            : never
-        : BuildTuple<
-            T extends PacketType.NONE ? undefined :
-            T extends PacketType.RAW ? Uint8Array :
-            T extends PacketType.BYTES | PacketType.UBYTES ? number :
-            T extends PacketType.SHORTS | PacketType.USHORTS ? number :
-            T extends PacketType.VARINT | PacketType.UVARINT | PacketType.DELTAS ? number :
-            T extends PacketType.FLOATS | PacketType.DOUBLES ? number :
-            T extends PacketType.BOOLEANS ? boolean :
-            T extends PacketType.STRINGS_ASCII | PacketType.STRINGS_UTF16 ? string :
-            T extends PacketType.ENUMS ? any
-            : never,
-            N extends number ? N : never
-        >;
-
-type PacketResponseArray<
-    T extends PacketType[],
-    N extends number[]
-> = { [K in keyof T]: K extends number ? PacketResponse<T[K], N[K] & number> : never };

@@ -81,7 +81,7 @@ export class PacketHolder {
 
     /**
      * Returns the tag associated with a given character key
-     * @param key A 1-character string key
+     * @param key Key bytre
      */
     public getTag(key: number): string {
         return this.tags[key];

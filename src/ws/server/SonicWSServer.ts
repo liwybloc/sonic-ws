@@ -17,7 +17,7 @@
 import * as WS from 'ws';
 import { SonicWSConnection } from './SonicWSConnection';
 import { PacketHolder } from '../util/packets/PacketHolder';
-import { convertVarInt, MAX_BYTE } from '../util/packets/CompressionUtil';
+import { compressGzip, convertVarInt, MAX_BYTE } from '../util/packets/CompressionUtil';
 import { SERVER_SUFFIX_NUMS, VERSION } from '../../version';
 import { processPacket } from '../util/packets/PacketUtils';
 import { Packet } from '../packets/Packets';
@@ -33,6 +33,8 @@ export type SonicServerOptions = {
     readonly serverPackets?: PacketTypings,
     /** Default WS Options */
     readonly websocketOptions?: WS.ServerOptions;
+    /** If it should check for updates; defaults to true. */
+    readonly checkForUpdates?: boolean;
 }
 
 export type PacketTypings = readonly Packet<PacketType | readonly PacketType[]>[];
@@ -78,11 +80,12 @@ export class SonicWSServer {
         const serverData = [...SERVER_SUFFIX_NUMS, VERSION];
         const keyData: number[] = [...convertVarInt(s_clientPackets.length), ...s_clientPackets, ...s_serverPackets];
 
-        this.wss.on('connection', (socket) => {
+        this.wss.on('connection', async (socket) => {
             const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket, this.clientRateLimit, this.serverRateLimit);
 
             // send tags to the client so it doesn't have to hard code them in
-            socket.send(new Uint8Array([...serverData, ...convertVarInt(sonicConnection.id), ...keyData]));
+            const data = new Uint8Array([...convertVarInt(sonicConnection.id), ...keyData]);
+            socket.send([...serverData, ...await compressGzip(data)]);
 
             this.connections.push(sonicConnection);
             this.connectionMap[sonicConnection.id] = sonicConnection;
@@ -99,17 +102,19 @@ export class SonicWSServer {
             });
         });
 
-        fetch('https://raw.githubusercontent.com/liwybloc/sonic-ws/refs/heads/main/release/version')
-            .then((res: Response) => res.text())
-            .then((ver: string) => {
-                if(parseInt(ver) != VERSION) {
-                    console.warn(`SonicWS is currently running outdated! (current: ${VERSION}, latest: ${ver}) Update with "npm update sonic-ws"`)
-                }
-            })
-            .catch((err: Error) => {
-                console.error(err);
-                console.warn(`Could not check SonicWS version.`);
-            });
+        if(settings.checkForUpdates ?? true) {
+            fetch('https://raw.githubusercontent.com/liwybloc/sonic-ws/refs/heads/main/release/version')
+                .then((res: Response) => res.text())
+                .then((ver: string) => {
+                    if(parseInt(ver) > VERSION) {
+                        console.warn(`SonicWS is currently running outdated! (current: ${VERSION}, latest: ${ver}) Update with "npm update sonic-ws"`)
+                    }
+                })
+                .catch((err: Error) => {
+                    console.error(err);
+                    console.warn(`Could not check SonicWS version.`);
+                });
+        }
     }
 
     private generateSocketID(): number {
@@ -218,10 +223,10 @@ export class SonicWSServer {
      * @param packetTag Packet tag to send
      * @param values Values to send
      */
-    public broadcastTagged(tag: string, packetTag: string, ...values: any): void {
+    public async broadcastTagged(tag: string, packetTag: string, ...values: any): Promise<void> {
         if(!this.tagsInv.has(tag)) return;
 
-        const data = processPacket(this.serverPackets, packetTag, values);
+        const data = await processPacket(this.serverPackets, packetTag, values);
         this.tagsInv.get(tag)!.forEach(conn => conn.send_processed(...data));
     }
 
@@ -231,8 +236,8 @@ export class SonicWSServer {
      * @param filter The filter for who to send to
      * @param values The values to send
      */
-    public broadcastFiltered(tag: string, filter: (socket: SonicWSConnection) => boolean, ...values: any): void {
-        const data = processPacket(this.serverPackets, tag, values);
+    public async broadcastFiltered(tag: string, filter: (socket: SonicWSConnection) => boolean, ...values: any): Promise<void> {
+        const data = await processPacket(this.serverPackets, tag, values);
         this.connections.filter(filter).forEach(conn => conn.send_processed(...data));
     }
 

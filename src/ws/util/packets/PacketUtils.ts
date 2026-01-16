@@ -26,9 +26,9 @@ import { EnumPackage } from "../enums/EnumType";
  * @param values The values
  * @returns The indexed code, the data, and the packet schema
  */
-export function processPacket(
+export async function processPacket(
     packets: PacketHolder, tag: string, values: any[]
-):[code: number, data: Uint8Array, packet: Packet<any>] {
+): Promise<[code: number, data: Uint8Array, packet: Packet<any>]> {
     const code = packets.getKey(tag);
 
     const packet = packets.getPacket(tag);
@@ -41,8 +41,10 @@ export function processPacket(
     }
 
     if(!packet.object) {
-        const found = values.find(v => typeof v == 'object' && v != null);
-        if(found) console.warn(`Passing an array will result in undefined behavior (${JSON.stringify(found)}). Spread the array with ...arr`);
+        if(packet.type != PacketType.JSON) {
+            const found = values.find(v => typeof v == 'object' && v != null);
+            if(found) console.warn(`Passing an array will result in undefined behavior (${JSON.stringify(found)}). Spread the array with ...arr`);
+        }
     } else {
         // also map non arrays to arrays to keep some code cleaner
         values = values.map(x => !Array.isArray(x) ? [x] : x);
@@ -59,7 +61,7 @@ export function processPacket(
         }
     }
 
-    return [code, values.length > 0 ? packet.processSend(values)! : new Uint8Array([]), packet];
+    return [code, values.length > 0 ? await packet.processSend(values)! : new Uint8Array([]), packet];
 }
 
 /**
@@ -88,13 +90,14 @@ export async function listenPacket(
             }
         }
     } catch (err) {
+        console.error(err);
         errorCB(err as string);
     }
 }
 
-/** Determines if a type is a valid packet type */
+/** Determines if a type is a invalid packet type */
 function isInvalidType(type: any): boolean {
-    return !(typeof type == 'number' && type in PacketType) && !(type instanceof EnumPackage);
+    return (!(typeof type == 'number' && type in PacketType) && !(type instanceof EnumPackage)) || type == PacketType.KEY_EFFECTIVE;
 }
 
 const MAX_DATA_MAX = 2048383;
@@ -166,6 +169,9 @@ export type SharedPacketSettings = {
 
     /** If this is true, other packets will be processed even if this one isn't finished; it'll still prevent it from calling twice before this finishes though. Defaults to false. */
     async?: boolean;
+
+    /** If this is true, the packet will be Gzip compressed. Defaults to false on all types but JSON. */
+    gzipCompression?: boolean;
 };
 
 /** Settings for single-typed packets */
@@ -176,6 +182,8 @@ export type SinglePacketSettings = SharedPacketSettings & {
     dataMax?: number;
     /** The minimum amount of values that can be sent through this packet; defaults to the max */
     dataMin?: number;
+    /** If this is true, it will save the last received of this value, and if no data is sent, it'll re-use the previous value. This is not compatible with dataMin: 0. Defaults to false. */
+    rereference?: boolean;
 };
 
 /** Settings for multi-typed packets */
@@ -200,6 +208,11 @@ export type EnumPacketSettings = SharedPacketSettings & {
     dataMin?: number;
 }
 
+export type KeyEffectivePacketSettings = SharedPacketSettings & {
+    /** Amount of keys to consume in order to have differing values; defaults to 2. Must be 2+ */
+    count?: number;
+}
+
 /**
  * Creates a structure for a simple single-typed packet.
  * This packet can be sent and received with the specified tag, type, and data cap.
@@ -211,21 +224,24 @@ export function CreatePacket<T extends ArguableType>(
     settings: SinglePacketSettings & { type: T }
 ): Packet<ConvertType<T>> {
     let { tag, type = PacketType.NONE, dataMax = 1, dataMin = 1, noDataRange = false, dontSpread = false,
-          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false } = settings;
+          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false,
+          gzipCompression = type == PacketType.JSON, rereference = false } = settings;
 
     if(!tag) throw new Error("Tag not selected!");
 
     if(noDataRange) {
-        dataMin = 0;
+        dataMin = rereference ? 1 : 0;
         dataMax = MAX_DATA_MAX;
     } else if(dataMin == undefined) dataMin = type == PacketType.NONE ? 0 : dataMax;
+
+    if(rereference && dataMin == 0) throw new Error("Rereference cannot be true if the dataMin is 0");
 
     if (isInvalidType(type)) {
         throw new Error(`Invalid packet type: ${type}`);
     }
 
     const schema = PacketSchema.single(type, clampDataMax(dataMax), clampDataMin(dataMin, dataMax),
-                    dontSpread, dataBatching, maxBatchSize, rateLimit, async);
+                    dontSpread, dataBatching, maxBatchSize, rateLimit, async, gzipCompression, rereference);
 
     return new Packet<ConvertType<T>>(tag, schema, validator, enabled, false);
 }
@@ -241,7 +257,8 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
     settings: MultiPacketSettings & { readonly types: T }
 ): Packet<V> {
     let { tag, types = [], dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false,
-          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false } = settings;
+          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false,
+          gzipCompression = types && (types as ArguableType[]).includes(PacketType.JSON) } = settings;
 
     if(!tag) throw new Error("Tag not selected!");
     if(types.length == 0) throw new Error("Types is set to 0 length");
@@ -266,7 +283,7 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
     const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins,
-        dontSpread, autoFlatten, dataBatching, maxBatchSize, rateLimit, async) as unknown as PacketSchema<V>;
+        dontSpread, autoFlatten, dataBatching, maxBatchSize, rateLimit, async, gzipCompression) as unknown as PacketSchema<V>;
 
     return new Packet<V>(tag, schema, validator, enabled, false);
 }
@@ -295,6 +312,15 @@ export function CreateEnumPacket(settings: EnumPacketSettings): Packet<PacketTyp
         enabled,
         async,
     });
+}
+
+export function CreateKeyEffective(settings: KeyEffectivePacketSettings): Packet<PacketType.KEY_EFFECTIVE> {
+    const { tag, count = 2, validator = null, async = false } = settings;
+    
+    if(!tag) throw new Error("Tag not selected!");
+    if(count < 2) throw new Error("Must have at least 2 key consumptions on key effective packet!");
+
+    throw new Error("Currently W.I.P.");
 }
 
 /**

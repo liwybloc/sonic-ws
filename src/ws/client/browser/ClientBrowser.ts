@@ -40,9 +40,9 @@ export class SonicWS extends SonicWSCore {
             const ogWSSend = ws.send.bind(ws);
             const ogTSSend = this.send.bind(this);
             let lastSend: number;
-            this.send = (key: string, ...values: any[]) => {
-                lastSend = thiz.clientPackets.getKey(key);
-                ogTSSend(key, ...values);
+            this.send = async (tag: string, ...values: any[]) => {
+                lastSend = thiz.clientPackets.getKey(tag);
+                return await ogTSSend(tag, ...values);
             };
             ws.send = (v) => {
                 if(!(v instanceof Uint8Array) || lastSend != v[0]) {
@@ -50,7 +50,7 @@ export class SonicWS extends SonicWSCore {
                     thiz.close();
                     return;
                 }
-                ogWSSend(v);
+                return ogWSSend(v);
             };
         }
     }

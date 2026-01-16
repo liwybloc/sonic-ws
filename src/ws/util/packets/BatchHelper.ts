@@ -61,7 +61,7 @@ export class BatchHelper {
         if(!this.batchTimeouts[code]) this.startBatch(code);
     }
 
-    public static unravelBatch(packet: Packet<any>, data: Uint8Array, socket: SonicWSConnection | null): any[] | string {
+    public static async unravelBatch(packet: Packet<any>, data: Uint8Array, socket: SonicWSConnection | null): Promise<any[] | string> {
         const result: any[] = [];
         for(let i=0;i<data.length;) {
             // must be >0 for it to apply
@@ -78,7 +78,7 @@ export class BatchHelper {
             const sect = data.slice(i, i += varint);
 
             // call the packets listeners
-            const listen = packet.listen(sect, socket);
+            const listen = await packet.listen(sect, socket);
 
             // if invalid, return that
             if(typeof listen == 'string') return "Batched packet: " + listen;

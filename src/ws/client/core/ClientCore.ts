@@ -15,7 +15,7 @@
  */
 
 import { PacketHolder } from '../../util/packets/PacketHolder';
-import { readVarInt } from '../../util/packets/CompressionUtil';
+import { decompressGzip, readVarInt } from '../../util/packets/CompressionUtil';
 import { listenPacket, processPacket } from '../../util/packets/PacketUtils';
 import { SERVER_SUFFIX, VERSION } from '../../../version';
 import { Packet } from '../../packets/Packets';
@@ -50,7 +50,7 @@ export abstract class SonicWSCore implements Connection {
 
     _timers: Record<number, [number, (closed: boolean) => void, boolean]> = {};
 
-    private asyncData: Record<number, [boolean, [data: string | [any[], boolean], code: number][]]> = {};
+    private asyncData: Record<number, [boolean, (string | [any[], boolean])[]]> = {};
     private asyncMap: Record<number, boolean> = {};
 
     constructor(ws: WebSocket, bufferHandler: (val: MessageEvent) => Promise<Uint8Array>) {
@@ -83,31 +83,34 @@ export abstract class SonicWSCore implements Connection {
     }
 
     private reading: boolean = false;
+    private readQueue: MessageEvent[] = [];
     private async serverKeyHandler(event: MessageEvent) {
-        // stupid asynchronous bullshit
-        if(this.reading) return this.messageHandler(event);
-        this.reading = true;
-        const data: Uint8Array = await this.bufferHandler(event);
+        if(this.reading) return this.readQueue.push(event);
 
-        if(data.length < 3 || as8String(data.slice(0, 3)) != SERVER_SUFFIX) {
+        this.reading = true;
+        const cdata: Uint8Array = await this.bufferHandler(event);
+
+        if(cdata.length < 3 || as8String(cdata.slice(0, 3)) != SERVER_SUFFIX) {
             this.socket.close(1000);
             throw new Error("The server requested is not a Sonic WS server.");
         }
 
-        const version = data[3];
+        const version = cdata[3];
         if(version != VERSION) {
             this.socket.close(1000);
             throw new Error(`Version mismatch: ${version > VERSION ? "client" : "server"} is outdated (server: ${version}, client: ${VERSION})`);              
         }
 
-        const [ckOff,id] = readVarInt(data, 4);
+        const data = await decompressGzip(cdata.subarray(4, cdata.length));
+
+        const [ckOff,id] = readVarInt(data, 0);
         this.id = id;
 
         const [valuesOff,ckLength] = readVarInt(data, ckOff);
         
-        const ckData = data.slice(valuesOff, valuesOff + ckLength);
+        const ckData = data.subarray(valuesOff, valuesOff + ckLength);
         this.clientPackets.holdPackets(Packet.deserializeAll(ckData, true));
-        const skData = data.slice(valuesOff + ckLength, data.length);
+        const skData = data.subarray(valuesOff + ckLength, data.length);
         this.serverPackets.holdPackets(Packet.deserializeAll(skData, true));
 
         this.batcher.registerSendPackets(this.clientPackets, this);
@@ -134,6 +137,9 @@ export abstract class SonicWSCore implements Connection {
 
         this.socket.removeEventListener('message', this.serverKeyHandler);
         this.socket.addEventListener('message', this.messageHandler);
+
+        this.readQueue.forEach(e => this.messageHandler(e));
+        this.readQueue = [];
     }
 
     private invalidPacket(listened: string) {
@@ -142,7 +148,7 @@ export abstract class SonicWSCore implements Connection {
     }
 
     private listenLock: boolean = false;
-    private packetQueue: [data: string | [any[], boolean], code: number][] = [];
+    private packetQueue: (string | [any[], boolean])[] = [];
     
     public listenPacket(data: string | [any[], boolean], code: number): void {
         const listeners = this.listeners.event[code];
@@ -163,11 +169,11 @@ export abstract class SonicWSCore implements Connection {
         const isAsync = this.isAsync(code);
 
         let locked: boolean;
-        let packetQueue: [data: string | [any[], boolean], code: number][];
-        let asyncData: [boolean, [data: string | [any[], boolean], code: number][]] | undefined;
+        let packetQueue: (string | [any[], boolean])[];
+        let asyncData: [boolean, (string | [any[], boolean])[]];
 
         if (isAsync) {
-            asyncData = this.asyncData[code];
+            asyncData = this.asyncData[code]!;
             locked = asyncData[0];
             packetQueue = asyncData[1];
         } else {
@@ -176,7 +182,7 @@ export abstract class SonicWSCore implements Connection {
         }
 
         if (locked) {
-            packetQueue.push([data, code]);
+            packetQueue.push(data);
             return;
         }
 
@@ -184,13 +190,12 @@ export abstract class SonicWSCore implements Connection {
         else this.listenLock = true;
 
         let currentData = data;
-        let currentCode = code;
 
         while (true) {
             await listenPacket(currentData, listeners, this.invalidPacket);
 
             if (packetQueue.length === 0) break;
-            [currentData, currentCode] = packetQueue.shift()!;
+            currentData = packetQueue.shift()!;
         }
 
         if (isAsync) asyncData![0] = false;
@@ -209,11 +214,11 @@ export abstract class SonicWSCore implements Connection {
         const packet = this.serverPackets.getPacket(this.serverPackets.getTag(key));
         
         if(packet.dataBatching == 0) {
-            this.listenPacket(packet.listen(value, null), key);
+            this.listenPacket(await packet.listen(value, null), key);
             return;
         }
 
-        const batchData = BatchHelper.unravelBatch(packet, value, null);
+        const batchData = await BatchHelper.unravelBatch(packet, value, null);
         if(typeof batchData == 'string') return this.invalidPacket(batchData);
 
         batchData.forEach(data => this.listenPacket(data, key));
@@ -251,8 +256,8 @@ export abstract class SonicWSCore implements Connection {
      * @param tag The tag of the packet
      * @param values The values to send
      */
-    public send(tag: string, ...values: any[]): void {
-        const [code, data, packet] = processPacket(this.clientPackets, tag, values);
+    public async send(tag: string, ...values: any[]): Promise<void> {
+        const [code, data, packet] = await processPacket(this.clientPackets, tag, values);
         if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
         else this.batcher.batchPacket(code, data);
     }

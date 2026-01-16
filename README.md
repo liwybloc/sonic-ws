@@ -7,8 +7,9 @@ SonicWS is an ultra-lightweight, high-performance WebSocket library focused on m
 Compression:
 - Lossless compression up to 70% or more (for example, 38kb -> 14kb)
 - Optimized bandwidth for many different types to fit special constraints
-- Automatic helpers to flatten typed nested arrays for maximum wire efficiency (for example, [[1,2,3],[4,5,6]] to [[1,4],[2,5],[3,6]])
+- Automatic helpers to flatten typed nested arrays for maximum wire efficiency (for example, [[1,false,"text"],[4,true,"other"]] to [[1,4],[false,true],["text,"other"]])
 - Uses raw binary bytes to transmit data as efficiently as possible while still using high level readable code
+- Built-in ability to use compression libraries
 
 Developer Friendly:
 - Predefined data types of various sized integers, single and double precision floating point numbers, strings, enums, etc. and RAW to allow for developers to do anything they want
@@ -38,8 +39,9 @@ Developer Experience:
 - Debug tools for socket ids, byte size, data logging, etc. for troubleshooting
 - Very minimal learning curve, easy to work in
 - JSDoc's for understanding; immensely intuitive (personally, I took a break for half a year and came back and snapped right back in)
+- Almost every case has a pre-made wire optimization and boilerplate removal.
 
-Whether you're making a real-time game, a dashboard, a distributed system, or anything else, SonicWS gets you safe, structured packets, fast.
+Whether you're making a real-time game, a dashboard, a distributed system, or anything else, SonicWS gets you safe, structured packets; fast.
 
 ## SAMPLES
 
@@ -117,4 +119,6 @@ Some weird error messages when invalid inputs are in like CreatePacket() and stu
 
 Better error handling
 
-ZLib/gzip compression
+Some middleware support
+
+Debug menus for client/server

@@ -62,4 +62,12 @@ export enum PacketType {
     /** One or more true/false */
     BOOLEANS = 14,
     
+    /** Consumes multiple keys to describe the value. E.g. if you want to send a boolean, this could take up 2 keys instead of sending 2 bytes. Currently W.I.P. */
+    KEY_EFFECTIVE = 15,
+
+    /** A more optimized version of JSON for when it's a necessity. However, please try to avoid this; the other types are usually better. */
+    JSON = 16,
+
+    /** Hex bytes, e.g. 0xFFFFFF - the result will always be returned in lowercase. This can only hold 1 hex string, since it's the same as UBYTES but auto-parses. */
+    HEX = 17,
 }

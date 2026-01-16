@@ -214,7 +214,7 @@ export class SonicWSConnection implements Connection {
         else this.listenLock = false;
     }
 
-    private messageHandler(data: [tag: string, value: Uint8Array] | null): void {
+    private async messageHandler(data: [tag: string, value: Uint8Array] | null): Promise<void> {
         if(data == null) return;
 
         const [tag, value] = data;
@@ -222,12 +222,12 @@ export class SonicWSConnection implements Connection {
         const packet = this.host.clientPackets.getPacket(tag);
 
         if(packet.dataBatching == 0) {
-            const res = packet.listen(value, this);
+            const res = await packet.listen(value, this);
             this.listenPacket(res, tag);
             return;
         }
 
-        const batchData = BatchHelper.unravelBatch(packet, value, this);
+        const batchData = await BatchHelper.unravelBatch(packet, value, this);
         if(typeof batchData == 'string') return this.invalidPacket(batchData);
 
         for(const data of batchData) {
@@ -293,8 +293,8 @@ export class SonicWSConnection implements Connection {
      * @param tag The tag to send
      * @param values The values to send
      */
-    public send(tag: string, ...values: any[]) {
-        this.send_processed(...processPacket(this.host.serverPackets, tag, values));
+    public async send(tag: string, ...values: any[]) {
+        this.send_processed(...await processPacket(this.host.serverPackets, tag, values));
     }
 
     /**
