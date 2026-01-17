@@ -16,6 +16,7 @@ Developer Friendly:
 - Keys are automatically indexed before transfer, improving readability and efficiency (for example, send("pixel") and send("p") use the same bandwidth)
 - Data is validated and supports custom validation, ensuring only valid, safe, and untampered packets ever call your listeners
 - Edge cases are heavily tested with heavy data ranges; supports code points fully up to the max of 0x10FFFF
+- Debug tools to view all packets
 
 Security:
 - Tamper-proof; any invalid packet instantly causes closure, and tampering becomes incredibly difficult

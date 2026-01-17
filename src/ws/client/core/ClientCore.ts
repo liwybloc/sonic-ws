@@ -21,7 +21,7 @@ import { SERVER_SUFFIX, VERSION } from '../../../version';
 import { Packet } from '../../packets/Packets';
 import { BatchHelper } from '../../util/packets/BatchHelper';
 import { as8String, toPacketBuffer } from '../../util/BufferUtil';
-import { Connection } from '../../Connection';
+import { BasicMiddleware, Connection } from '../../Connection';
 
 export abstract class SonicWSCore implements Connection {
 
@@ -52,6 +52,7 @@ export abstract class SonicWSCore implements Connection {
 
     private asyncData: Record<number, [boolean, (string | [any[], boolean])[]]> = {};
     private asyncMap: Record<number, boolean> = {};
+    private _state: number = WebSocket.OPEN;
 
     constructor(ws: WebSocket, bufferHandler: (val: MessageEvent) => Promise<Uint8Array>) {
         this.socket = ws;
@@ -71,7 +72,11 @@ export abstract class SonicWSCore implements Connection {
 
         this.socket.addEventListener('message', this.serverKeyHandler);
 
-        this.socket.addEventListener('close', (event: CloseEvent) => {
+
+        this.socket.addEventListener('open', () => this.callMiddleware('onStatusChange', WebSocket.OPEN));
+
+        this.socket.addEventListener('close', event => {
+            this.callMiddleware('onStatusChange', WebSocket.CLOSED);
             this.listeners.close.forEach(listener => listener(event));
             for(const [id, callback, shouldCall] of Object.values(this._timers)) {
                 this.clearTimeout(id);
@@ -150,7 +155,9 @@ export abstract class SonicWSCore implements Connection {
     private listenLock: boolean = false;
     private packetQueue: (string | [any[], boolean])[] = [];
     
-    public listenPacket(data: string | [any[], boolean], code: number): void {
+    public async listenPacket(data: string | [any[], boolean], code: number): Promise<void> {
+        if(await this.callMiddleware('onReceive_post', this.serverPackets.getTag(code), typeof data == 'string' ? [data] : data[0])) return;
+
         const listeners = this.listeners.event[code];
         if (!listeners) return console.warn("Warn: No listener for packet " + code);
 
@@ -202,6 +209,41 @@ export abstract class SonicWSCore implements Connection {
         else this.listenLock = false;
     }
 
+    private basicMiddlewares: BasicMiddleware[] = [];
+
+    addBasicMiddleware(middleware: BasicMiddleware): void {
+        this.basicMiddlewares.push(middleware);
+
+        const m: any = middleware;
+        try {
+            if (typeof m.init === 'function') m.init(this);
+        } catch (e) {
+            console.warn('Middleware init threw an error:', e);
+        }
+    }
+
+    private async callMiddleware<K extends keyof BasicMiddleware>(
+        method: K,
+        ...values: Parameters<NonNullable<BasicMiddleware[K]>>
+    ): Promise<boolean> {
+        let cancelled = false;
+
+        for (const middleware of this.basicMiddlewares) {
+            const fn = middleware[method];
+            if (!fn) continue;
+
+            try {
+                if (await (fn as (...args: any[]) => Promise<boolean> | boolean)(...values)) {
+                    cancelled = true;
+                }
+            } catch (e) {
+                console.warn(`Middleware ${String(method)} threw an error:`, e);
+            }
+        }
+
+        return cancelled;
+    }
+
     private async messageHandler(event: MessageEvent) {
         const data = await this.bufferHandler(event);
 
@@ -212,6 +254,8 @@ export abstract class SonicWSCore implements Connection {
         const value = data.slice(1);
 
         const packet = this.serverPackets.getPacket(this.serverPackets.getTag(key));
+
+        if(await this.callMiddleware('onReceive_pre', packet.tag, data)) return;
 
         if(packet.rereference && value.length == 0) {
             if(packet.lastReceived[0] === undefined) return this.invalidPacket("No previous value to rereference");
@@ -264,7 +308,9 @@ export abstract class SonicWSCore implements Connection {
      * @param values The values to send
      */
     public async send(tag: string, ...values: any[]): Promise<void> {
+        if(await this.callMiddleware('onSend_pre', tag, values)) return;
         const [code, data, packet] = await processPacket(this.clientPackets, tag, values, 0);
+        if(await this.callMiddleware('onSend_post', tag, data)) return;
         if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
         else this.batcher.batchPacket(code, data);
     }

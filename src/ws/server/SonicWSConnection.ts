@@ -15,13 +15,13 @@
  */
 
 import * as WS from 'ws';
-import { PacketTypings, SonicWSServer } from './SonicWSServer';
+import { SonicWSServer } from './SonicWSServer';
 import { listenPacket, processPacket } from '../util/packets/PacketUtils';
 import { BatchHelper } from '../util/packets/BatchHelper';
 import { Packet } from '../packets/Packets';
 import { RateHandler } from '../util/packets/RateHandler';
 import { stringifyBuffer, toPacketBuffer } from '../util/BufferUtil';
-import { Connection } from '../Connection';
+import { BasicMiddleware, Connection } from '../Connection';
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
 
 export class SonicWSConnection implements Connection {
@@ -62,6 +62,7 @@ export class SonicWSConnection implements Connection {
     private asyncData: Record<string, [boolean, data: ([string | [any[], boolean], string])[]]> = {};
 
     private closed: boolean = false;
+    private _state: number = WebSocket.OPEN;
 
     constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number) {
         this.socket = socket;
@@ -104,7 +105,10 @@ export class SonicWSConnection implements Connection {
             this.socket.addEventListener('message', this.handshakeLambda);
         }
 
+        this.socket.on('open', () => this.callMiddleware('onStatusChange', WebSocket.OPEN));
+
         this.socket.on('close', () => {
+            this.callMiddleware('onStatusChange', WebSocket.CLOSED);
             this.closed = true;
             for(const [id, callback, shouldCall] of Object.values(this._timers)) {
                 this.clearTimeout(id);
@@ -182,6 +186,7 @@ export class SonicWSConnection implements Connection {
 
     private async listenPacket(data: string | [any[], boolean], tag: string): Promise<void> {
         if (this.closed) return;
+        if(await this.callMiddleware('onReceive_post', tag, typeof data == 'string' ? [data] : data[0])) return;
 
         const isAsync = this.isAsync(tag);
 
@@ -225,6 +230,8 @@ export class SonicWSConnection implements Connection {
 
         const packet = this.host.clientPackets.getPacket(tag);
 
+        if(await this.callMiddleware('onReceive_pre', packet.tag, value)) return;
+
         if(packet.rereference && value.length == 0) {
             if(packet.lastReceived[this.id] === undefined) return this.invalidPacket("No previous value to rereference");
             this.listenPacket(packet.lastReceived[this.id] as any, tag);
@@ -243,6 +250,41 @@ export class SonicWSConnection implements Connection {
         for(const data of batchData) {
             this.listenPacket(data, tag);
         }
+    }
+
+    private basicMiddlewares: BasicMiddleware[] = [];
+
+    addBasicMiddleware(middleware: BasicMiddleware): void {
+        this.basicMiddlewares.push(middleware);
+
+        const m: any = middleware;
+        try {
+            if (typeof m.init === 'function') m.init(this);
+        } catch (e) {
+            console.warn('Middleware init threw an error:', e);
+        }
+    }
+
+    private async callMiddleware<K extends keyof BasicMiddleware>(
+        method: K,
+        ...values: Parameters<NonNullable<BasicMiddleware[K]>>
+    ): Promise<boolean> {
+        let cancelled = false;
+
+        for (const middleware of this.basicMiddlewares) {
+            const fn = middleware[method];
+            if (!fn) continue;
+
+            try {
+                if (!await (fn as (...args: any[]) => Promise<boolean> | boolean)(...values)) {
+                    cancelled = true;
+                }
+            } catch (e) {
+                console.warn(`Middleware ${String(method)} threw an error:`, e);
+            }
+        }
+
+        return cancelled;
     }
 
     /**
@@ -304,7 +346,10 @@ export class SonicWSConnection implements Connection {
      * @param values The values to send
      */
     public async send(tag: string, ...values: any[]) {
-        this.send_processed(...await processPacket(this.host.serverPackets, tag, values, this.id));
+        if(await this.callMiddleware('onSend_pre', tag, values)) return;
+        const [code, data, packet] = await processPacket(this.host.serverPackets, tag, values, this.id);
+        if(await this.callMiddleware('onSend_post', tag, data))  return;
+        this.send_processed(code, data, packet);
     }
 
     /**
