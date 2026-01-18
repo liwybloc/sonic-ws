@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { BasicMiddleware, Connection } from "../../Connection";
+import { BasicMiddleware } from "../../PacketProcessor";
 import { WrapEnum, DeWrapEnum } from "../../util/enums/EnumHandler";
 import { FlattenData, UnFlattenData } from "../../util/packets/PacketUtils";
 import { SonicWSCore } from "../core/ClientCore";
@@ -100,7 +100,8 @@ export class SonicWS extends SonicWSCore {
      * Creates a debug menu that shows information about the connection and packets.
      */
     OpenDebug() {
-        const debugHTML = `
+        const html = String.raw;
+        const debugHTML = html`
     <style>
         sws-h3 {
             margin: 0;
@@ -127,6 +128,7 @@ export class SonicWS extends SonicWSCore {
             overflow: hidden;
             user-select: none;
             transition: box-shadow 0.2s ease;
+            z-index: 2147483647;
         }
 
         #sonicws-container:hover {
@@ -480,7 +482,7 @@ export class SonicWS extends SonicWSCore {
         function addPacket(direction: string, tag: string, raw: Uint8Array, data: string, processingTime: number) {
             const now = new Date();
             const bytes = raw.length + (direction == "sent" ? 1 : 0);
-            const saved = data.length - bytes;
+            const saved = data.length - bytes + 1;
 
             const packetEl = document.createElement('sws-div');
             packetEl.classList.add('packet');

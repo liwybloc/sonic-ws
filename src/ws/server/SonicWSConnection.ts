@@ -21,7 +21,8 @@ import { BatchHelper } from '../util/packets/BatchHelper';
 import { Packet } from '../packets/Packets';
 import { RateHandler } from '../util/packets/RateHandler';
 import { stringifyBuffer, toPacketBuffer } from '../util/BufferUtil';
-import { BasicMiddleware, Connection } from '../Connection';
+import { Connection } from '../Connection';
+import { AsyncPQ, BasicMiddleware, PacketQueue, SendQueue, ServerPQ } from '../PacketProcessor';
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
 
 export class SonicWSConnection implements Connection {
@@ -34,6 +35,7 @@ export class SonicWSConnection implements Connection {
     private listeners: Record<string, Array<(...data: any[]) => void>>;
 
     private print: boolean = false;
+    private name: string;
     
     private handshakePacket: string | null;
     private handshakeLambda!: (data: WS.MessageEvent) => void;
@@ -59,16 +61,16 @@ export class SonicWSConnection implements Connection {
     _timers: Record<number, [number, (closed: boolean) => void, boolean]> = {};
 
     private asyncMap: Record<string, boolean> = {};
-    private asyncData: Record<string, [boolean, data: ([string | [any[], boolean], string])[]]> = {};
+    private asyncData: Record<string, [boolean, PacketQueue<ServerPQ>]> = {};
 
     private closed: boolean = false;
-    private _state: number = WebSocket.OPEN;
 
     constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number) {
         this.socket = socket;
         this.host = host;
 
         this.id = id;
+        this.name = "Socket " + id;
         
         this.handshakePacket = handshakePacket;
 
@@ -117,6 +119,9 @@ export class SonicWSConnection implements Connection {
             for (const packet of host.clientPackets.getPackets()) {
                 delete packet.lastReceived[this.id];
             }
+            for (const packet of host.serverPackets.getPackets()) {
+                delete packet.lastSent[this.id];
+            }
         });
     }
 
@@ -126,7 +131,9 @@ export class SonicWSConnection implements Connection {
 
         const message = new Uint8Array(event.data);
 
-        if(this.print) console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${message.byteLength})\x1b[0m`, stringifyBuffer(message));
+        if(this.print)
+            console.log(`\x1b[31m⬇ \x1b[38;5;245m(${this.id},${message.byteLength})\x1b[0m`,
+            (message.length > 0 && this.host.clientPackets.getTag(message[0])) || "<INVALID>", stringifyBuffer(message));
 
         if (message.byteLength < 1) {
             this.socket.close(4001);
@@ -142,7 +149,7 @@ export class SonicWSConnection implements Connection {
             return null;
         }
 
-        const tag = this.host.clientPackets.getTag(key);
+        const tag = this.host.clientPackets.getTag(key)!;
 
         // disabled, bye bye
         if(!this.enabledPackets[tag]) {
@@ -182,11 +189,27 @@ export class SonicWSConnection implements Connection {
     }
 
     private listenLock: boolean = false;
-    private packetQueue: [data: string | [any[], boolean], tag: string][] = [];
+    private packetQueue: PacketQueue<ServerPQ> = [];
 
-    private async listenPacket(data: string | [any[], boolean], tag: string): Promise<void> {
+    private async listenPacket(data: string | [any[], boolean], tag: string, packetQueue: PacketQueue<ServerPQ>, isAsync: boolean, asyncData: AsyncPQ<ServerPQ>): Promise<void> {
         if (this.closed) return;
         if(await this.callMiddleware('onReceive_post', tag, typeof data == 'string' ? [data] : data[0])) return;
+
+        await listenPacket(data, this.listeners[tag], this.invalidPacket);
+
+        if (isAsync) asyncData![0] = false;
+        else this.listenLock = false;
+
+        if (packetQueue!.length != 0) {
+            this.messageHandler(packetQueue!.shift()!);
+            return;
+        }
+    }
+
+    private async messageHandler(data: [tag: string, value: Uint8Array] | null, recall: boolean = false): Promise<void> {
+        if(data == null) return;
+
+        const [tag, value] = data;
 
         const isAsync = this.isAsync(tag);
 
@@ -201,46 +224,27 @@ export class SonicWSConnection implements Connection {
         }
 
         if (locked) {
-            packetQueue!.push([data, tag]);
+            packetQueue!.push(data);
             return;
         }
 
         if (isAsync) asyncData![0] = true;
         else this.listenLock = true;
 
-        let currentData = data;
-        let currentTag = tag;
-
-        while (true) {
-            await listenPacket(currentData, this.listeners[currentTag], this.invalidPacket);
-
-            if (packetQueue!.length === 0) break;
-
-            [currentData, currentTag] = packetQueue!.shift()!;
-        }
-
-        if (isAsync) asyncData![0] = false;
-        else this.listenLock = false;
-    }
-
-    private async messageHandler(data: [tag: string, value: Uint8Array] | null): Promise<void> {
-        if(data == null) return;
-
-        const [tag, value] = data;
-
         const packet = this.host.clientPackets.getPacket(tag);
-
-        if(await this.callMiddleware('onReceive_pre', packet.tag, value)) return;
+        if(!recall && await this.callMiddleware('onReceive_pre', packet.tag, value, value.length)) return;
 
         if(packet.rereference && value.length == 0) {
-            if(packet.lastReceived[this.id] === undefined) return this.invalidPacket("No previous value to rereference");
-            this.listenPacket(packet.lastReceived[this.id] as any, tag);
+            const lastRecv = packet.lastReceived[this.id];
+            if(lastRecv === undefined) return this.invalidPacket("No previous value to rereference");
+            this.listenPacket(lastRecv as any, tag, packetQueue, isAsync, asyncData!);
             return;
         }
 
         if(packet.dataBatching == 0) {
-            const res = packet.lastReceived[this.id] = await packet.listen(value, this);
-            this.listenPacket(res, tag);
+            const res = await packet.listen(value, this);
+            packet.lastReceived[this.id] = res;
+            this.listenPacket(res, tag, packetQueue, isAsync, asyncData!);
             return;
         }
 
@@ -248,7 +252,7 @@ export class SonicWSConnection implements Connection {
         if(typeof batchData == 'string') return this.invalidPacket(batchData);
 
         for(const data of batchData) {
-            this.listenPacket(data, tag);
+            this.listenPacket(data, tag, packetQueue, isAsync, asyncData!);
         }
     }
 
@@ -340,15 +344,17 @@ export class SonicWSConnection implements Connection {
         else this.batcher.batchPacket(code, data);
     }
 
+    private sendQueue: SendQueue = [false, [], undefined];
+
     /**
      * Sends a packet with the tag and values
      * @param tag The tag to send
      * @param values The values to send
      */
-    public async send(tag: string, ...values: any[]) {
+    public async send(tag: string, ...values: any[]): Promise<void> {
         if(await this.callMiddleware('onSend_pre', tag, values)) return;
-        const [code, data, packet] = await processPacket(this.host.serverPackets, tag, values, this.id);
-        if(await this.callMiddleware('onSend_post', tag, data))  return;
+        const [code, data, packet] = await processPacket(this.host.serverPackets, tag, values, this.sendQueue);
+        if(await this.callMiddleware('onSend_post', tag, data, data.length))  return;
         this.send_processed(code, data, packet);
     }
 
@@ -385,7 +391,9 @@ export class SonicWSConnection implements Connection {
             return;
         }
         if(this.rater.trigger(SERVER_RATELIMIT_TAG)) return;
-        if(this.print) console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${data.byteLength})\x1b[0m`, stringifyBuffer(data));
+        if(this.print)
+            console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${data.byteLength})\x1b[0m`,
+            (data.length > 0 && this.host.serverPackets.getTag(data[0])) || "<INVALID>", stringifyBuffer(data));
         this.socket.send(data);
     }
 
@@ -425,6 +433,20 @@ export class SonicWSConnection implements Connection {
      */
     public tag(tag: string, replace: boolean = true) {
         this.host.tag(this, tag, replace);
+    }
+    
+    /**
+     * Sets the name of this connection for the debug menu; good for setting e.g. usernames on games
+     */
+    public setName(name: string): void {
+        this.name = name;
+    }
+
+    /**
+     * @returns Name of the socket, defaults to Socket [ID] unless set with setName()
+     */
+    public getName(): string {
+        return this.name;
     }
 
 }

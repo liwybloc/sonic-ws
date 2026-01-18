@@ -18,7 +18,7 @@ import { DefineEnum } from "../util/enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../util/enums/EnumType";
 import { SonicWSConnection } from "../server/SonicWSConnection";
 import { compressBools, convertVarInt, decompressBools, readVarInt } from "../util/packets/CompressionUtil";
-import { UnFlattenData } from "../util/packets/PacketUtils";
+import { ProcessedPacket, UnFlattenData } from "../util/packets/PacketUtils";
 import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, createReceiveProcessor, createSendProcessor, createValidator, PacketReceiveProcessor, PacketSendProcessor, PacketTypeValidator } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
 import { as8String } from "../util/BufferUtil";
@@ -68,7 +68,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public validate: (data: Uint8Array) => Promise<[Uint8Array, boolean]>;
     public customValidator: ((socket: SonicWSConnection, ...values: any[]) => boolean) | null;
     lastReceived: Record<number, any> = {};
-    lastSent: Record<number, any> = {};
+    lastSent: Record<number, [boolean, [((value: ProcessedPacket | PromiseLike<ProcessedPacket>) => void), any[]][], any]> = {};
 
     constructor(tag: string, schema: PacketSchema<T>, customValidator: ValidatorFunction, enabled: boolean, client: boolean) {
         this.tag = tag;

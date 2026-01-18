@@ -14,19 +14,7 @@
  * limitations under the License.
  */
 
-export interface BasicMiddleware {
-
-    init?(conn: Connection): void;
-
-    onReceive_pre(tag: string, data: Uint8Array): boolean | void;
-    onSend_pre(tag: string, values: any[]): boolean | void;
-
-    onReceive_post(tag: string, values: any[]): boolean | void;
-    onSend_post(tag: string, data: Uint8Array): boolean | void;
-
-    onStatusChange(status: number): void;
-
-};
+import { BasicMiddleware } from "./PacketProcessor";
 
 /**
  * Holds shared connection values. Lets helper functions work on client and server.

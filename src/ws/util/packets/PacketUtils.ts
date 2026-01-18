@@ -19,6 +19,9 @@ import { ConvertType, Packet, PacketSchema, ValidatorFunction } from "../../pack
 import { PacketType } from "../../packets/PacketType";
 import { EnumPackage } from "../enums/EnumType";
 import { EMPTY_UINT8 } from "./CompressionUtil";
+import { SendQueue } from "../../PacketProcessor";
+
+export type ProcessedPacket = [code: number, data: Uint8Array, packet: Packet<any>];
 
 /**
  * Processes and verifies values into a sendable format
@@ -28,11 +31,20 @@ import { EMPTY_UINT8 } from "./CompressionUtil";
  * @returns The indexed code, the data, and the packet schema
  */
 export async function processPacket(
-    packets: PacketHolder, tag: string, values: any[], id: number
-): Promise<[code: number, data: Uint8Array, packet: Packet<any>]> {
-    const code = packets.getKey(tag);
+    packets: PacketHolder,
+    tag: string,
+    values: any[],
+    sendQueue: SendQueue,
+    force: boolean = false,
+): Promise<ProcessedPacket> {
 
+    const code = packets.getKey(tag);
     const packet = packets.getPacket(tag);
+
+    if (sendQueue[0] && !force) {
+        return new Promise<ProcessedPacket>((resolve) => sendQueue[1].push([resolve, tag, values]));
+    }
+    sendQueue[0] = true;
 
     if(packet.autoFlatten) {
         values = FlattenData(values[0]);
@@ -63,14 +75,19 @@ export async function processPacket(
     }
 
     const sendData = values.length > 0 ? await packet.processSend(values)! : EMPTY_UINT8;
-    if(packet.rereference) {
-        if(id == -1) throw new Error("Cannot broadcast a packet that is rereference-enabled");
-        if(packet.lastSent[id] == sendData) return [code, EMPTY_UINT8, packet];
-        packet.lastSent[id] = sendData;
+
+    if (sendQueue[1].length > 0) {
+        const [resolve, tag, nextValues] = sendQueue[1].shift()!;
+        queueMicrotask(async () => {
+            resolve(await processPacket(packets, tag, nextValues, sendQueue, true));
+        });
+    } else {
+        sendQueue[0] = false;
     }
 
     return [code, sendData, packet];
 }
+
 
 /**
  * Calls the listener for a packet with error callback

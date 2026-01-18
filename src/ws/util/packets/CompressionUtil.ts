@@ -379,7 +379,7 @@ export async function decompressGzip(data: Uint8Array): Promise<Uint8Array> {
     return new Uint8Array(buffer);
 }
 
-// BOOLEANS
+// json (why did i say booleans idk)
 
 enum JSONType {
     NULL = 0,

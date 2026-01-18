@@ -21,7 +21,8 @@ import { SERVER_SUFFIX, VERSION } from '../../../version';
 import { Packet } from '../../packets/Packets';
 import { BatchHelper } from '../../util/packets/BatchHelper';
 import { as8String, toPacketBuffer } from '../../util/BufferUtil';
-import { BasicMiddleware, Connection } from '../../Connection';
+import { Connection } from '../../Connection';
+import { AsyncPQ, BasicMiddleware, ClientPQ, PacketQueue, SendQueue } from '../../PacketProcessor';
 
 export abstract class SonicWSCore implements Connection {
 
@@ -50,9 +51,8 @@ export abstract class SonicWSCore implements Connection {
 
     _timers: Record<number, [number, (closed: boolean) => void, boolean]> = {};
 
-    private asyncData: Record<number, [boolean, (string | [any[], boolean])[]]> = {};
+    private asyncData: Record<number, AsyncPQ<ClientPQ>> = {};
     private asyncMap: Record<number, boolean> = {};
-    private _state: number = WebSocket.OPEN;
 
     constructor(ws: WebSocket, bufferHandler: (val: MessageEvent) => Promise<Uint8Array>) {
         this.socket = ws;
@@ -72,7 +72,6 @@ export abstract class SonicWSCore implements Connection {
 
         this.socket.addEventListener('message', this.serverKeyHandler);
 
-
         this.socket.addEventListener('open', () => this.callMiddleware('onStatusChange', WebSocket.OPEN));
 
         this.socket.addEventListener('close', event => {
@@ -81,6 +80,12 @@ export abstract class SonicWSCore implements Connection {
             for(const [id, callback, shouldCall] of Object.values(this._timers)) {
                 this.clearTimeout(id);
                 if(shouldCall) callback(true);
+            }
+            for(const packet of this.clientPackets.getPackets()) {
+                delete packet.lastSent[0];
+            }
+            for(const packet of this.serverPackets.getPackets()) {
+                delete packet.lastReceived[0];
             }
         });
 
@@ -153,15 +158,17 @@ export abstract class SonicWSCore implements Connection {
     }
 
     private listenLock: boolean = false;
-    private packetQueue: (string | [any[], boolean])[] = [];
+    private packetQueue: PacketQueue<ClientPQ> = [];
     
-    public async listenPacket(data: string | [any[], boolean], code: number): Promise<void> {
-        if(await this.callMiddleware('onReceive_post', this.serverPackets.getTag(code), typeof data == 'string' ? [data] : data[0])) return;
+    public async listenPacket(data: string | [any[], boolean], code: number, packetQueue: PacketQueue<ClientPQ>, isAsync: boolean, asyncData: AsyncPQ<ClientPQ>): Promise<void> {
+        const tag: string = this.serverPackets.getTag(code)!;
+
+        if(await this.callMiddleware('onReceive_post', tag, typeof data == 'string' ? [data] : data[0])) return;
 
         const listeners = this.listeners.event[code];
-        if (!listeners) return console.warn("Warn: No listener for packet " + code);
+        if (!listeners) return console.warn("Warn: No listener for packet " + tag);
 
-        this.enqueuePacket(data, code, listeners);
+        this.enqueuePacket(data, listeners, packetQueue, isAsync, asyncData);
     }
 
     private isAsync(code: number): boolean {
@@ -170,43 +177,19 @@ export abstract class SonicWSCore implements Connection {
     
     private async enqueuePacket(
         data: string | [any[], boolean],
-        code: number,
-        listeners: ((...args: any) => void | Promise<void>)[]
+        listeners: ((...args: any) => void | Promise<void>)[],
+        packetQueue: PacketQueue<ClientPQ>, isAsync: boolean, asyncData: AsyncPQ<ClientPQ>
     ): Promise<void> {
-        const isAsync = this.isAsync(code);
 
-        let locked: boolean;
-        let packetQueue: (string | [any[], boolean])[];
-        let asyncData: [boolean, (string | [any[], boolean])[]];
-
-        if (isAsync) {
-            asyncData = this.asyncData[code]!;
-            locked = asyncData[0];
-            packetQueue = asyncData[1];
-        } else {
-            locked = this.listenLock;
-            packetQueue = this.packetQueue;
-        }
-
-        if (locked) {
-            packetQueue.push(data);
-            return;
-        }
-
-        if (isAsync) asyncData![0] = true;
-        else this.listenLock = true;
-
-        let currentData = data;
-
-        while (true) {
-            await listenPacket(currentData, listeners, this.invalidPacket);
-
-            if (packetQueue.length === 0) break;
-            currentData = packetQueue.shift()!;
-        }
+        await listenPacket(data, listeners, this.invalidPacket);
 
         if (isAsync) asyncData![0] = false;
         else this.listenLock = false;
+
+        if (packetQueue!.length > 0) {
+            this.dataHandler(packetQueue!.shift()!);
+            return;
+        }
     }
 
     private basicMiddlewares: BasicMiddleware[] = [];
@@ -244,38 +227,65 @@ export abstract class SonicWSCore implements Connection {
         return cancelled;
     }
 
-    private async messageHandler(event: MessageEvent) {
-        const data = await this.bufferHandler(event);
-
-        this.listeners.message.forEach(listener => listener(data));
-        if (data.length < 1) return;
-
+    private async dataHandler(data: Uint8Array): Promise<void> {
         const key = data[0];
         const value = data.slice(1);
 
-        const packet = this.serverPackets.getPacket(this.serverPackets.getTag(key));
+        const isAsync = this.isAsync(key);
 
-        if(await this.callMiddleware('onReceive_pre', packet.tag, data)) return;
+        let locked: boolean;
+        let packetQueue: PacketQueue<ClientPQ>;
+        let asyncData: AsyncPQ<ClientPQ>;
+
+        if (isAsync) {
+            asyncData = this.asyncData[key]!;
+            locked = asyncData[0];
+            packetQueue = asyncData[1];
+        } else {
+            locked = this.listenLock;
+            packetQueue = this.packetQueue;
+        }
+
+        if (locked) {
+            packetQueue.push(data);
+            return;
+        }
+
+        if (isAsync) asyncData![0] = true;
+        else this.listenLock = true;
+
+        const packet = this.serverPackets.getPacket(this.serverPackets.getTag(key)!);
+
+        if(await this.callMiddleware('onReceive_pre', packet.tag, data, data.length)) return;
 
         if(packet.rereference && value.length == 0) {
             if(packet.lastReceived[0] === undefined) return this.invalidPacket("No previous value to rereference");
-            this.listenPacket(packet.lastReceived[0] as any, key);
+            this.listenPacket(packet.lastReceived[0] as any, key, packetQueue, isAsync, asyncData!);
             return;
         }
         
         if(packet.dataBatching == 0) {
             const res = packet.lastReceived[0] = await packet.listen(value, null);
-            this.listenPacket(res, key);
+            this.listenPacket(res, key, packetQueue, isAsync, asyncData!);
             return;
         }
 
         const batchData = await BatchHelper.unravelBatch(packet, value, null);
         if(typeof batchData == 'string') return this.invalidPacket(batchData);
 
-        batchData.forEach(data => this.listenPacket(data, key));
+        batchData.forEach(data => this.listenPacket(data, key, packetQueue, isAsync, asyncData!));
     }
 
-    protected listen(key: string, listener: (data: any[]) => void) {
+    private async messageHandler(event: MessageEvent): Promise<void> {
+        const data = await this.bufferHandler(event);
+
+        this.listeners.message.forEach(listener => listener(data));
+        if (data.length < 1) return;
+
+        await this.dataHandler(data);
+    }
+
+    protected listen(key: string, listener: (data: any[]) => void): void {
         const skey = this.serverPackets.getKey(key);
         if (skey == null) {
             console.log("Key is not available on server: " + key);
@@ -302,6 +312,8 @@ export abstract class SonicWSCore implements Connection {
         this.listeners.send.push(listener);
     }
 
+    private sendQueue: SendQueue = [false, [], undefined];
+    
     /**
      * Sends a packet to the server
      * @param tag The tag of the packet
@@ -309,8 +321,10 @@ export abstract class SonicWSCore implements Connection {
      */
     public async send(tag: string, ...values: any[]): Promise<void> {
         if(await this.callMiddleware('onSend_pre', tag, values)) return;
-        const [code, data, packet] = await processPacket(this.clientPackets, tag, values, 0);
-        if(await this.callMiddleware('onSend_post', tag, data)) return;
+
+        const [code, data, packet] = await processPacket(this.clientPackets, tag, values, this.sendQueue);
+
+        if(await this.callMiddleware('onSend_post', tag, data, data.length)) return;
         if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
         else this.batcher.batchPacket(code, data);
     }

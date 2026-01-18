@@ -83,7 +83,8 @@ export class PacketHolder {
      * Returns the tag associated with a given character key
      * @param key Key bytre
      */
-    public getTag(key: number): string {
+    public getTag(key: number): string | undefined {
+        if(!(key in this.tags)) return undefined;
         return this.tags[key];
     }
 
@@ -100,7 +101,7 @@ export class PacketHolder {
      * Checks if a given character key exists
      * @param key A string index
      */
-    public hasKey(key: number): boolean {
+    public hasKey(key: number): key is keyof typeof this.tags {
         return key in this.tags;
     }
 

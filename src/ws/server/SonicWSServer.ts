@@ -15,6 +15,8 @@
  */
 
 import * as WS from 'ws';
+import http from 'http';
+import open from 'open';
 import { SonicWSConnection } from './SonicWSConnection';
 import { PacketHolder } from '../util/packets/PacketHolder';
 import { compressGzip, convertVarInt, MAX_BYTE } from '../util/packets/CompressionUtil';
@@ -22,6 +24,7 @@ import { SERVER_SUFFIX_NUMS, VERSION } from '../../version';
 import { processPacket } from '../util/packets/PacketUtils';
 import { Packet } from '../packets/Packets';
 import { PacketType } from '../packets/PacketType';
+import { SendQueue } from '../PacketProcessor';
 
 /**
  * Sonic WS Server Options
@@ -60,6 +63,8 @@ export class SonicWSServer {
 
     tags: Map<SonicWSConnection, Set<String>> = new Map();
     tagsInv: Map<String, Set<SonicWSConnection>> = new Map();
+
+    private serverwideSendQueue: SendQueue = [false, [], undefined];
 
     /**
      * Initializes and hosts a websocket with sonic protocol
@@ -226,7 +231,7 @@ export class SonicWSServer {
     public async broadcastTagged(tag: string, packetTag: string, ...values: any): Promise<void> {
         if(!this.tagsInv.has(tag)) return;
 
-        const data = await processPacket(this.serverPackets, packetTag, values, -1);
+        const data = await processPacket(this.serverPackets, packetTag, values, this.serverwideSendQueue);
         this.tagsInv.get(tag)!.forEach(conn => conn.send_processed(...data));
     }
 
@@ -237,7 +242,7 @@ export class SonicWSServer {
      * @param values The values to send
      */
     public async broadcastFiltered(tag: string, filter: (socket: SonicWSConnection) => boolean, ...values: any): Promise<void> {
-        const data = await processPacket(this.serverPackets, tag, values, -1);
+        const data = await processPacket(this.serverPackets, tag, values, this.serverwideSendQueue);
         this.connections.filter(filter).forEach(conn => conn.send_processed(...data));
     }
 
@@ -287,6 +292,142 @@ export class SonicWSServer {
         }
         this.tags.get(socket)!.add(tag);
         this.tagsInv.get(tag)!.add(socket);
+    }
+
+    private debugServer: http.Server | null = null;
+    private debugSocket: SonicWSServer | null = null;
+
+    /**
+     * Opens a debug menu; this launches the browser and starts a subserver
+     * @param port Port of the server/http, defaults to 0 which finds an open port
+     */
+    public OpenDebug(port: number = 0) {
+        if (this.debugServer != null) throw new Error("Attempted to open a debug server when one has already been opened.");
+        if (port < 0 || port >= 65536) throw new Error("Port out of range!");
+
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    const html = String.raw;
+    res.end(html`
+        <html>
+        <head>
+            <style>
+                body {
+                    margin: 0;
+                    font-family: Arial, sans-serif;
+                    background-color: #121212;
+                    color: #ffffff;
+                    height: 100vh;
+                    display: flex;
+                    flex-direction: column;
+                }
+                header {
+                    background-color: #1f1f1f;
+                    padding: 20px;
+                    text-align: center;
+                    font-size: 24px;
+                    font-weight: bold;
+                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+                }
+                #tabs {
+                    display: flex;
+                    background-color: #2a2a2a;
+                    padding: 0 10px;
+                    box-shadow: inset 0 -1px 0 #444;
+                    gap: 5px;
+                }
+                .tab {
+                    padding: 10px 20px;
+                    cursor: pointer;
+                    border-radius: 8px 8px 0 0;
+                    background-color: #2a2a2a;
+                    border: 1px solid #444;
+                    border-bottom: none;
+                    transition: background-color 0.2s;
+                }
+                .tab.active {
+                    background-color: #1f1f1f;
+                    border-color: #00aaff;
+                }
+                #tab-contents {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    overflow-y: auto;
+                }
+                .tab-content {
+                    display: none;
+                    padding: 20px;
+                    color: #cccccc;
+                    flex: 1;
+                }
+                .tab-content.active {
+                    display: block;
+                }
+            </style>
+        </head>
+        <body>
+            <header>SWS Debug Panel</header>
+            <div id="tabs"></div>
+            <div id="tab-contents"></div>
+
+            <script>
+                const tabsContainer = document.getElementById('tabs');
+                const contentsContainer = document.getElementById('tab-contents');
+                const tabs = new Map();
+
+                function addTab(id, title, contentHTML) {
+                    const tab = document.createElement('div');
+                    tab.className = 'tab';
+                    tab.textContent = title;
+                    tab.dataset.id = id;
+
+                    const content = document.createElement('div');
+                    content.className = 'tab-content';
+                    content.innerHTML = contentHTML;
+
+                    tabs.set(id, { tab, content });
+
+                    tabsContainer.appendChild(tab);
+                    contentsContainer.appendChild(content);
+
+                    if (tabs.size === 1) setActiveTab(id);
+
+                    tab.addEventListener('click', () => setActiveTab(id));
+                }
+
+                function setActiveTab(id) {
+                    tabs.forEach(({ tab, content }) => {
+                        if (tab.dataset.id === id) {
+                            tab.classList.add('active');
+                            content.classList.add('active');
+                        } else {
+                            tab.classList.remove('active');
+                            content.classList.remove('active');
+                        }
+                    });
+                }
+
+                addTab('home', 'Home', '<p>Welcome to the SonicWS debug menu!</p><br><p>Sockets that connect to the server will show up here.</p>');
+            </script>
+        </body>
+        </html>
+    `);
+});
+
+        server.listen(port, () => {
+            const address = server.address() as WS.AddressInfo;
+            console.log(`SWS Debug server running at http://localhost:${address.port}`);
+            open(`http://localhost:${address.port}`);
+        });
+
+        this.debugSocket = new SonicWSServer({
+            clientPackets: [],
+            serverPackets: [],
+            websocketOptions: { server },
+        });
+
+        this.debugServer = server;
     }
 
 }
