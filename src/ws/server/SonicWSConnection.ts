@@ -22,7 +22,7 @@ import { Packet } from '../packets/Packets';
 import { RateHandler } from '../util/packets/RateHandler';
 import { stringifyBuffer, toPacketBuffer } from '../util/BufferUtil';
 import { Connection } from '../Connection';
-import { AsyncPQ, BasicMiddleware, PacketQueue, SendQueue, ServerPQ } from '../PacketProcessor';
+import { AsyncPQ, ConnectionMiddleware, PacketQueue, SendQueue, ServerPQ } from '../PacketProcessor';
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
 
 export class SonicWSConnection implements Connection {
@@ -256,9 +256,9 @@ export class SonicWSConnection implements Connection {
         }
     }
 
-    private basicMiddlewares: BasicMiddleware[] = [];
+    private basicMiddlewares: ConnectionMiddleware[] = [];
 
-    addBasicMiddleware(middleware: BasicMiddleware): void {
+    addBasicMiddleware(middleware: ConnectionMiddleware): void {
         this.basicMiddlewares.push(middleware);
 
         const m: any = middleware;
@@ -269,9 +269,9 @@ export class SonicWSConnection implements Connection {
         }
     }
 
-    private async callMiddleware<K extends keyof BasicMiddleware>(
+    private async callMiddleware<K extends keyof ConnectionMiddleware>(
         method: K,
-        ...values: Parameters<NonNullable<BasicMiddleware[K]>>
+        ...values: Parameters<NonNullable<ConnectionMiddleware[K]>>
     ): Promise<boolean> {
         let cancelled = false;
 
@@ -353,7 +353,7 @@ export class SonicWSConnection implements Connection {
      */
     public async send(tag: string, ...values: any[]): Promise<void> {
         if(await this.callMiddleware('onSend_pre', tag, values)) return;
-        const [code, data, packet] = await processPacket(this.host.serverPackets, tag, values, this.sendQueue);
+        const [code, data, packet] = await processPacket(this.host.serverPackets, tag, values, this.sendQueue, this.id);
         if(await this.callMiddleware('onSend_post', tag, data, data.length))  return;
         this.send_processed(code, data, packet);
     }

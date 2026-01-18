@@ -68,7 +68,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public validate: (data: Uint8Array) => Promise<[Uint8Array, boolean]>;
     public customValidator: ((socket: SonicWSConnection, ...values: any[]) => boolean) | null;
     lastReceived: Record<number, any> = {};
-    lastSent: Record<number, [boolean, [((value: ProcessedPacket | PromiseLike<ProcessedPacket>) => void), any[]][], any]> = {};
+    lastSent: Record<number, number | bigint> = {};
 
     constructor(tag: string, schema: PacketSchema<T>, customValidator: ValidatorFunction, enabled: boolean, client: boolean) {
         this.tag = tag;

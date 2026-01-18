@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "webpack": "webpack --mode production",
-    "build_web": "rimraf ./html && tsc --moduleResolution nodenext --module nodenext --target ES6 --outdir ./html src/ws/client/browser/ClientBrowser.ts && npm run webpack",
+    "build_web": "rimraf ./html && tsc --moduleResolution nodenext --module nodenext --outDir ./html src/ws/client/browser/ClientBrowser.ts && npm run webpack",
     "build_node": "rimraf ./dist && tsc -d",
     "build": "npm run build_node && npm run build_web",
     "test_web": "npm run build && node test-site/server.mjs",

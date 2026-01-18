@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { BasicMiddleware } from "./PacketProcessor";
+import { ConnectionMiddleware } from "./PacketProcessor";
 
 /**
  * Holds shared connection values. Lets helper functions work on client and server.
@@ -69,6 +69,6 @@ export interface Connection {
     /**
      * Adds a basic middleware which can interact with packets
      */
-    addBasicMiddleware(middleware: BasicMiddleware): void;
+    addBasicMiddleware(middleware: ConnectionMiddleware): void;
 
 }

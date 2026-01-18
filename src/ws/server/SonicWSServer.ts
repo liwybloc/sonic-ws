@@ -21,10 +21,18 @@ import { SonicWSConnection } from './SonicWSConnection';
 import { PacketHolder } from '../util/packets/PacketHolder';
 import { compressGzip, convertVarInt, MAX_BYTE } from '../util/packets/CompressionUtil';
 import { SERVER_SUFFIX_NUMS, VERSION } from '../../version';
-import { processPacket } from '../util/packets/PacketUtils';
+import { CreatePacket, processPacket } from '../util/packets/PacketUtils';
 import { Packet } from '../packets/Packets';
 import { PacketType } from '../packets/PacketType';
 import { SendQueue } from '../PacketProcessor';
+import { setHashFunc } from '../util/packets/HashUtil';
+
+export type SonicServerSettings = {
+    /** If it should check for updates; defaults to true. */
+    readonly checkForUpdates?: boolean;
+    /** If the rereference should use a 64 bit hash which is less prone to collision (1% after ~600 million) or a 32 bit hash. Defaults to true. */
+    readonly bit64Hash?: boolean;
+};
 
 /**
  * Sonic WS Server Options
@@ -36,8 +44,7 @@ export type SonicServerOptions = {
     readonly serverPackets?: PacketTypings,
     /** Default WS Options */
     readonly websocketOptions?: WS.ServerOptions;
-    /** If it should check for updates; defaults to true. */
-    readonly checkForUpdates?: boolean;
+    readonly sonicServerSettings?: SonicServerSettings;
 }
 
 export type PacketTypings = readonly Packet<PacketType | readonly PacketType[]>[];
@@ -85,6 +92,8 @@ export class SonicWSServer {
         const serverData = [...SERVER_SUFFIX_NUMS, VERSION];
         const keyData: number[] = [...convertVarInt(s_clientPackets.length), ...s_clientPackets, ...s_serverPackets];
 
+        setHashFunc(settings.sonicServerSettings?.bit64Hash ?? true);
+
         this.wss.on('connection', async (socket) => {
             const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket, this.clientRateLimit, this.serverRateLimit);
 
@@ -107,7 +116,7 @@ export class SonicWSServer {
             });
         });
 
-        if(settings.checkForUpdates ?? true) {
+        if(settings.sonicServerSettings?.checkForUpdates ?? true) {
             fetch('https://raw.githubusercontent.com/liwybloc/sonic-ws/refs/heads/main/release/version')
                 .then((res: Response) => res.text())
                 .then((ver: string) => {
@@ -231,7 +240,7 @@ export class SonicWSServer {
     public async broadcastTagged(tag: string, packetTag: string, ...values: any): Promise<void> {
         if(!this.tagsInv.has(tag)) return;
 
-        const data = await processPacket(this.serverPackets, packetTag, values, this.serverwideSendQueue);
+        const data = await processPacket(this.serverPackets, packetTag, values, this.serverwideSendQueue, -1);
         this.tagsInv.get(tag)!.forEach(conn => conn.send_processed(...data));
     }
 
@@ -242,7 +251,7 @@ export class SonicWSServer {
      * @param values The values to send
      */
     public async broadcastFiltered(tag: string, filter: (socket: SonicWSConnection) => boolean, ...values: any): Promise<void> {
-        const data = await processPacket(this.serverPackets, tag, values, this.serverwideSendQueue);
+        const data = await processPacket(this.serverPackets, tag, values, this.serverwideSendQueue, -1);
         this.connections.filter(filter).forEach(conn => conn.send_processed(...data));
     }
 
@@ -311,6 +320,7 @@ const server = http.createServer((req, res) => {
     res.end(html`
         <html>
         <head>
+            <script src="https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/bundled/SonicWS_bundle.js"></script>
             <style>
                 body {
                     margin: 0;
@@ -409,6 +419,8 @@ const server = http.createServer((req, res) => {
                 }
 
                 addTab('home', 'Home', '<p>Welcome to the SonicWS debug menu!</p><br><p>Sockets that connect to the server will show up here.</p>');
+
+                const socket = new SonicWS('ws://' + window.location.host);
             </script>
         </body>
         </html>
@@ -423,7 +435,9 @@ const server = http.createServer((req, res) => {
 
         this.debugSocket = new SonicWSServer({
             clientPackets: [],
-            serverPackets: [],
+            serverPackets: [
+                CreatePacket({ tag: "connection", type: PacketType.UVARINT }),
+            ],
             websocketOptions: { server },
         });
 

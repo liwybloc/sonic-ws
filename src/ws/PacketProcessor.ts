@@ -15,18 +15,31 @@
  */
 
 import { Connection } from "./Connection";
+import { SonicWSConnection } from "./server/SonicWSConnection";
 
 export interface BasicMiddleware {
-
     init?(conn: Connection): void;
+}
 
-    onReceive_pre(tag: string, data: Uint8Array, recvSize: number): boolean | void;
-    onSend_pre(tag: string, values: any[]): boolean | void;
+export interface ConnectionMiddleware extends BasicMiddleware {
 
-    onReceive_post(tag: string, values: any[]): boolean | void;
-    onSend_post(tag: string, data: Uint8Array, sendSize: number): boolean | void;
+    onReceive_pre?(tag: string, data: Uint8Array, recvSize: number): boolean | void;
+    onSend_pre?(tag: string, values: any[]): boolean | void;
 
-    onStatusChange(status: number): void;
+    onReceive_post?(tag: string, values: any[]): boolean | void;
+    onSend_post?(tag: string, data: Uint8Array, sendSize: number): boolean | void;
+
+    onStatusChange?(status: number): void;
+
+};
+
+export type BCInfo = { type: "all" } | { type: "tagged", tag: string } | { type: "filter", filter: (connection: SonicWSConnection) => boolean };
+export interface ServerMiddleware extends BasicMiddleware {
+    
+    onClientConnect?(connection: SonicWSConnection): boolean | void;
+    onClientDisconnect?(connection: SonicWSConnection, code: number, reason: string): void;
+
+    onPacketBroadcast?(tag: string, info: BCInfo, ...values: any[]): boolean | void;
 
 };
 

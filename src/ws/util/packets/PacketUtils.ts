@@ -20,6 +20,7 @@ import { PacketType } from "../../packets/PacketType";
 import { EnumPackage } from "../enums/EnumType";
 import { EMPTY_UINT8 } from "./CompressionUtil";
 import { SendQueue } from "../../PacketProcessor";
+import { hashValue } from "./HashUtil";
 
 export type ProcessedPacket = [code: number, data: Uint8Array, packet: Packet<any>];
 
@@ -35,57 +36,80 @@ export async function processPacket(
     tag: string,
     values: any[],
     sendQueue: SendQueue,
+    id: number,
     force: boolean = false,
 ): Promise<ProcessedPacket> {
 
     const code = packets.getKey(tag);
     const packet = packets.getPacket(tag);
 
+    return handleQueue(sendQueue, packets, id, tag, values, force, async () => {
+        if (packet.rereference) {
+            if (id === -1) throw new Error("Cannot send a re-referenced packet from the server-wide sender!");
+            const serialized = hashValue(values);
+            if (packet.lastSent[id] === serialized) {
+                return [code, EMPTY_UINT8, packet];
+            }
+            packet.lastSent[id] = serialized;
+        }
+
+        if (packet.autoFlatten) {
+            values = FlattenData(values[0]);
+        } else {
+            if (values.length > packet.maxSize) throw new Error(`Packet "${tag}" only allows ${packet.maxSize} values!`);
+            if (values.length < packet.minSize) throw new Error(`Packet "${tag}" requires at least ${packet.minSize} values!`);
+        }
+
+        if (!packet.object) {
+            if (packet.type !== PacketType.JSON) {
+                const found = values.find(v => typeof v === 'object' && v != null);
+                if (found) console.warn(`Passing an array will result in undefined behavior (${JSON.stringify(found)}). Spread the array with ...arr`);
+            }
+        } else {
+            values = values.map(x => !Array.isArray(x) ? [x] : x);
+
+            if (!packet.autoFlatten) {
+                const dataMins = packet.dataMin as number[];
+                const dataMaxes = packet.dataMax as number[];
+                for (let i = 0; i < dataMins.length; i++) {
+                    if (values[i].length < dataMins[i]) throw new Error(`Section ${i + 1} of packet "${tag}" requires at least ${dataMins[i]} values!`);
+                    if (values[i].length > dataMaxes[i]) throw new Error(`Section ${i + 1} of packet "${tag}" only allows ${dataMaxes[i]} values!`);
+                }
+            }
+        }
+
+        const sendData = values.length > 0 ? await packet.processSend(values)! : EMPTY_UINT8;
+        return [code, sendData, packet];
+    });
+}
+
+
+async function handleQueue(
+    sendQueue: SendQueue,
+    packets: PacketHolder,
+    id: number,
+    tag: string,
+    values: any[],
+    force: boolean,
+    fn: () => Promise<ProcessedPacket>
+): Promise<ProcessedPacket> {
     if (sendQueue[0] && !force) {
         return new Promise<ProcessedPacket>((resolve) => sendQueue[1].push([resolve, tag, values]));
     }
+
     sendQueue[0] = true;
-
-    if(packet.autoFlatten) {
-        values = FlattenData(values[0]);
-    } else {
-        if(values.length > packet.maxSize) throw new Error(`Packet "${tag}" only allows ${packet.maxSize} values!`);
-        if(values.length < packet.minSize) throw new Error(`Packet "${tag}" requires at least ${packet.minSize} values!`);
-    }
-
-    if(!packet.object) {
-        if(packet.type != PacketType.JSON) {
-            const found = values.find(v => typeof v == 'object' && v != null);
-            if(found) console.warn(`Passing an array will result in undefined behavior (${JSON.stringify(found)}). Spread the array with ...arr`);
-        }
-    } else {
-        // also map non arrays to arrays to keep some code cleaner
-        values = values.map(x => !Array.isArray(x) ? [x] : x);
-        
-        // something is weird with this
-        if(!packet.autoFlatten) {
-            const dataMins = (packet.dataMin as number[]);
-            const dataMaxes = (packet.dataMax as number[]);
-            for(let i=0;i<dataMins.length;i++) {
-                // these will be the same length
-                if(values[i].length < dataMins[i]) throw new Error(`Section ${i + 1} of packet "${tag}" requires at least ${dataMins[i]} values!`);
-                if(values[i].length > dataMaxes[i]) throw new Error(`Section ${i + 1} of packet "${tag}" only allows ${dataMaxes[i]} values!`);
-            }
-        }
-    }
-
-    const sendData = values.length > 0 ? await packet.processSend(values)! : EMPTY_UINT8;
+    const result = await fn();
 
     if (sendQueue[1].length > 0) {
-        const [resolve, tag, nextValues] = sendQueue[1].shift()!;
+        const [resolve, nextTag, nextValues] = sendQueue[1].shift()!;
         queueMicrotask(async () => {
-            resolve(await processPacket(packets, tag, nextValues, sendQueue, true));
+            resolve(await processPacket(packets, nextTag, nextValues, sendQueue, id, true));
         });
     } else {
         sendQueue[0] = false;
     }
 
-    return [code, sendData, packet];
+    return result;
 }
 
 
@@ -246,7 +270,7 @@ export type KeyEffectivePacketSettings = SharedPacketSettings & {
  * @throws {Error} If the `type` is invalid.
  */
 export function CreatePacket<T extends ArguableType>(
-    settings: SinglePacketSettings & { type: T }
+    settings: SinglePacketSettings & { type?: T }
 ): Packet<ConvertType<T>> {
     let { tag, type = PacketType.NONE, dataMax = 1, dataMin = 1, noDataRange = false, dontSpread = false,
           validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false,
@@ -286,7 +310,7 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
           gzipCompression = types && (types as ArguableType[]).includes(PacketType.JSON) } = settings;
 
     if(!tag) throw new Error("Tag not selected!");
-    if(types.length == 0) throw new Error("Types is set to 0 length");
+    if(!types || types.length == 0) throw new Error("Types is set to 0 length");
 
     for(const type of types) {
         if (!isInvalidType(type)) continue;

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { BasicMiddleware } from "../../PacketProcessor";
+import { ConnectionMiddleware } from "../../PacketProcessor";
 import { WrapEnum, DeWrapEnum } from "../../util/enums/EnumHandler";
 import { FlattenData, UnFlattenData } from "../../util/packets/PacketUtils";
 import { SonicWSCore } from "../core/ClientCore";
@@ -296,12 +296,31 @@ export class SonicWS extends SonicWSCore {
         this._loadDebugScript();
     }
 
+    private _evalInScope(code: string) {
+        const thiz = this;
+        const fn = new Function(
+            "send",
+            "WrapEnum",
+            "DeWrapEnum",
+            "FlattenData",
+            "UnFlattenData",
+            `"use strict"; return (${code});`
+        );
+        return fn(
+            thiz.send.bind(thiz),
+            thiz.WrapEnum.bind(thiz),
+            thiz.DeWrapEnum.bind(thiz),
+            thiz.FlattenData.bind(thiz),
+            thiz.UnFlattenData.bind(thiz)
+        );
+    }
+
     private _loadDebugScript() {
 
         const packetsSend: Record<string, [any[], number][]> = {};
         const packetsRecv: Record<string, [Uint8Array, number][]> = {};
         const thiz = this;
-        const middleware = new (class Middleware implements BasicMiddleware {
+        const middleware = new (class Middleware implements ConnectionMiddleware {
             onReceive_pre(tag: string, data: Uint8Array): boolean | void {
                 packetsRecv[tag] ??= [];
                 packetsRecv[tag].push([data, performance.now()]);
@@ -345,6 +364,29 @@ export class SonicWS extends SonicWSCore {
         const title = document.getElementById('sonicws-title')!;
 
         let minimized = false;
+
+        const evalInput = document.createElement("input");
+        evalInput.type = "text";
+        evalInput.placeholder = 'send("tag", 5)';
+        evalInput.style.marginTop = "8px";
+        evalInput.style.width = "100%";
+        evalInput.style.boxSizing = "border-box";
+
+        const evalButton = document.createElement("button");
+        evalButton.innerText = "Run";
+        evalButton.style.marginTop = "4px";
+        evalButton.style.width = "100%";
+
+        $('sonicws-stats').appendChild(evalInput);
+        $('sonicws-stats').appendChild(evalButton);
+
+        evalButton.addEventListener("click", () => {
+            try {
+                thiz._evalInScope(evalInput.value);
+            } catch (e) {
+                console.error(e);
+            }
+        });
 
         function clampToViewport() {
             const rect = container.getBoundingClientRect();
