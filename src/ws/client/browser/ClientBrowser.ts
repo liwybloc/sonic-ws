@@ -320,7 +320,8 @@ export class SonicWS extends SonicWSCore {
         const packetsSend: Record<string, [any[], number][]> = {};
         const packetsRecv: Record<string, [Uint8Array, number][]> = {};
         const thiz = this;
-        const middleware = new (class Middleware implements ConnectionMiddleware {
+
+        this.addMiddleware(new (class implements ConnectionMiddleware {
             onReceive_pre(tag: string, data: Uint8Array): boolean | void {
                 packetsRecv[tag] ??= [];
                 packetsRecv[tag].push([data, performance.now()]);
@@ -342,9 +343,7 @@ export class SonicWS extends SonicWSCore {
             onStatusChange(status: number): void {
                 setStatus(status);
             }
-        });
-
-        this.addBasicMiddleware(middleware);
+        })());
 
         const $ = (id: string) => document.getElementById(id)!;
 
@@ -521,10 +520,11 @@ export class SonicWS extends SonicWSCore {
 
         setStatus(WebSocket.CONNECTING);
 
+        const textEncoder = new TextEncoder();
         function addPacket(direction: string, tag: string, raw: Uint8Array, data: string, processingTime: number) {
             const now = new Date();
             const bytes = raw.length + (direction == "sent" ? 1 : 0);
-            const saved = data.length - bytes + 1;
+            const saved = textEncoder.encode(data).length - bytes + 1;
 
             const packetEl = document.createElement('sws-div');
             packetEl.classList.add('packet');
@@ -546,7 +546,7 @@ export class SonicWS extends SonicWSCore {
             const detailsEl = document.createElement('sws-div');
             detailsEl.classList.add('packet-details');
             detailsEl.innerHTML = `
-            <sws-p> Raw Bytes: ${ bytes } (saved ~${saved}b)</sws-p>
+            <sws-p> Raw Bytes: ${ bytes }b (saved ~${saved}b)</sws-p>
                 <sws-p> Processed At: ${ now.toISOString() } </sws-p>
                     <sws-p> Processing Time: <sws-span class="processing-time" > ${ processingTime.toFixed(1) } </sws-span> ms</sws-p>
                             `;

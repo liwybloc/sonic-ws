@@ -24,8 +24,7 @@
   "author": "lily",
   "license": "Apache-2.0",
   "dependencies": {
-    "ws": "^8.18.2",
-    "zstd-codec": "^0.1.5"
+    "ws": "^8.18.2"
   },
   "devDependencies": {
     "@types/node": "^24.2.1",

@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-import { ConnectionMiddleware } from "./PacketProcessor";
+import { ConnectionMiddleware, MiddlewareHolder } from "./PacketProcessor";
 
 /**
  * Holds shared connection values. Lets helper functions work on client and server.
  */
-export interface Connection {
+export interface Connection extends MiddlewareHolder<ConnectionMiddleware> {
 
     /**
      * List of timers.
@@ -66,9 +66,37 @@ export interface Connection {
      */
     close(code?: number, reason?: string): void;
 
-    /**
-     * Adds a basic middleware which can interact with packets
-     */
-    addBasicMiddleware(middleware: ConnectionMiddleware): void;
+}
 
+export enum CloseCodes {
+    RATELIMIT          = 4000,
+    SMALL              = 4001,
+    INVALID_KEY        = 4002,
+    INVALID_PACKET     = 4003,
+    INVALID_DATA       = 4004,
+    REPEATED_HANDSHAKE = 4005,
+    DISABLED_PACKET    = 4006,
+    MIDDLEWARE         = 4007,
+    MANUAL_SHUTDOWN    = 4008,
+}
+
+export function getClosureCause(id: number): string {
+    if (id >= 4000) {
+        return CloseCodes[id as unknown as keyof typeof CloseCodes] as unknown as string ?? 'UNKNOWN';
+    }
+
+    switch (id) {
+        case 1000:
+            return 'NORMAL_CLOSURE';
+        case 1001:
+            return 'GOING_AWAY';
+        case 1002:
+            return 'PROTOCOL_ERROR';
+        case 1003:
+            return 'UNSUPPORTED_DATA';
+        case 1006:
+            return 'ABNORMAL_CLOSURE';
+        default:
+            return 'UNKNOWN';
+    }
 }

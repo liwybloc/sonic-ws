@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { CloseCodes } from "../../Connection";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
 import { PacketHolder } from "./PacketHolder";
 
@@ -57,7 +58,7 @@ export class RateHandler {
 
     public trigger(tag: string | number): boolean {
         if(tag in this.rates && ++this.rates[tag] > this.limits[tag]) {
-            this.socket.close(4000);
+            this.socket.close(CloseCodes.RATELIMIT);
             return true;
         }
         return false;

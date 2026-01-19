@@ -21,8 +21,8 @@ import { BatchHelper } from '../util/packets/BatchHelper';
 import { Packet } from '../packets/Packets';
 import { RateHandler } from '../util/packets/RateHandler';
 import { stringifyBuffer, toPacketBuffer } from '../util/BufferUtil';
-import { Connection } from '../Connection';
-import { AsyncPQ, ConnectionMiddleware, PacketQueue, SendQueue, ServerPQ } from '../PacketProcessor';
+import { CloseCodes, Connection } from '../Connection';
+import { AsyncPQ, ConnectionMiddleware, FuncKeys, PacketQueue, SendQueue, ServerPQ } from '../PacketProcessor';
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
 
 export class SonicWSConnection implements Connection {
@@ -43,8 +43,8 @@ export class SonicWSConnection implements Connection {
     private messageLambda = (data: WS.MessageEvent) => this.messageHandler(this.parseData(data));
     private handshakedMessageLambda = (data: WS.MessageEvent) => {
         const parsed = this.parseData(data);
-        if(parsed == null) return this.socket.close(4004);
-        if(parsed[0] == this.handshakePacket) return this.socket.close(4005);
+        if(parsed == null) return this.socket.close(CloseCodes.INVALID_DATA);
+        if(parsed[0] == this.handshakePacket) return this.socket.close(CloseCodes.REPEATED_HANDSHAKE);
         this.messageHandler(parsed);
     }
 
@@ -136,7 +136,7 @@ export class SonicWSConnection implements Connection {
             (message.length > 0 && this.host.clientPackets.getTag(message[0])) || "<INVALID>", stringifyBuffer(message));
 
         if (message.byteLength < 1) {
-            this.socket.close(4001);
+            this.socket.close(CloseCodes.SMALL);
             return null;
         }
 
@@ -145,7 +145,7 @@ export class SonicWSConnection implements Connection {
 
         // not a key, bye bye
         if(!this.host.clientPackets.hasKey(key)) {
-            this.socket.close(4002);
+            this.socket.close(CloseCodes.INVALID_KEY);
             return null;
         }
 
@@ -153,7 +153,7 @@ export class SonicWSConnection implements Connection {
 
         // disabled, bye bye
         if(!this.enabledPackets[tag]) {
-            this.socket.close(4006);
+            this.socket.close(CloseCodes.DISABLED_PACKET);
             return null;
         }
 
@@ -164,10 +164,10 @@ export class SonicWSConnection implements Connection {
 
     private handshakeHandler(data: WS.MessageEvent): void {
         const parsed = this.parseData(data);
-        if(parsed == null) return this.socket.close(4004);
+        if(parsed == null) return this.socket.close(CloseCodes.INVALID_DATA);
 
         if(parsed[0] != this.handshakePacket) {
-            this.socket.close(4004);
+            this.socket.close(CloseCodes.INVALID_DATA);
             return;
         }
 
@@ -181,7 +181,7 @@ export class SonicWSConnection implements Connection {
 
     private invalidPacket(listened: string) {
         console.log("Closure cause", listened);
-        this.socket.close(4003, listened);
+        this.socket.close(CloseCodes.INVALID_PACKET, listened);
     }
     
     private isAsync(tag: string): boolean {
@@ -193,9 +193,10 @@ export class SonicWSConnection implements Connection {
 
     private async listenPacket(data: string | [any[], boolean], tag: string, packetQueue: PacketQueue<ServerPQ>, isAsync: boolean, asyncData: AsyncPQ<ServerPQ>): Promise<void> {
         if (this.closed) return;
-        if(await this.callMiddleware('onReceive_post', tag, typeof data == 'string' ? [data] : data[0])) return;
 
         await listenPacket(data, this.listeners[tag], this.invalidPacket);
+
+        await this.callMiddleware('onReceive_post', tag, typeof data == 'string' ? [data] : data[0]);
 
         if (isAsync) asyncData![0] = false;
         else this.listenLock = false;
@@ -256,10 +257,10 @@ export class SonicWSConnection implements Connection {
         }
     }
 
-    private basicMiddlewares: ConnectionMiddleware[] = [];
+    private middlewares: ConnectionMiddleware[] = [];
 
-    addBasicMiddleware(middleware: ConnectionMiddleware): void {
-        this.basicMiddlewares.push(middleware);
+    addMiddleware(middleware: ConnectionMiddleware): void {
+        this.middlewares.push(middleware);
 
         const m: any = middleware;
         try {
@@ -269,18 +270,18 @@ export class SonicWSConnection implements Connection {
         }
     }
 
-    private async callMiddleware<K extends keyof ConnectionMiddleware>(
-        method: K,
-        ...values: Parameters<NonNullable<ConnectionMiddleware[K]>>
-    ): Promise<boolean> {
+    async callMiddleware<K extends FuncKeys<ConnectionMiddleware> & keyof ConnectionMiddleware>(
+            method: K,
+            ...values: Parameters<NonNullable<Extract<ConnectionMiddleware[K], (...args: any[]) => any>>>
+        ): Promise<boolean> {
         let cancelled = false;
 
-        for (const middleware of this.basicMiddlewares) {
+        for (const middleware of this.middlewares) {
             const fn = middleware[method];
             if (!fn) continue;
 
             try {
-                if (!await (fn as (...args: any[]) => Promise<boolean> | boolean)(...values)) {
+                if (await (fn as (...args: any[]) => Promise<boolean> | boolean)(...values)) {
                     cancelled = true;
                 }
             } catch (e) {
@@ -352,7 +353,7 @@ export class SonicWSConnection implements Connection {
      * @param values The values to send
      */
     public async send(tag: string, ...values: any[]): Promise<void> {
-        if(await this.callMiddleware('onSend_pre', tag, values)) return;
+        if(await this.callMiddleware('onSend_pre', tag, values, Date.now(), performance.now())) return;
         const [code, data, packet] = await processPacket(this.host.serverPackets, tag, values, this.sendQueue, this.id);
         if(await this.callMiddleware('onSend_post', tag, data, data.length))  return;
         this.send_processed(code, data, packet);
@@ -438,7 +439,8 @@ export class SonicWSConnection implements Connection {
     /**
      * Sets the name of this connection for the debug menu; good for setting e.g. usernames on games
      */
-    public setName(name: string): void {
+    public async setName(name: string): Promise<void> {
+        if(await this.callMiddleware("onNameChange", name)) return;
         this.name = name;
     }
 

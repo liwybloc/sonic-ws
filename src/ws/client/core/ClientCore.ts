@@ -22,7 +22,7 @@ import { Packet } from '../../packets/Packets';
 import { BatchHelper } from '../../util/packets/BatchHelper';
 import { as8String, toPacketBuffer } from '../../util/BufferUtil';
 import { Connection } from '../../Connection';
-import { AsyncPQ, ConnectionMiddleware, ClientPQ, PacketQueue, SendQueue } from '../../PacketProcessor';
+import { AsyncPQ, ConnectionMiddleware, ClientPQ, PacketQueue, SendQueue, FuncKeys } from '../../PacketProcessor';
 
 export abstract class SonicWSCore implements Connection {
 
@@ -163,12 +163,12 @@ export abstract class SonicWSCore implements Connection {
     public async listenPacket(data: string | [any[], boolean], code: number, packetQueue: PacketQueue<ClientPQ>, isAsync: boolean, asyncData: AsyncPQ<ClientPQ>): Promise<void> {
         const tag: string = this.serverPackets.getTag(code)!;
 
-        if(await this.callMiddleware('onReceive_post', tag, typeof data == 'string' ? [data] : data[0])) return;
-
         const listeners = this.listeners.event[code];
         if (!listeners) return console.warn("Warn: No listener for packet " + tag);
 
-        this.enqueuePacket(data, listeners, packetQueue, isAsync, asyncData);
+        await this.enqueuePacket(data, listeners, packetQueue, isAsync, asyncData);
+
+        await this.callMiddleware('onReceive_post', tag, typeof data == 'string' ? [data] : data[0]);
     }
 
     private isAsync(code: number): boolean {
@@ -183,6 +183,14 @@ export abstract class SonicWSCore implements Connection {
 
         await listenPacket(data, listeners, this.invalidPacket);
 
+        await this.triggerNextPacket(packetQueue, isAsync, asyncData);
+    }
+    
+    private async triggerNextPacket(
+        packetQueue: PacketQueue<ClientPQ>,
+        isAsync: boolean,
+        asyncData: AsyncPQ<ClientPQ>
+    ): Promise<void> {
         if (isAsync) asyncData![0] = false;
         else this.listenLock = false;
 
@@ -192,10 +200,10 @@ export abstract class SonicWSCore implements Connection {
         }
     }
 
-    private basicMiddlewares: ConnectionMiddleware[] = [];
+    private middlewares: ConnectionMiddleware[] = [];
 
-    addBasicMiddleware(middleware: ConnectionMiddleware): void {
-        this.basicMiddlewares.push(middleware);
+    addMiddleware(middleware: ConnectionMiddleware): void {
+        this.middlewares.push(middleware);
 
         const m: any = middleware;
         try {
@@ -205,13 +213,13 @@ export abstract class SonicWSCore implements Connection {
         }
     }
 
-    private async callMiddleware<K extends keyof ConnectionMiddleware>(
-        method: K,
-        ...values: Parameters<NonNullable<ConnectionMiddleware[K]>>
-    ): Promise<boolean> {
+    async callMiddleware<K extends FuncKeys<ConnectionMiddleware> & keyof ConnectionMiddleware>(
+                method: K,
+                ...values: Parameters<NonNullable<Extract<ConnectionMiddleware[K], (...args: any[]) => any>>>
+            ): Promise<boolean> {
         let cancelled = false;
 
-        for (const middleware of this.basicMiddlewares) {
+        for (const middleware of this.middlewares) {
             const fn = middleware[method];
             if (!fn) continue;
 
@@ -320,13 +328,14 @@ export abstract class SonicWSCore implements Connection {
      * @param values The values to send
      */
     public async send(tag: string, ...values: any[]): Promise<void> {
-        if(await this.callMiddleware('onSend_pre', tag, values)) return;
+        if(await this.callMiddleware('onSend_pre', tag, values, Date.now(), performance.now())) return;
 
         const [code, data, packet] = await processPacket(this.clientPackets, tag, values, this.sendQueue, 0);
 
-        if(await this.callMiddleware('onSend_post', tag, data, data.length)) return;
         if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
         else this.batcher.batchPacket(code, data);
+
+        await this.callMiddleware('onSend_post', tag, data, data.length);
     }
 
     /**
