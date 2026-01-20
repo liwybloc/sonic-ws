@@ -100,188 +100,189 @@ export class SonicWS extends SonicWSCore {
      * Creates a debug menu that shows information about the connection and packets.
      */
     OpenDebug() {
-        const html = String.raw;
-        const debugHTML = html`
-    <style>
-        sws-h3 {
-            margin: 0;
-            color: #fff;
-            font-size: 16px;
-            font-weight: 600;
-        }
+    //     const html = String.raw;
+    //     const debugHTML = html`
+    // <style>
+    //     sws-h3 {
+    //         margin: 0;
+    //         color: #fff;
+    //         font-size: 16px;
+    //         font-weight: 600;
+    //     }
 
-        #sonicws-container {
-            display: flex;
-            flex-direction: column;
-            position: absolute;
-            top: 50px;
-            left: 50px;
-            width: 75vw;
-            min-width: 33vw;
-            min-height: 25vh;
-            max-height: 75vh;
-            max-width: 75vw;
-            font-family: Arial, sans-serif;
-            background-color: #2c2c2c;
-            border-radius: 10px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
-            overflow: hidden;
-            user-select: none;
-            transition: box-shadow 0.2s ease;
-            z-index: 2147483647;
-        }
+    //     #sonicws-container {
+    //         display: flex;
+    //         flex-direction: column;
+    //         position: absolute;
+    //         top: 50px;
+    //         left: 50px;
+    //         width: 75vw;
+    //         min-width: 33vw;
+    //         min-height: 25vh;
+    //         max-height: 75vh;
+    //         max-width: 75vw;
+    //         font-family: Arial, sans-serif;
+    //         background-color: #2c2c2c;
+    //         border-radius: 10px;
+    //         box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+    //         overflow: hidden;
+    //         user-select: none;
+    //         transition: box-shadow 0.2s ease;
+    //         z-index: 2147483647;
+    //     }
 
-        #sonicws-container:hover {
-            box-shadow: 0 12px 28px rgba(0,0,0,0.6);
-        }
+    //     #sonicws-container:hover {
+    //         box-shadow: 0 12px 28px rgba(0,0,0,0.6);
+    //     }
 
-        #sonicws-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: move;
-            background: linear-gradient(90deg, #4a90e2, #357ab7);
-            padding: 10px 12px;
-            border-top-left-radius: 10px;
-            border-top-right-radius: 10px;
-        }
+    //     #sonicws-header {
+    //         display: flex;
+    //         justify-content: space-between;
+    //         align-items: center;
+    //         cursor: move;
+    //         background: linear-gradient(90deg, #4a90e2, #357ab7);
+    //         padding: 10px 12px;
+    //         border-top-left-radius: 10px;
+    //         border-top-right-radius: 10px;
+    //     }
 
-        #sonicws-toggle {
-            font-size: 18px;
-            font-weight: bold;
-            cursor: pointer;
-            color: #fff;
-            user-select: none;
-        }
+    //     #sonicws-toggle {
+    //         font-size: 18px;
+    //         font-weight: bold;
+    //         cursor: pointer;
+    //         color: #fff;
+    //         user-select: none;
+    //     }
 
-        #sonicws-body {
-            flex: 1;
-            display: flex;
-            padding: 12px;
-            color: #e0e0e0;
-            font-size: 14px;
-            min-height: 0;
-        }
+    //     #sonicws-body {
+    //         flex: 1;
+    //         display: flex;
+    //         padding: 12px;
+    //         color: #e0e0e0;
+    //         font-size: 14px;
+    //         min-height: 0;
+    //     }
 
-        #sonicws-stats {
-            display: flex;
-            flex-direction: column;
-            min-width: 140px;
-        }
+    //     #sonicws-stats {
+    //         display: flex;
+    //         flex-direction: column;
+    //         min-width: 140px;
+    //     }
 
-        #sonicws-stats sws-p {
-            margin: 4px 0;
-        }
+    //     #sonicws-stats sws-p {
+    //         margin: 4px 0;
+    //     }
 
-        #sonicws-packets {
-            min-height: 0;
-            display: flex;
-            flex-direction: column;
-            flex: 1;
-            margin-left: 10px;
-            background-color: #1e1e1e;
-            padding: 8px;
-            border-radius: 8px;
-            overflow-y: scroll;
-        }
+    //     #sonicws-packets {
+    //         min-height: 0;
+    //         display: flex;
+    //         flex-direction: column;
+    //         flex: 1;
+    //         margin-left: 10px;
+    //         background-color: #1e1e1e;
+    //         padding: 8px;
+    //         border-radius: 8px;
+    //         overflow-y: scroll;
+    //     }
 
-        sws-div.packet {
-            background-color: #2a2a2a;
-            border-radius: 6px;
-            padding: 3px 5px;
-            margin-bottom: 2px;
-            cursor: pointer;
-            transition: background 0.2s ease, transform 0.1s ease;
-            display: flex;
-            flex-direction: column;
-        }
+    //     sws-div.packet {
+    //         background-color: #2a2a2a;
+    //         border-radius: 6px;
+    //         padding: 3px 5px;
+    //         margin-bottom: 2px;
+    //         cursor: pointer;
+    //         transition: background 0.2s ease, transform 0.1s ease;
+    //         display: flex;
+    //         flex-direction: column;
+    //     }
 
-        sws-div.packet:hover {
-            background-color: #3a3a3a;
-            transform: translateY(-1px);
-        }
+    //     sws-div.packet:hover {
+    //         background-color: #3a3a3a;
+    //         transform: translateY(-1px);
+    //     }
 
-        sws-div.packet-header {
-            display: flex;
-            align-items: flex-start;
-            flex-wrap: wrap;
-            font-size: 11px;
-            white-space: normal;
-            word-break: break-word;
-        }
+    //     sws-div.packet-header {
+    //         display: flex;
+    //         align-items: flex-start;
+    //         flex-wrap: wrap;
+    //         font-size: 11px;
+    //         white-space: normal;
+    //         word-break: break-word;
+    //     }
 
-        sws-span.packet-arrow {
-            font-weight: bold;
-            margin-right: 6px;
-        }
+    //     sws-span.packet-arrow {
+    //         font-weight: bold;
+    //         margin-right: 6px;
+    //     }
 
-        sws-div.packet-details {
-            margin-top: 6px;
-            font-size: 10px;
-            color: #aaa;
-            display: none;
-            flex-direction: column;
-        }
+    //     sws-div.packet-details {
+    //         margin-top: 6px;
+    //         font-size: 10px;
+    //         color: #aaa;
+    //         display: none;
+    //         flex-direction: column;
+    //     }
 
-        sws-div.packet.expanded sws-div.packet-details {
-            display: flex;
-        }
+    //     sws-div.packet.expanded sws-div.packet-details {
+    //         display: flex;
+    //     }
 
-        #sonicws-resizer {
-            width: 12px;
-            height: 12px;
-            background: #666;
-            position: absolute;
-            right: 0;
-            bottom: 0;
-            cursor: se-resize;
-            border-bottom-right-radius: 10px;
-            transition: background 0.2s ease;
-        }
+    //     #sonicws-resizer {
+    //         width: 12px;
+    //         height: 12px;
+    //         background: #666;
+    //         position: absolute;
+    //         right: 0;
+    //         bottom: 0;
+    //         cursor: se-resize;
+    //         border-bottom-right-radius: 10px;
+    //         transition: background 0.2s ease;
+    //     }
 
-        #sonicws-resizer:hover {
-            background: #888;
-        }
+    //     #sonicws-resizer:hover {
+    //         background: #888;
+    //     }
 
-        #sonicws-container.minimized {
-            width: auto !important;
-            height: auto !important;
-            min-width: unset;
-            min-height: unset;
-        }
+    //     #sonicws-container.minimized {
+    //         width: auto !important;
+    //         height: auto !important;
+    //         min-width: unset;
+    //         min-height: unset;
+    //     }
 
-        #sonicws-container.minimized #sonicws-body,
-        #sonicws-container.minimized #sonicws-resizer {
-            display: none;
-        }
+    //     #sonicws-container.minimized #sonicws-body,
+    //     #sonicws-container.minimized #sonicws-resizer {
+    //         display: none;
+    //     }
 
-        #sonicws-container.minimized #sonicws-header {
-            padding: 8px 12px;
-        }
+    //     #sonicws-container.minimized #sonicws-header {
+    //         padding: 8px 12px;
+    //     }
 
-        #sonicws-container.minimized #sonicws-title {
-            font-size: 14px;
-        }
-    </style>
+    //     #sonicws-container.minimized #sonicws-title {
+    //         font-size: 14px;
+    //     }
+    // </style>
 
-    <sws-div id="sonicws-container">
-        <sws-div id="sonicws-header">
-            <sws-h3 id="sonicws-title">SonicWS Debug Menu</sws-h3>
-            <sws-span id="sonicws-toggle">−</sws-span>
-        </sws-div>
-        <sws-div id="sonicws-body">
-            <sws-div id="sonicws-stats">
-                <sws-p>Status: <sws-span id="sonicws-status">Connecting</sws-span></sws-p>
-                <sws-p>Sent Packets: <sws-span id="sonicws-sent">0</sws-span></sws-p>
-                <sws-p>Received Packets: <sws-span id="sonicws-received">0</sws-span></sws-p>
-                <sws-p>Total Bytes Sent: <sws-span id="sonicws-sentbytes">0</sws-span></sws-p>
-                <sws-p>Total Bytes Received: <sws-span id="sonicws-receivedbytes">0</sws-span></sws-p>
-                <sws-p>Total Bytes Saved: <sws-span id="sonicws-savedbytes">0</sws-span></sws-p>
-            </sws-div>
-            <sws-div id="sonicws-packets"></sws-div>
-        </sws-div>
-        <sws-div id="sonicws-resizer"></sws-div>
-    </sws-div>`;
+    // <sws-div id="sonicws-container">
+    //     <sws-div id="sonicws-header">
+    //         <sws-h3 id="sonicws-title">SonicWS Debug Menu</sws-h3>
+    //         <sws-span id="sonicws-toggle">−</sws-span>
+    //     </sws-div>
+    //     <sws-div id="sonicws-body">
+    //         <sws-div id="sonicws-stats">
+    //             <sws-p>Status: <sws-span id="sonicws-status">Connecting</sws-span></sws-p>
+    //             <sws-p>Sent Packets: <sws-span id="sonicws-sent">0</sws-span></sws-p>
+    //             <sws-p>Received Packets: <sws-span id="sonicws-received">0</sws-span></sws-p>
+    //             <sws-p>Total Bytes Sent: <sws-span id="sonicws-sentbytes">0</sws-span></sws-p>
+    //             <sws-p>Total Bytes Received: <sws-span id="sonicws-receivedbytes">0</sws-span></sws-p>
+    //             <sws-p>Total Bytes Saved: <sws-span id="sonicws-savedbytes">0</sws-span></sws-p>
+    //         </sws-div>
+    //         <sws-div id="sonicws-packets"></sws-div>
+    //     </sws-div>
+    //     <sws-div id="sonicws-resizer"></sws-div>
+    // </sws-div>`;
+        const debugHTML = `<style>sws-h3{margin:0;color:#fff;font-size:16px;font-weight:600}#sonicws-container{display:flex;flex-direction:column;position:absolute;top:50px;left:50px;width:75vw;min-width:33vw;min-height:25vh;max-height:75vh;max-width:75vw;font-family:Arial,sans-serif;background-color:#2c2c2c;border-radius:10px;box-shadow:0 8px 20px rgba(0,0,0,.4);overflow:hidden;user-select:none;transition:box-shadow .2s ease;z-index:2147483647}#sonicws-container:hover{box-shadow:0 12px 28px rgba(0,0,0,.6)}#sonicws-header{display:flex;justify-content:space-between;align-items:center;cursor:move;background:linear-gradient(90deg,#4a90e2,#357ab7);padding:10px 12px;border-top-left-radius:10px;border-top-right-radius:10px}#sonicws-toggle{font-size:18px;font-weight:700;cursor:pointer;color:#fff;user-select:none}#sonicws-body{flex:1;display:flex;padding:12px;color:#e0e0e0;font-size:14px;min-height:0}#sonicws-stats{display:flex;flex-direction:column;min-width:140px}#sonicws-stats sws-p{margin:4px 0}#sonicws-packets{min-height:0;display:flex;flex-direction:column;flex:1;margin-left:10px;background-color:#1e1e1e;padding:8px;border-radius:8px;overflow-y:scroll}sws-div.packet{background-color:#2a2a2a;border-radius:6px;padding:3px 5px;margin-bottom:2px;cursor:pointer;transition:background .2s ease,transform .1s ease;display:flex;flex-direction:column}sws-div.packet:hover{background-color:#3a3a3a;transform:translateY(-1px)}sws-div.packet-header{display:flex;align-items:flex-start;flex-wrap:wrap;font-size:11px;white-space:normal;word-break:break-word}sws-span.packet-arrow{font-weight:700;margin-right:6px}sws-div.packet-details{margin-top:6px;font-size:10px;color:#aaa;display:none;flex-direction:column}sws-div.packet.expanded sws-div.packet-details{display:flex}#sonicws-resizer{width:12px;height:12px;background:#666;position:absolute;right:0;bottom:0;cursor:se-resize;border-bottom-right-radius:10px;transition:background .2s ease}#sonicws-resizer:hover{background:#888}#sonicws-container.minimized{width:auto!important;height:auto!important;min-width:unset;min-height:unset}#sonicws-container.minimized #sonicws-body,#sonicws-container.minimized #sonicws-resizer{display:none}#sonicws-container.minimized #sonicws-header{padding:8px 12px}#sonicws-container.minimized #sonicws-title{font-size:14px}</style><sws-div id=sonicws-container><sws-div id=sonicws-header><sws-h3 id=sonicws-title>SonicWS Debug Menu</sws-h3><sws-span id=sonicws-toggle>−</sws-span></sws-div><sws-div id=sonicws-body><sws-div id=sonicws-stats><sws-p>Status:<sws-span id=sonicws-status>Connecting</sws-span></sws-p><sws-p>Sent Packets:<sws-span id=sonicws-sent>0</sws-span></sws-p><sws-p>Received Packets:<sws-span id=sonicws-received>0</sws-span></sws-p><sws-p>Total Bytes Sent:<sws-span id=sonicws-sentbytes>0</sws-span></sws-p><sws-p>Total Bytes Received:<sws-span id=sonicws-receivedbytes>0</sws-span></sws-p><sws-p>Total Bytes Saved:<sws-span id=sonicws-savedbytes>0</sws-span></sws-p></sws-div><sws-div id=sonicws-packets></sws-div></sws-div><sws-div id=sonicws-resizer></sws-div></sws-div>`;
     
         const SWS = document.createElement("sonicws");
         SWS.innerHTML = debugHTML;

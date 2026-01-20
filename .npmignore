@@ -3,6 +3,7 @@ src/**/*
 html/**/*
 bundled/**/*
 release/**/*
+transpiler/**/*
 .gitattributes
 tsconfig.json
 test*
