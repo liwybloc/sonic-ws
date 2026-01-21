@@ -8,7 +8,7 @@
     "webpack": "webpack --mode production",
     "build_web": "rimraf ./html && tsc --moduleResolution nodenext --module nodenext --outDir ./html src/ws/client/browser/ClientBrowser.ts && npm run webpack",
     "build_node": "rimraf ./dist && tsc -d",
-    "build": "npm run build_node && npm run build_web",
+    "build": "npm run build_node && npm run build_web && node minify",
     "test_web": "npm run build && node test-site/server.mjs",
     "test_node": "npm run build_node && node test.mjs",
     "publish": "npm run build && cp ./bundled/SonicWS_bundle.js ./release/SonicWS_bundle.js"
@@ -33,6 +33,7 @@
     "esbuild-loader": "^4.4.2",
     "form-data": "^4.0.4",
     "rimraf": "^6.0.1",
+    "terser": "^5.46.0",
     "ts-loader": "^9.5.2",
     "typescript": "^5.8.3",
     "undici": "^7.8.0",

@@ -15,7 +15,7 @@
  */
 
 import WS from 'ws';
-import { SonicWSCore } from '../core/ClientCore';
+import { SonicWSCore } from "../core/ClientCore";
 
 /** Class to connect to a SonicWS server */
 export class SonicWS extends SonicWSCore {

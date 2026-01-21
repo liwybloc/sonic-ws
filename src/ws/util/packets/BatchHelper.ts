@@ -17,14 +17,14 @@
 import { Connection } from "../../Connection";
 import { Packet } from "../../packets/Packets";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
-import { SonicWSServer } from "../../server/SonicWSServer";
 import { toPacketBuffer } from "../BufferUtil";
-import { convertVarInt, readVarInt } from "./CompressionUtil";
+import { compressGzip, convertVarInt, decompressGzip, readVarInt } from "./CompressionUtil";
 import { PacketHolder } from "./PacketHolder";
 
+/** @internal */
 export class BatchHelper {
 
-    private batchTimes: Record<number, number> = {};
+    private batchInfo: Record<number, [number, boolean]> = {};
     private batchTimeouts: Record<number, number> = {};
     private batchedData: Record<number, number[]> = {};
 
@@ -36,21 +36,24 @@ export class BatchHelper {
             const packet = packetHolder.getPacket(tag);
             if(packet.dataBatching == 0) return;
             const code = packetHolder.getKey(tag);
-            this.initiateBatch(code, packet.dataBatching);
+            this.initiateBatch(code, packet.dataBatching, packet.gzipCompression);
         });
     }
 
-    private initiateBatch(code: number, time: number) {
+    private initiateBatch(code: number, time: number, compressed: boolean) {
         this.batchedData[code] = [];
-        this.batchTimes[code] = time;
+        this.batchInfo[code] = [time, compressed];
     }
 
     private startBatch(code: number) {
-        this.batchTimeouts[code] = this.conn.setTimeout(() => {
-            this.conn.raw_send(toPacketBuffer(code, new Uint8Array(this.batchedData[code])));
+        const [time, compressed] = this.batchInfo[code];
+        this.batchTimeouts[code] = this.conn.setInterval(async () => {
+            if(this.batchedData[code].length == 0) return;
+            const data = new Uint8Array(this.batchedData[code]);
+            this.conn.raw_send(toPacketBuffer(code, compressed ? await compressGzip(data) : data));
             this.batchedData[code] = [];
             delete this.batchTimeouts[code];
-        }, this.batchTimes[code], false) as unknown as number;
+        }, time) as unknown as number;
     }
 
     public batchPacket(code: number, data: Uint8Array) {
@@ -61,8 +64,9 @@ export class BatchHelper {
         if(!this.batchTimeouts[code]) this.startBatch(code);
     }
 
-    public static async unravelBatch(packet: Packet<any>, data: Uint8Array, socket: SonicWSConnection | null): Promise<any[] | string> {
-        const result: any[] = [];
+    public static async unravelBatch(packet: Packet<any>, _data: Uint8Array, socket: SonicWSConnection | null): Promise<[any, boolean][] | string> {
+        const data = packet.gzipCompression ? await decompressGzip(_data) : _data;
+        const result: [any, boolean][] = [];
         for(let i=0;i<data.length;) {
             // must be >0 for it to apply
             if(packet.maxBatchSize > 0 && result.length > packet.maxBatchSize) return "Too big of batch";

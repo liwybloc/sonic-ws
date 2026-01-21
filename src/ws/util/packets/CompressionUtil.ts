@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { splitArray } from "../ArrayUtil";
+import { splitArray } from "../BufferUtil";
 
 // this shit is so complex so i commented it...
 
@@ -333,26 +333,6 @@ export function bitsToBytes(bitString: string): Uint8Array {
     return new Uint8Array(bytes);
 }
 
-const codeToChar: Record<string, string> = {"1000001":"w","1000010":"m","1000100":"u","1000101":"c","1000110":"l","1000111":"d","1001001":"r","1001010":"h","1001100":"s","1001101":"n","1001110":"i","1001111":"o","1010001":"a","1010010":"t","1010100":"e","1010101":"","10000000":"","10000001":"","10000111":"","10010000":"","10010001":"","10010111":"","10100000":"","10100001":"","10100111":"","10101100":"","10101101":"~","10101111":"}","10110000":"|","10110001":"{","10110011":"`","10110100":"_","10110101":"^","10110111":"]","10111000":"","10111001":"[","10111011":"@","10111100":"?","10111101":">","10111111":"=","11000000":"<","11000001":";","11000011":":","11000100":"9","11000101":"8","11000111":"7","11001000":"6","11001001":"5","11001011":"4","11001100":"3","11001101":"2","11001111":"1","11010000":"0","11010001":"/","11010011":".","11010100":"-","11010101":",","11010111":"+","11011000":"*","11011001":")","11011011":"(","11011100":"'","11011101":"&","11011111":"$","11100001":"#","11100010":"\"","11100100":"!","11100101":"\u001f","11100110":"\u001e","11100111":"\u001d","11101001":"\u001c","11101010":"\u001b","11101100":"\u001a","11101101":"\u0019","11101110":"\u0018","11101111":"\u0017","11110001":"\u0016","11110010":"\u0015","11110100":"\u0014","11110101":"\u0013","11110110":"\u0012","11110111":"\u0011","11111001":"\u0010","11111010":"\u000f","11111100":"\u000e","11111101":"","11111110":"","11111111":"","100001100":"Ã","100101100":"Â","100101101":"Á","101001100":"À","101011100":"¿","101011101":"¾","101100100":"½","101101100":"¼","101101101":"»","101110100":"º","101111100":"¹","101111101":"¸","110000100":"·","110001100":"¶","110001101":"µ","110010100":"´","110011100":"³","110011101":"²","110100100":"±","110101100":"°","110101101":"¯","110110100":"®","110111100":"­","110111101":"%","111000000":"¬","111000001":"«","111000111":"ª","111010000":"©","111010001":"¨","111010111":"§","111100000":"¦","111100001":"¥","111100111":"¤","111110000":"£","111110001":"¢","111110111":"¡","1000011010":"á","1010011010":"à","1010011011":"ß","1011001010":"Þ","1011101010":"Ý","1011101011":"Ü","1100001010":"Û","1100101010":"Ú","1100101011":"Ù","1101001010":"Ø","1101101010":"×","1101101011":"Ö","1110001100":"Õ","1110101100":"Ô","1110101101":"Ó","1111001100":"Ò","1111101100":"Ñ","1111101101":"Ð","00000000":" ","00000001":"","0000001":"\n","0000010":"","000001100":"Ï","0000011010":"ç","00000110110":"ó","000001101110":"ù","0000011011110":"ü","00000110111110":"þ","00000110111111":"ý","00000111":"","0000100":"\b","0000101":"\u0007","0000110":"\u0006","0000111":"\u0005","00010000":"","00010001":"","0001001":"\u0004","0001010":"\u0003","000101100":"Î","000101101":"Í","00010111":"","0001100":"\u0002","0001101":"\u0001","0001110":"","0001111":"Z","00100000":"","00100001":"","0010001":"Q","0010010":"X","001001100":"Ì","0010011010":"æ","0010011011":"å","00100111":"","0010100":"J","0010101":"K","0010110":"V","0010111":"B","00110000":"","00110001":"","0011001":"P","0011010":"Y","001101100":"Ë","001101101":"Ê","00110111":"","0011100":"G","0011101":"F","0011110":"W","0011111":"M","01000000":"","01000001":"","0100001":"U","0100010":"C","010001100":"É","0100011010":"ä","01000110110":"ò","01000110111":"ñ","01000111":"","0100100":"L","0100101":"D","0100110":"R","0100111":"H","01010000":"","01010001":"","0101001":"S","0101010":"N","010101100":"È","010101101":"Ç","01010111":"","0101100":"I","0101101":"O","0101110":"A","0101111":"T","01100000":"","01100001":"","0110001":"E","0110010":"z","011001100":"Æ","0110011010":"ã","0110011011":"â","01100111":"","0110100":"q","0110101":"x","0110110":"j","0110111":"k","01110000":"","01110001":"","0111001":"v","0111010":"b","011101100":"Å","011101101":"Ä","01110111":"","0111100":"p","0111101":"y","0111110":"g","0111111":"f","10000110110":"ð","100001101110":"ø","100001101111":"÷","10110010110":"ï","10110010111":"î","11000010110":"í","110000101110":"ö","1100001011110":"û","1100001011111":"ú","11010010110":"ì","11010010111":"ë","11100011010":"ê","111000110110":"õ","111000110111":"ô","11110011010":"é","11110011011":"è"};
-const charToCode: Record<string, string> = Object.fromEntries(Object.entries(codeToChar).map(([code, char]) => [char, code]));
-
-export function encodeHuffman(text: string): Uint8Array {
-    return bitsToBytes(Array.from(text).map(char => charToCode[char]).join(""));
-};
-
-export function decodeHuffman(bits: string): string {
-    let result = '';
-    let buffer = '';
-    for (const bit of bits) {
-        buffer += bit;
-        if (codeToChar[buffer]) {
-            result += codeToChar[buffer];
-            buffer = '';
-        }
-    }
-    return result;
-};
-
 const gzipError = "Your browser is too old to support compression. Please update!";
 export async function compressGzip(data: Uint8Array<ArrayBuffer>, ident: string = ""): Promise<Uint8Array> {
     if (typeof CompressionStream === "undefined") {
@@ -378,171 +358,6 @@ export async function decompressGzip(data: Uint8Array): Promise<Uint8Array> {
     const buffer = await new Response(stream).arrayBuffer();
     return new Uint8Array(buffer);
 }
-
-// json (why did i say booleans idk)
-
-enum JSONType {
-    NULL = 0,
-    BOOL = 1,
-    INT = 2,
-    FLOAT = 3,
-    STRING = 4,
-    ARRAY = 5,
-    OBJECT = 6,
-}
-
-const encodeString = (str: string) => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(str);
-    return [...convertVarInt(data.length), ...data];
-};
-
-const decodeString = (bytes: Uint8Array, offset: number) => {
-    const [off, len] = readVarInt(bytes, offset);
-    const decoder = new TextDecoder();
-    return { value: decoder.decode(bytes.subarray(off, off + len)), length: off + len - offset };
-};
-
-// utility: pack 3-bit values into bytes
-const packTypeBits = (types: number[]) => {
-    let bits = '';
-    for (const t of types) bits += t.toString(2).padStart(3, '0');
-    return bitsToBytes(bits);
-};
-
-// utility: unpack bytes into 3-bit type array
-const unpackTypeBits = (bytes: Uint8Array, totalValues: number) => {
-    const bitStr = bytesToBits(bytes);
-    const types: number[] = [];
-    for (let i = 0; i < totalValues; i++) {
-        types.push(parseInt(bitStr.slice(i * 3, i * 3 + 3), 2));
-    }
-    return types;
-};
-
-// main compression
-export const compressJSON = (value: any) => {
-    const bools: boolean[] = [];
-    const payload: number[] = [];
-    const typeList: number[] = [];
-
-    const encodeValue = (val: any) => {
-        if (val === null) {
-            typeList.push(JSONType.NULL);
-        } else if (typeof val === 'boolean') {
-            typeList.push(JSONType.BOOL);
-            bools.push(val);
-        } else if (Number.isInteger(val)) {
-            typeList.push(JSONType.INT);
-            payload.push(...convertVarInt(mapZigZag(val)));
-        } else if (typeof val === 'number') {
-            typeList.push(JSONType.FLOAT);
-            payload.push(...convertFloat(val));
-        } else if (typeof val === 'string') {
-            typeList.push(JSONType.STRING);
-            payload.push(...encodeString(val));
-        } else if (Array.isArray(val)) {
-            typeList.push(JSONType.ARRAY);
-            payload.push(...convertVarInt(val.length));
-            for (const item of val) encodeValue(item);
-        } else if (typeof val === 'object') {
-            typeList.push(JSONType.OBJECT);
-            const keys = Object.keys(val);
-            payload.push(...convertVarInt(keys.length));
-            for (const key of keys) {
-                payload.push(...encodeString(key));
-                encodeValue(val[key]);
-            }
-        } else {
-            throw new Error('Unsupported type');
-        }
-    };
-
-    encodeValue(value);
-
-    // boolean bitmap bytes
-    const boolBytes = bools.length
-        ? splitArray(bools, 8).map((slice: boolean[]) => compressBools(slice))
-        : [];
-
-    // type map bytes (3-bit per value)
-    const typeBytes = packTypeBits(typeList);
-
-    // prepend lengths of boolBytes and typeBytes as varints
-    const header = [...convertVarInt(boolBytes.length), ...convertVarInt(typeBytes.length)];
-
-    return Uint8Array.from([...header, ...boolBytes.flat(), ...typeBytes, ...payload]);
-};
-
-// decompression
-export const decompressJSON = (bytes: Uint8Array) => {
-    let offset = 0;
-
-    // read lengths
-    const [off1, boolByteLen] = readVarInt(bytes, offset);
-    offset = off1;
-    const [off2, typeByteLen] = readVarInt(bytes, offset);
-    offset = off2;
-
-    // boolean bitmap
-    const boolStream: boolean[] = [];
-    for (let i = 0; i < boolByteLen; i++) {
-        boolStream.push(...decompressBools(bytes[offset++]));
-    }
-    let boolIndex = 0;
-
-    // type map
-    const typeBytes = bytes.subarray(offset, offset + typeByteLen);
-    offset += typeByteLen;
-    const typeList = unpackTypeBits(typeBytes, typeBytes.length * 8 / 3); // overestimate, will only use while decoding
-    let typeIndex = 0;
-
-    const decodeValue = (depth: number): any => {
-        if(depth > 500) throw new Error("JSON array too deep.");
-        const type = typeList[typeIndex++];
-        switch (type) {
-            case JSONType.NULL: return null;
-            case JSONType.BOOL: return boolStream[boolIndex++];
-            case JSONType.INT: {
-                const [off, n] = readVarInt(bytes, offset);
-                offset = off;
-                return demapZigZag(n);
-            }
-            case JSONType.FLOAT: {
-                const val = deconvertFloat(Array.from(bytes.subarray(offset, offset + 4)));
-                offset += 4;
-                return val;
-            }
-            case JSONType.STRING: {
-                const { value, length } = decodeString(bytes, offset);
-                offset += length;
-                return value;
-            }
-            case JSONType.ARRAY: {
-                const [off, len] = readVarInt(bytes, offset);
-                offset = off;
-                const arr = [];
-                for (let i = 0; i < len; i++) arr.push(decodeValue(depth + 1));
-                return arr;
-            }
-            case JSONType.OBJECT: {
-                const [off, numKeys] = readVarInt(bytes, offset);
-                offset = off;
-                const obj: Record<string, any> = {};
-                for (let i = 0; i < numKeys; i++) {
-                    const { value: key, length: keyLen } = decodeString(bytes, offset);
-                    offset += keyLen;
-                    obj[key] = decodeValue(depth + 1);
-                }
-                return obj;
-            }
-            default:
-                throw new Error(`Unknown type ${type}`);
-        }
-    };
-
-    return decodeValue(0);
-};
 
 export function bytesToHex(bytes: Uint8Array) {
     return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');

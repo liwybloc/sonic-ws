@@ -18,6 +18,7 @@ import { CloseCodes } from "../../Connection";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
 import { PacketHolder } from "./PacketHolder";
 
+/** @internal */
 export class RateHandler {
 
     private rates: Record<string, number> = {};

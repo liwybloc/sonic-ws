@@ -54,7 +54,7 @@ import { PacketType, SonicWS, SonicWSServer, CreatePacket, CreateObjPacket } fro
 ```
 Browser (Client):
 ```html
-<script src="https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/SonicWS_bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/SonicWS_bundle"></script>
 ```
 *This will always give the latest release build. I will add branches for each release if this project actually goes anywhere.
 

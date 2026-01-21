@@ -30,6 +30,7 @@ export type ProcessedPacket = [code: number, data: Uint8Array, packet: Packet<an
  * @param tag The tag of the packet
  * @param values The values
  * @returns The indexed code, the data, and the packet schema
+ * @internal
  */
 export async function processPacket(
     packets: PacketHolder,
@@ -83,7 +84,9 @@ export async function processPacket(
     });
 }
 
-
+/**
+ * @internal
+ */
 async function handleQueue(
     sendQueue: SendQueue,
     packets: PacketHolder,
@@ -118,6 +121,7 @@ async function handleQueue(
  * @param listened The listened data
  * @param listeners The listeners to run
  * @param errorCB The callback if something goes wrong
+ * @internal
  */
 export async function listenPacket(
     listened: string | [any[], boolean],
@@ -144,14 +148,18 @@ export async function listenPacket(
     }
 }
 
-/** Determines if a type is a invalid packet type */
+/**
+ * Determines if a type is a invalid packet type
+ * @param type A possible type
+ * @internal
+ */
 function isInvalidType(type: any): boolean {
     return (!(typeof type == 'number' && type in PacketType) && !(type instanceof EnumPackage)) || type == PacketType.KEY_EFFECTIVE;
 }
 
 const MAX_DATA_MAX = 2048383;
 
-/** Clamps data max between 0 and MAX_DATA_MAX */
+/** Clamps data max between 0 and MAX_DATA_MAX @internal */
 function clampDataMax(dataMax: number) {
     if(dataMax < 0) {
         console.warn(`Having a data maximum below 0 does not do anything!`);
@@ -164,7 +172,7 @@ function clampDataMax(dataMax: number) {
     }
     return dataMax;
 }
-/** Clamps data min between 0 and datamax */
+/** Clamps data min between 0 and datamax @internal */
 function clampDataMin(dataMin: number, dataMax: number) {
     if(dataMin < 0) {
         console.warn(`Having a data minimum below 0 does not do anything!`);

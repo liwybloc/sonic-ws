@@ -1,4 +1,5 @@
 dist/ws/client/browser/**/*
+dist/ws/debug/DebugClient.ts
 src/**/*
 html/**/*
 bundled/**/*
@@ -8,3 +9,4 @@ transpiler/**/*
 tsconfig.json
 test*
 webpack.config.js
+minify.js

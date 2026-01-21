@@ -14,9 +14,15 @@
  * limitations under the License.
  */
 
-import { splitArray } from "./ArrayUtil";
 import { fromShort, SHORT_BITS } from "./packets/CompressionUtil";
 import { convertCharCodes, convertCodePoints } from "./StringUtil";
+
+export function splitArray(arr: any, x: number): any {
+    const result: any[] = [];
+    for (let i = 0; i < arr.length; i += x) 
+        result.push(arr.slice(i, i + x));
+    return result;
+}
 
 export function toPacketBuffer(code: number, data: Uint8Array): Uint8Array {
     const buffer = new Uint8Array(1 + data.length);

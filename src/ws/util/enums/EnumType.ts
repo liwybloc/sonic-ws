@@ -40,6 +40,7 @@ function getTypedIndex(data: any) {
 
 export type EnumValue = string | number | boolean | undefined | null;
 
+/** @internal */
 export class EnumPackage {
     public tag: string;
     public values: EnumValue[] | readonly EnumValue[];

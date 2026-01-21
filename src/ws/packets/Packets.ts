@@ -90,15 +90,13 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             this.type    = schema.type as unknown as T;
             this.dataMax = schema.dataMax;
             this.dataMin = schema.dataMin;
-            // @ts-expect-error
-            this.maxSize = this.type.length;
-            // @ts-expect-error
-            this.minSize = this.type.length;
+            this.maxSize = (this.type as PacketType[]).length;
+            this.minSize = (this.type as PacketType[]).length;
 
-            // trst me bro..
-            this.receiveProcessor = createObjReceiveProcessor(this as any);
-            this.sendProcessor    = createObjSendProcessor(this as any);
-            this.validator        = createObjValidator(this as any);
+            const PT = this as unknown as Packet<PacketType[]>;
+            this.receiveProcessor = createObjReceiveProcessor(PT);
+            this.sendProcessor    = createObjSendProcessor(PT);
+            this.validator        = createObjValidator(PT);
         } else {
             this.type    = schema.type as unknown as T;
             this.dataMax = schema.dataMax;
@@ -106,12 +104,10 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             this.maxSize = this.dataMax as number;
             this.minSize = this.dataMin as number;
 
-            // @ts-expect-error
-            this.receiveProcessor = createReceiveProcessor(this.type, this.enumData, this.dataMax);
-            // @ts-expect-error
-            this.sendProcessor    = createSendProcessor(this.type, this.gzipCompression, this.rereference);
-            // @ts-expect-error
-            this.validator        = createValidator(this.type, this.dataMax, this.dataMin, this, this.gzipCompression, this.rereference);
+            const PT = this.type as PacketType;
+            this.receiveProcessor = createReceiveProcessor(PT, this.enumData, this.dataMax as number);
+            this.sendProcessor    = createSendProcessor(PT, this.gzipCompression, this.dataBatching != 0);
+            this.validator        = createValidator(PT, this.dataMax as number, this.dataMin as number, this as Packet<PacketType>, this.gzipCompression);
         }
         
         this.processReceive  = (data: Uint8Array, validationResult: any) => this.receiveProcessor(data, validationResult, 0);

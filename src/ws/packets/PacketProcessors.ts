@@ -15,12 +15,13 @@
  */
 
 import { EnumPackage } from "../util/enums/EnumType";
-import { splitArray } from "../util/ArrayUtil";
-import { compressBools, convertFloat, decompressBools, deconvertFloat, demapShort_ZZ, demapZigZag, fromShort, mapZigZag, SHORT_BITS, toByte, toShort, convertVarInt, MAX_BYTE, readVarInt, MAX_UVARINT, mapShort_ZZ, convertDouble, deconvertDouble, ONE_FOURTH, ONE_EIGHT, encodeHuffman, bytesToBits, decodeHuffman, decompressJSON, compressJSON, compressGzip, decompressGzip, hexToBytes, bytesToHex, EMPTY_UINT8 } from "../util/packets/CompressionUtil";
+import { splitArray } from "../util/BufferUtil";
+import { compressBools, convertFloat, decompressBools, deconvertFloat, demapShort_ZZ, demapZigZag, fromShort, mapZigZag, SHORT_BITS, toByte, toShort, convertVarInt, MAX_BYTE, readVarInt, MAX_UVARINT, mapShort_ZZ, convertDouble, deconvertDouble, ONE_FOURTH, ONE_EIGHT, bytesToBits, compressGzip, decompressGzip, hexToBytes, bytesToHex, EMPTY_UINT8 } from "../util/packets/CompressionUtil";
 import { Packet } from "./Packets";
 import { PacketType } from "./PacketType";
 import { splitBuffer } from "../util/BufferUtil";
-import { processCharCodes } from "../util/StringUtil";
+import { decodeHuffman, encodeHuffman, processCharCodes } from "../util/StringUtil";
+import { decompressJSON, compressJSON } from "../util/packets/JSONUtil";
 
 type PacketTypeSubValidator = (data: Uint8Array, index: number) => false | any;
 export type PacketTypeValidator = (data: Uint8Array, index: number) => Promise<[Uint8Array, false | any]>;
@@ -156,7 +157,7 @@ export function createValidator<T extends PacketType>(type: T, dataCap: number, 
         }
     }
     const fn = genFunc();
-    return gzipCompression
+    return gzipCompression && packet.dataBatching == 0
             ? async (data: Uint8Array, index: number) => {
                 try {
                     const dec = await decompressGzip(data);
@@ -224,7 +225,7 @@ export function createReceiveProcessor(type: PacketType, enumData: EnumPackage[]
 }
 
 /** Creates a function that processes a packet type */
-export function createSendProcessor(type: PacketType, gzipCompression: boolean): PacketSendProcessor {
+export function createSendProcessor(type: PacketType, gzipCompression: boolean, batchedData: boolean): PacketSendProcessor {
     function genFunc() {
         switch(type) {
             case PacketType.NONE         : return () => [];
@@ -280,7 +281,7 @@ export function createSendProcessor(type: PacketType, gzipCompression: boolean):
         }
     }
     const fn = genFunc();
-    if (!gzipCompression) {
+    if (!gzipCompression || batchedData) {
         return async (_, data) => {
             return new Uint8Array(fn(data));
         }
@@ -294,7 +295,7 @@ export function createSendProcessor(type: PacketType, gzipCompression: boolean):
 export function createObjSendProcessor(packet: Packet<PacketType[]>): PacketSendProcessor {
     const size = packet.type.length;
     // TODO: Add compression and add rereferences[]
-    const processors = packet.type.map(t => createSendProcessor(t, false));
+    const processors = packet.type.map(t => createSendProcessor(t, false, false));
     
     return async (ident: string, data: any[]) => {
         let result: number[] = [];

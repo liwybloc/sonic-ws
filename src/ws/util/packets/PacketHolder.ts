@@ -20,6 +20,7 @@ import { PacketTypings } from "../../server/SonicWSServer";
 
 /**
  * Holds and maps packets to indexed keys and tags for serialization and lookup
+ * @internal
  */
 export class PacketHolder {
 

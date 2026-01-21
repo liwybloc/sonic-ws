@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-import { PacketHolder } from '../../util/packets/PacketHolder';
-import { decompressGzip, readVarInt } from '../../util/packets/CompressionUtil';
-import { listenPacket, processPacket } from '../../util/packets/PacketUtils';
-import { SERVER_SUFFIX, VERSION } from '../../../version';
-import { Packet } from '../../packets/Packets';
-import { BatchHelper } from '../../util/packets/BatchHelper';
-import { as8String, toPacketBuffer } from '../../util/BufferUtil';
-import { Connection } from '../../Connection';
-import { AsyncPQ, ConnectionMiddleware, ClientPQ, PacketQueue, SendQueue, FuncKeys } from '../../PacketProcessor';
+import { PacketHolder } from "../../util/packets/PacketHolder";
+import { decompressGzip, readVarInt } from "../../util/packets/CompressionUtil";
+import { listenPacket, processPacket } from "../../util/packets/PacketUtils";
+import { SERVER_SUFFIX, VERSION } from "../../../version";
+import { Packet } from "../../packets/Packets";
+import { BatchHelper } from "../../util/packets/BatchHelper";
+import { as8String, toPacketBuffer } from "../../util/BufferUtil";
+import { Connection } from "../../Connection";
+import { AsyncPQ, ConnectionMiddleware, ClientPQ, PacketQueue, SendQueue, FuncKeys } from "../../PacketProcessor";
 
 export abstract class SonicWSCore implements Connection {
 
@@ -37,8 +37,8 @@ export abstract class SonicWSCore implements Connection {
     };
 
     protected preListen: { [key: string]: Array<(data: any[]) => void> } | null;
-    protected clientPackets: PacketHolder = new PacketHolder();
-    protected serverPackets: PacketHolder = new PacketHolder();
+    clientPackets: PacketHolder = new PacketHolder();
+    serverPackets: PacketHolder = new PacketHolder();
 
     private pastKeys: boolean = false;
     private readyListeners: Array<() => void> | null = [];

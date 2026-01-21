@@ -15,14 +15,14 @@
  */
 
 import * as WS from 'ws';
-import { SonicWSServer } from './SonicWSServer';
-import { listenPacket, processPacket } from '../util/packets/PacketUtils';
-import { BatchHelper } from '../util/packets/BatchHelper';
-import { Packet } from '../packets/Packets';
-import { RateHandler } from '../util/packets/RateHandler';
-import { stringifyBuffer, toPacketBuffer } from '../util/BufferUtil';
-import { CloseCodes, Connection } from '../Connection';
-import { AsyncPQ, ConnectionMiddleware, FuncKeys, PacketQueue, SendQueue, ServerPQ } from '../PacketProcessor';
+import { SonicWSServer } from "./SonicWSServer";
+import { listenPacket, processPacket } from "../util/packets/PacketUtils";
+import { BatchHelper } from "../util/packets/BatchHelper";
+import { Packet } from "../packets/Packets";
+import { RateHandler } from "../util/packets/RateHandler";
+import { stringifyBuffer, toPacketBuffer } from "../util/BufferUtil";
+import { CloseCodes, Connection } from "../Connection";
+import { AsyncPQ, ConnectionMiddleware, FuncKeys, PacketQueue, SendQueue, ServerPQ } from "../PacketProcessor";
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
 
 export class SonicWSConnection implements Connection {
@@ -238,14 +238,14 @@ export class SonicWSConnection implements Connection {
         if(packet.rereference && value.length == 0) {
             const lastRecv = packet.lastReceived[this.id];
             if(lastRecv === undefined) return this.invalidPacket("No previous value to rereference");
-            this.listenPacket(lastRecv as any, tag, packetQueue, isAsync, asyncData!);
+            await this.listenPacket(lastRecv as any, tag, packetQueue, isAsync, asyncData!);
             return;
         }
 
         if(packet.dataBatching == 0) {
             const res = await packet.listen(value, this);
             packet.lastReceived[this.id] = res;
-            this.listenPacket(res, tag, packetQueue, isAsync, asyncData!);
+            await this.listenPacket(res, tag, packetQueue, isAsync, asyncData!);
             return;
         }
 
@@ -253,7 +253,9 @@ export class SonicWSConnection implements Connection {
         if(typeof batchData == 'string') return this.invalidPacket(batchData);
 
         for(const data of batchData) {
-            this.listenPacket(data, tag, packetQueue, isAsync, asyncData!);
+            if (isAsync) asyncData![0] = true;
+            else this.listenLock = true;
+            await this.listenPacket(data, tag, packetQueue, isAsync, asyncData!);
         }
     }
 

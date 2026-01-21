@@ -18,6 +18,7 @@ import { ConnectionMiddleware, MiddlewareHolder } from "./PacketProcessor";
 
 /**
  * Holds shared connection values. Lets helper functions work on client and server.
+ * @internal
  */
 export interface Connection extends MiddlewareHolder<ConnectionMiddleware> {
 
