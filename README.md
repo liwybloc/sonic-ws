@@ -1,6 +1,19 @@
 # sonic-ws
 
-## INFO
+### WebSockets that handle correctness, security, and performance for you
+
+- No race conditions
+- No invalid packets
+- No accidental DoS
+- No cleanup bugs
+- No boilerplate
+- Many built-in security features
+- Lower bandwidth cost
+- Works much better on mobile
+- More readable than every other socket library
+
+<details>
+<summary>DETAILED INFO</summary>
 
 SonicWS is an ultra-lightweight, high-performance WebSocket library focused on maximum bandwidth efficiency, speed, and security.
 
@@ -44,83 +57,76 @@ Developer Experience:
 - Almost every case has a pre-made wire optimization and boilerplate removal.
 
 Whether you're making a real-time game, a dashboard, a distributed system, or anything else, SonicWS gets you safe, structured packets; fast.
+</details>
 
 ## SAMPLES
 
-### Importing:
-Node (Client & Server):
+### Node (Client & Server)
 ```js
-import { PacketType, SonicWS, SonicWSServer, CreatePacket, CreateObjPacket } from "sonic-ws";
+import { SonicWS, SonicWSServer, CreatePacket, PacketType } from "sonic-ws";
 ```
+
 Browser (Client):
 ```html
 <script src="https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/SonicWS_bundle"></script>
 ```
 *This will always give the latest release build. I will add branches for each release if this project actually goes anywhere.
 
-### Server:
+### Simple Example: Clicker Server
+
+#### Server
 ```js
 const wss = new SonicWSServer({
     clientPackets: [
-        CreatePacket({tag: "pong", type: PacketType.UVARINT, dataMax: 1})
+        CreatePacket({ tag: "click", type: PacketType.NONE }),
+        CreatePacket({ tag: "token", type: PacketType.STRINGS }),
     ],
     serverPackets: [
-        CreatePacket({tag: "ping", type: PacketType.UVARINT, dataMax: 1}),
-        CreateObjPacket({tag: "data", types: [PacketType.UBYTES, PacketTypes.STRINGS], dataMaxes: [2, 3]})
+        CreatePacket({ tag: "pointsInfo", type: PacketType.UVARINT }),
+        CreatePacket({ tag: "notification", type: PacketType.STRINGS }),
     ],
-    websocketOptions: { port: 1234 }
+    websocketOptions: { port: 1234 },
 });
 
-wss.on_connect((socket) => {
+wss.requireHandshake("token");
 
-    console.log("Socket connection:", socket.id);
+wss.on_connect(ws => {
+    console.log("Client connected:", ws.id);
 
-    socket.on("pong", (num) => {
-        console.log("Ponged!", num);
-        socket.send("data", [Math.floor(Math.random() * 26), Math.floor(Math.random() * 256)], ["hello", "from", "server"]);
+    let clicks = 0;
+
+    ws.on("token", token => {
+        if(!isValidToken(token)) // No listeners will ever trigger after this, unlike base websocket
+            return socket.close();
+    })
+
+    // auto validation, no boilerplate. always passed the token check
+    ws.on("click", () => {
+        ws.send("pointsInfo", ++clicks);
     });
 
-    socket.setInterval(() => {
-        socket.send("ping", Date.now());
-    }, 10000);
-
+    ws.setInterval(() => ws.send("notification", "Keep going!"), 5000); // auto cleanup on close
 });
 
-wss.on_ready(() => {
-    console.log("Server ready!");
-});
+wss.on_ready(() => console.log("Server ready!"));
 ```
 
-### Client:
+#### Client
 ```js
 const ws = new SonicWS("ws://localhost:1234");
 
-ws.on_ready(() => {
-    console.log("Connected to server");
+ws.on_ready(() => console.log("Connected to server"));
+
+ws.on("pointsInfo", clicks => console.log("Total Clicks: ", clicks));
+
+ws.on("notification", msg => console.log("Notification:", msg));
+
+button.addEventListener("click", () => {
+    ws.send("click");
 });
 
-ws.on("ping", (num) => {
-    console.log("Pinged!", num);
-    ws.send("pong", Date.now());
-})
-ws.on("data", (i, s) => {
-    console.log("data: ", i);
-    console.log("message: " + s.join(" "));
-});
-
-ws.on_close((event) => {
-    console.log("closed client: " + event.code);
-});
 ```
 
 ## KNOWN ISSUES
 
-Some weird error messages when invalid inputs are in like CreatePacket() and stuff
-
 ## PLANNED FEATURES
-
-Better error handling
-
-Some middleware support
-
-Debug menus for client/server

@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-import { Connection } from "./Connection";
 import { SonicWSConnection } from "./server/SonicWSConnection";
 
 /**
@@ -25,12 +24,12 @@ export interface BasicMiddleware {
      * Called when the middleware is initialized
      * @param conn The connection instance
      */
-    init?(conn: Connection): void;
+    init?(conn: IMiddlewareHolder<BasicMiddleware>): void;
 }
 
 export type FuncKeys<T> = { [K in keyof T]: NonNullable<T[K]> extends (...args: any[]) => any ? K : never }[keyof T];
 
-export interface MiddlewareHolder<T extends BasicMiddleware> {
+export interface IMiddlewareHolder<T extends BasicMiddleware> {
     /**
      * Adds middleware which can interact with packets and other events
      */
@@ -45,6 +44,43 @@ export interface MiddlewareHolder<T extends BasicMiddleware> {
         method: K,
         ...values: Parameters<NonNullable<Extract<T[K], (...args: any[]) => any>>>
     ): Promise<boolean>;
+}
+export class MiddlewareHolder<T extends BasicMiddleware> implements IMiddlewareHolder<T> {
+
+    private middlewares: T[] = [];
+
+    addMiddleware(middleware: T): void {
+        this.middlewares.push(middleware);
+
+        const m: any = middleware;
+        try {
+            if (typeof m.init === 'function') m.init(this);
+        } catch (e) {
+            console.warn('Middleware init threw an error:', e);
+        }
+    }
+
+    async callMiddleware<K extends FuncKeys<T> & keyof T>(
+            method: K,
+            ...values: Parameters<NonNullable<Extract<T[K], (...args: any[]) => any>>>
+        ): Promise<boolean> {
+        let cancelled = false;
+
+        for (const middleware of this.middlewares) {
+            const fn = middleware[method];
+            if (!fn) continue;
+
+            try {
+                if (await (fn as (...args: any[]) => Promise<boolean> | boolean)(...values)) {
+                    cancelled = true;
+                }
+            } catch (e) {
+                console.warn(`Middleware ${String(method)} threw an error:`, e);
+            }
+        }
+
+        return cancelled;
+    }
 }
 
 /**

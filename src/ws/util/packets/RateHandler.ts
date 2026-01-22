@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-import { CloseCodes } from "../../Connection";
+import { CloseCodes, Connection } from "../../Connection";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
 import { PacketHolder } from "./PacketHolder";
 
 /** @internal */
-export class RateHandler {
+export class RateHandler<T extends SonicWSConnection> {
 
     private rates: Record<string, number> = {};
     private limits: Record<string, number> = {};
 
     private setInterval: (call: () => void, time: number) => void;
-    private socket: any;
+    private socket: T['socket'];
 
-    constructor(host: SonicWSConnection) {
+    constructor(host: T) {
         // shared values
         this.setInterval = host.setInterval;
         this.socket = host.socket;

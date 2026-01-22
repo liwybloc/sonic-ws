@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-import { fromShort, SHORT_BITS } from "./packets/CompressionUtil";
-import { convertCharCodes, convertCodePoints } from "./StringUtil";
-
 export function splitArray(arr: any, x: number): any {
     const result: any[] = [];
     for (let i = 0; i < arr.length; i += x) 
@@ -32,14 +29,6 @@ export function toPacketBuffer(code: number, data: Uint8Array): Uint8Array {
 }
 export function splitBuffer(arr: Uint8Array, x: number): number[][] {
     return splitArray(Array.from(arr), x) as number[][];
-}
-
-export function as8String(data: Uint8Array): string {
-    return convertCharCodes(Array.from(data));
-}
-export function as16String(data: Uint8Array): string {
-    const codePoints = splitBuffer(data, 2).map((short: number[]) => fromShort(short as SHORT_BITS));
-    return convertCodePoints(codePoints);
 }
 
 export function stringifyBuffer(data: Uint8Array): string {

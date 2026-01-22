@@ -20,21 +20,13 @@ import { listenPacket, processPacket } from "../../util/packets/PacketUtils";
 import { SERVER_SUFFIX, VERSION } from "../../../version";
 import { Packet } from "../../packets/Packets";
 import { BatchHelper } from "../../util/packets/BatchHelper";
-import { as8String, toPacketBuffer } from "../../util/BufferUtil";
+import { toPacketBuffer } from "../../util/BufferUtil";
 import { Connection } from "../../Connection";
-import { AsyncPQ, ConnectionMiddleware, ClientPQ, PacketQueue, SendQueue, FuncKeys } from "../../PacketProcessor";
+import { AsyncPQ, ClientPQ, PacketQueue, SendQueue } from "../../PacketProcessor";
+import { as8String } from "../../util/StringUtil";
 
-export abstract class SonicWSCore implements Connection {
-
-    /** Raw 'ws' library connection / webjs WebSocket class */
-    public socket: WebSocket;
-
-    protected listeners: {
-        message: Array<(data: Uint8Array) => void>,
-        send: Array<(data: Uint8Array) => void>,
-        close: Array<(event: CloseEvent) => void>,
-        event: { [key: number]: Array<(...data: any[]) => void> }
-    };
+export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint8Array<ArrayBufferLike>) => void; close: (c: number, d: string | undefined) => void; }, K>
+            extends Connection<T, K> {
 
     protected preListen: { [key: string]: Array<(data: any[]) => void> } | null;
     clientPackets: PacketHolder = new PacketHolder();
@@ -43,40 +35,27 @@ export abstract class SonicWSCore implements Connection {
     private pastKeys: boolean = false;
     private readyListeners: Array<() => void> | null = [];
 
-    private batcher: BatchHelper;
-
-    private bufferHandler: (val: MessageEvent) => Promise<Uint8Array>;
-
-    public id: number = -1;
+    private bufferHandler: (val: K) => Promise<Uint8Array>;
 
     _timers: Record<number, [number, (closed: boolean) => void, boolean]> = {};
 
     private asyncData: Record<number, AsyncPQ<ClientPQ>> = {};
     private asyncMap: Record<number, boolean> = {};
 
-    constructor(ws: WebSocket, bufferHandler: (val: MessageEvent) => Promise<Uint8Array>) {
-        this.socket = ws;
-        this.listeners = {
-            message: [],
-            send: [],
-            close: [],
-            event: {},
-        };
-        this.preListen = {};
+    constructor(ws: T, bufferHandler: (val: K) => Promise<Uint8Array>, on: Function, off: Function) {
+        super(ws, -1, "LocalSocket", on, off);
 
-        this.batcher = new BatchHelper();
+        this.socket = ws;
+        this.preListen = {};
 
         this.invalidPacket = this.invalidPacket.bind(this);
         this.serverKeyHandler = this.serverKeyHandler.bind(this);
         this.messageHandler = this.messageHandler.bind(this);
 
-        this.socket.addEventListener('message', this.serverKeyHandler);
+        this._on('message', this.serverKeyHandler);
 
-        this.socket.addEventListener('open', () => this.callMiddleware('onStatusChange', WebSocket.OPEN));
-
-        this.socket.addEventListener('close', event => {
+        this._on('close', () => {
             this.callMiddleware('onStatusChange', WebSocket.CLOSED);
-            this.listeners.close.forEach(listener => listener(event));
             for(const [id, callback, shouldCall] of Object.values(this._timers)) {
                 this.clearTimeout(id);
                 if(shouldCall) callback(true);
@@ -93,21 +72,21 @@ export abstract class SonicWSCore implements Connection {
     }
 
     private reading: boolean = false;
-    private readQueue: MessageEvent[] = [];
-    private async serverKeyHandler(event: MessageEvent) {
+    private readQueue: K[] = [];
+    private async serverKeyHandler(event: K) {
         if(this.reading) return this.readQueue.push(event);
 
         this.reading = true;
         const cdata: Uint8Array = await this.bufferHandler(event);
 
         if(cdata.length < 3 || as8String(cdata.slice(0, 3)) != SERVER_SUFFIX) {
-            this.socket.close(1000);
+            this.close(1000);
             throw new Error("The server requested is not a Sonic WS server.");
         }
 
         const version = cdata[3];
         if(version != VERSION) {
-            this.socket.close(1000);
+            this.close(1000);
             throw new Error(`Version mismatch: ${version > VERSION ? "client" : "server"} is outdated (server: ${version}, client: ${VERSION})`);              
         }
 
@@ -145,8 +124,8 @@ export abstract class SonicWSCore implements Connection {
         this.readyListeners!.forEach(l => l());
         this.readyListeners = null; // clear
 
-        this.socket.removeEventListener('message', this.serverKeyHandler);
-        this.socket.addEventListener('message', this.messageHandler);
+        this._off('message', this.serverKeyHandler);
+        this._on('message', this.messageHandler);
 
         this.readQueue.forEach(e => this.messageHandler(e));
         this.readQueue = [];
@@ -160,10 +139,8 @@ export abstract class SonicWSCore implements Connection {
     private listenLock: boolean = false;
     private packetQueue: PacketQueue<ClientPQ> = [];
     
-    public async listenPacket(data: string | [any[], boolean], code: number, packetQueue: PacketQueue<ClientPQ>, isAsync: boolean, asyncData: AsyncPQ<ClientPQ>): Promise<void> {
-        const tag: string = this.serverPackets.getTag(code)!;
-
-        const listeners = this.listeners.event[code];
+    public async listenPacket(data: string | [any[], boolean], tag: string, packetQueue: PacketQueue<ClientPQ>, isAsync: boolean, asyncData: AsyncPQ<ClientPQ>): Promise<void> {
+        const listeners = this.listeners[tag];
         if (!listeners) return console.warn("Warn: No listener for packet " + tag);
 
         await this.enqueuePacket(data, listeners, packetQueue, isAsync, asyncData);
@@ -200,41 +177,6 @@ export abstract class SonicWSCore implements Connection {
         }
     }
 
-    private middlewares: ConnectionMiddleware[] = [];
-
-    addMiddleware(middleware: ConnectionMiddleware): void {
-        this.middlewares.push(middleware);
-
-        const m: any = middleware;
-        try {
-            if (typeof m.init === 'function') m.init(this);
-        } catch (e) {
-            console.warn('Middleware init threw an error:', e);
-        }
-    }
-
-    async callMiddleware<K extends FuncKeys<ConnectionMiddleware> & keyof ConnectionMiddleware>(
-                method: K,
-                ...values: Parameters<NonNullable<Extract<ConnectionMiddleware[K], (...args: any[]) => any>>>
-            ): Promise<boolean> {
-        let cancelled = false;
-
-        for (const middleware of this.middlewares) {
-            const fn = middleware[method];
-            if (!fn) continue;
-
-            try {
-                if (await (fn as (...args: any[]) => Promise<boolean> | boolean)(...values)) {
-                    cancelled = true;
-                }
-            } catch (e) {
-                console.warn(`Middleware ${String(method)} threw an error:`, e);
-            }
-        }
-
-        return cancelled;
-    }
-
     private async dataHandler(data: Uint8Array): Promise<void> {
         const key = data[0];
         const value = data.slice(1);
@@ -262,54 +204,43 @@ export abstract class SonicWSCore implements Connection {
         if (isAsync) asyncData![0] = true;
         else this.listenLock = true;
 
-        const packet = this.serverPackets.getPacket(this.serverPackets.getTag(key)!);
+        const tag = this.serverPackets.getTag(key)!;
+        const packet = this.serverPackets.getPacket(tag);
 
         if(await this.callMiddleware('onReceive_pre', packet.tag, data, data.length)) return;
 
         if(packet.rereference && value.length == 0) {
             if(packet.lastReceived[0] === undefined) return this.invalidPacket("No previous value to rereference");
-            this.listenPacket(packet.lastReceived[0] as any, key, packetQueue, isAsync, asyncData!);
+            this.listenPacket(packet.lastReceived[0] as any, tag, packetQueue, isAsync, asyncData!);
             return;
         }
         
         if(packet.dataBatching == 0) {
             const res = packet.lastReceived[0] = await packet.listen(value, null);
-            this.listenPacket(res, key, packetQueue, isAsync, asyncData!);
+            this.listenPacket(res, tag, packetQueue, isAsync, asyncData!);
             return;
         }
 
         const batchData = await BatchHelper.unravelBatch(packet, value, null);
         if(typeof batchData == 'string') return this.invalidPacket(batchData);
 
-        batchData.forEach(data => this.listenPacket(data, key, packetQueue, isAsync, asyncData!));
+        batchData.forEach(data => this.listenPacket(data, tag, packetQueue, isAsync, asyncData!));
     }
 
-    private async messageHandler(event: MessageEvent): Promise<void> {
+    private async messageHandler(event: K): Promise<void> {
         const data = await this.bufferHandler(event);
-
-        this.listeners.message.forEach(listener => listener(data));
         if (data.length < 1) return;
 
         await this.dataHandler(data);
     }
 
-    protected listen(key: string, listener: (data: any[]) => void): void {
-        const skey = this.serverPackets.getKey(key);
-        if (skey == null) {
-            console.log("Key is not available on server: " + key);
+    protected listen(tag: string, listener: (data: any[]) => void): void {
+        if (!this.serverPackets.hasTag(tag)) {
+            console.log("Tag is not available on server: " + tag);
             return;
         }
 
-        if (!this.listeners.event[skey]) this.listeners.event[skey] = [];
-        this.listeners.event[skey].push(listener);
-    }
-
-    /**
-     * Listens for all messages rawly
-     * @param listener Callback for when data is received
-     */
-    public raw_onmessage(listener: (data: Uint8Array) => void): void {
-        this.listeners.message.push(listener);
+        (this.listeners[tag] ??= []).push(listener);
     }
 
     /**
@@ -352,7 +283,7 @@ export abstract class SonicWSCore implements Connection {
      * @param listener Callback on close with close event
      */
     public on_close(listener: (event: CloseEvent) => void): void {
-        this.listeners.close.push(listener);
+        this._on("close", listener);
     }
 
     /**
@@ -367,40 +298,6 @@ export abstract class SonicWSCore implements Connection {
             return;
         }
         this.listen(tag, listener);
-    }
-
-    /* JSDocs in Connection.ts class */
-
-    public raw_send(data: Uint8Array): void {
-        this.listeners.send.forEach(d => d(data));
-        this.socket.send(data);
-    }
-
-    public setTimeout(call: () => void, time: number, callOnClose: boolean = false): number {
-        const timeout = setTimeout(() => {
-            call();
-            this.clearTimeout(timeout);
-        }, time) as unknown as number;
-        this._timers[timeout] = [timeout, call, callOnClose];
-        return timeout;
-    }
-
-    public setInterval(call: () => void, time: number, callOnClose: boolean = false): number {
-        const interval = setInterval(call, time) as unknown as number;
-        this._timers[interval] = [interval, call, callOnClose];
-        return interval;
-    }
-
-    public clearTimeout(id: number): void {
-        clearTimeout(id);
-        delete this._timers[id];
-    }
-    public clearInterval(id: number): void {
-        this.clearTimeout(id);
-    }
-
-    public close(code?: number, reason?: string): void {
-        this.socket.close(code, reason);
     }
 
 }

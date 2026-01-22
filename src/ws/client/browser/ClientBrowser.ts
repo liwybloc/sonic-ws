@@ -22,7 +22,7 @@ import { SonicWSCore } from "../core/ClientCore";
 // Defines SonicWS class in the browser and gives delegation of functions
 // types are here so you can do /** @type */
 
-export class SonicWS extends SonicWSCore {
+export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
 
     private antiTamperCall: () => void = () => { };
 
@@ -34,7 +34,7 @@ export class SonicWS extends SonicWSCore {
      */
     constructor(url: string, protocols?: string | string[], antiTamper: boolean = false) {
         const ws = new WebSocket(url, protocols);
-        super(ws, async (val: MessageEvent) => new Uint8Array(await (val.data as Blob).arrayBuffer()));
+        super(ws, async (val: MessageEvent) => new Uint8Array(await (val.data as Blob).arrayBuffer()), ws.addEventListener.bind(ws), ws.removeEventListener.bind(ws));
 
         if (antiTamper) {
             const thiz = this;

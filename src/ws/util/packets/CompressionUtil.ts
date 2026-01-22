@@ -39,24 +39,16 @@ export const SHORT_OVERFLOW = MAX_SHORT + 1;
 export const MAX_INT_D = Number.MAX_SAFE_INTEGER;
 
 // for varint to overflow; is 128
-export const UVARINT_OVERFLOW = NEGATIVE_BYTE + 1;
-// flag for chaining
-export const VARINT_CHAIN_FLAG = 0x80;
-// splitting usable range in half for signed
-export const NEGATIVE_VARINT = Math.floor(NEGATIVE_BYTE / 2);
-// for varint to overflow with negative; is 64
-export const VARINT_OVERFLOW = NEGATIVE_VARINT + 1;
-// max continues
-export const MAX_VSECT_SIZE = 7;
-// max value from this, subtract one for overflow
-export const MAX_UVARINT = (UVARINT_OVERFLOW ** MAX_VSECT_SIZE) - 1;
-// max for negatives
-export const MAX_VARINT = Math.floor(MAX_UVARINT / 2);
+export const UVARINT_OVERFLOW = NEGATIVE_BYTE + 1,
+             VARINT_CHAIN_FLAG = 0x80,                               // flag for chaining
+             NEGATIVE_VARINT = Math.floor(NEGATIVE_BYTE / 2),        // splitting usable range in half for signed
+             VARINT_OVERFLOW = NEGATIVE_VARINT + 1,                  // for varint to overflow with negative; is 64
+             MAX_VSECT_SIZE = 7,                                     // max continues
+             MAX_UVARINT = (UVARINT_OVERFLOW ** MAX_VSECT_SIZE) - 1, // max value from this, subtract one for overflow
+             MAX_VARINT = Math.floor(MAX_UVARINT / 2);               // max for negatives
 
 // constants
-export const ONE_EIGHT = 1/8;
-export const ONE_FOURTH = 1/4;
-
+export const ONE_EIGHT = 1/8, ONE_FOURTH = 1/4;
 export const EMPTY_UINT8 = new Uint8Array([]);
 
 // precompute powers
@@ -113,9 +105,8 @@ export function sectorSize(number: number, pow: any) {
 export function convertBase(number: number, chars: number, neg: number, overflow: number, overflowFunc: any): number[] {
     // no nan/infinity
     if(!isFinite(number)) throw new Error("Cannot use a non-finite number: " + number);
-    // zero is just null
+    // zero
     if(number == 0) return Array.from({length: chars}).map(() => 0);
-    // any 1 char will just be INT_C anyway
     if(chars == 1) return [number];
 
     // store the sign and work with the absolute value

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { Connection } from "../../Connection";
+import { IConnection } from "../../Connection";
 import { Packet } from "../../packets/Packets";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
 import { toPacketBuffer } from "../BufferUtil";
@@ -28,9 +28,9 @@ export class BatchHelper {
     private batchTimeouts: Record<number, number> = {};
     private batchedData: Record<number, number[]> = {};
 
-    private conn!: Connection;
+    private conn!: IConnection<any>;
 
-    public registerSendPackets(packetHolder: PacketHolder, conn: Connection) {
+    public registerSendPackets(packetHolder: PacketHolder, conn: IConnection<any>) {
         this.conn = conn;
         packetHolder.getTags().forEach(tag => {
             const packet = packetHolder.getPacket(tag);

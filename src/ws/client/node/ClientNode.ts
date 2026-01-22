@@ -18,7 +18,7 @@ import WS from 'ws';
 import { SonicWSCore } from "../core/ClientCore";
 
 /** Class to connect to a SonicWS server */
-export class SonicWS extends SonicWSCore {
+export class SonicWS extends SonicWSCore<WS.WebSocket, Buffer> {
     /**
      * Creates a connection to the url
      * @param url The url to connect to
@@ -26,6 +26,6 @@ export class SonicWS extends SonicWSCore {
      */
     constructor(url: string, options?: WS.ClientOptions) {
         const ws = new WS.WebSocket(url, options);
-        super(ws as unknown as WebSocket, (val: MessageEvent) => Promise.resolve(new Uint8Array(val.data as Buffer)));
+        super(ws, (val: Buffer) => Promise.resolve(new Uint8Array(val)), ws.on.bind(ws), ws.removeEventListener.bind(ws));
     }
 }

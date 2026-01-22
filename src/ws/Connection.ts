@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-import { ConnectionMiddleware, MiddlewareHolder } from "./PacketProcessor";
+import { ConnectionMiddleware, FuncKeys, IMiddlewareHolder, MiddlewareHolder } from "./PacketProcessor";
+import { BatchHelper } from "./util/packets/BatchHelper";
 
 /**
  * Holds shared connection values. Lets helper functions work on client and server.
  * @internal
  */
-export interface Connection extends MiddlewareHolder<ConnectionMiddleware> {
+export interface IConnection<T> extends IMiddlewareHolder<ConnectionMiddleware> {
 
     /**
      * List of timers.
@@ -63,9 +64,129 @@ export interface Connection extends MiddlewareHolder<ConnectionMiddleware> {
     raw_send(data: Uint8Array): void;
 
     /**
+     * Listens for all messages rawly
+     * @param listener Callback for when data is received
+     */
+    raw_onmessage(listener: (data: T) => void): void;
+
+    /**
      * Closes the connection
      */
     close(code?: number, reason?: string): void;
+
+    /**
+     * Checks if the connection is closed
+     * @returns If it's closed or not
+     */
+    isClosed(): boolean;
+
+    /**
+     * Sets the name of this connection for the debug menu; good for setting e.g. usernames on games
+     */
+    setName(name: string): Promise<void>;
+
+    /**
+     * @returns Name of the socket, defaults to Socket [ID] or LocalSocket unless set with setName()
+     */
+    getName(): string;
+
+}
+
+export abstract class Connection<T extends {
+    readyState: number,
+    send: (u: Uint8Array) => void,
+    close: (c: number, d: string | undefined) => void,
+}, K> extends MiddlewareHolder<ConnectionMiddleware> implements IConnection<K> {
+
+    protected listeners: Record<string, Array<(...data: any[]) => void>>;
+
+    private name: string;
+    protected closed: boolean = false;
+    socket: T;
+    _timers: Record<number, [number, (closed: boolean) => void, boolean]> = {};
+
+    protected batcher: BatchHelper;
+
+    _on: Function;
+    _off: Function;
+
+    /** The index of the connection; unique for all connected, not unique after disconnection. */
+    public id: number;
+
+    constructor(socket: T, id: number, name: string, addListener: Function, removeListener: Function) {
+        super();
+        this.id = id;
+        this.listeners = {};
+
+        this.name = name;
+        this.socket = socket;
+
+        this.batcher = new BatchHelper();
+
+        this._on = addListener;
+        this._off = removeListener;
+        
+        this._on("close", () => {
+            this.callMiddleware('onStatusChange', WebSocket.CLOSED);
+            this.closed = true;
+            for(const [id, callback, shouldCall] of Object.values(this._timers)) {
+                this.clearTimeout(id);
+                if(shouldCall) callback(true);
+            }
+        });
+
+        this._on('open', () => this.callMiddleware('onStatusChange', WebSocket.OPEN));
+    }
+
+    public setTimeout(call: () => void, time: number, callOnClose: boolean = false): number {
+        const timeout = setTimeout(() => {
+            call();
+            this.clearTimeout(timeout);
+        }, time) as unknown as number;
+        this._timers[timeout] = [timeout, call, callOnClose];
+        return timeout;
+    }
+
+    public setInterval(call: () => void, time: number, callOnClose: boolean = false): number {
+        const interval = setInterval(call, time) as unknown as number;
+        this._timers[interval] = [interval, call, callOnClose];
+        return interval;
+    }
+
+    public clearTimeout(id: number): void {
+        clearTimeout(id);
+        delete this._timers[id];
+    }
+
+    public clearInterval(id: number): void {
+        this.clearTimeout(id);
+    }
+
+    public raw_send(data: Uint8Array): void {
+        this.socket.send(data);
+    }
+
+    public raw_onmessage(listener: (data: K) => void): void {
+        this._on("message", listener);
+    }
+
+    public close(code: number = 1000, reason?: string | Buffer): void {
+        this.closed = true;
+        this.socket.close(code, reason?.toString());
+    }
+
+    public isClosed(): boolean {
+        return this.closed || this.socket.readyState == WebSocket.CLOSED;
+    }
+
+    public async setName(name: string): Promise<void> {
+        if(await this.callMiddleware("onNameChange", name)) return;
+        this.name = name;
+    }
+
+    public getName(): string {
+        return this.name;
+    }
 
 }
 

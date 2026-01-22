@@ -15,18 +15,16 @@
  */
 
 import * as WS from 'ws';
-import http from 'http';
-import open from 'open';
 import { SonicWSConnection } from "./SonicWSConnection";
 import { PacketHolder } from "../util/packets/PacketHolder";
 import { compressGzip, convertVarInt, MAX_BYTE } from "../util/packets/CompressionUtil";
 import { SERVER_SUFFIX_NUMS, VERSION } from "../../version";
-import { CreateObjPacket, CreatePacket, processPacket } from "../util/packets/PacketUtils";
+import { processPacket } from "../util/packets/PacketUtils";
 import { Packet } from "../packets/Packets";
 import { PacketType } from "../packets/PacketType";
-import { BCInfo, ConnectionMiddleware, FuncKeys, MiddlewareHolder, SendQueue, ServerMiddleware } from "../PacketProcessor";
+import { MiddlewareHolder, SendQueue, ServerMiddleware } from "../PacketProcessor";
 import { setHashFunc } from "../util/packets/HashUtil";
-import { CloseCodes, Connection, getClosureCause } from "../Connection";
+import { CloseCodes } from "../Connection";
 import { DebugServer } from "../debug/DebugServer";
 
 export type SonicServerSettings = {
@@ -51,7 +49,7 @@ export type SonicServerOptions = {
 
 export type PacketTypings = readonly Packet<PacketType | readonly PacketType[]>[];
 
-export class SonicWSServer implements MiddlewareHolder<ServerMiddleware> {
+export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
     private wss: WS.WebSocketServer;
 
     private availableIds: number[] = [];
@@ -81,6 +79,8 @@ export class SonicWSServer implements MiddlewareHolder<ServerMiddleware> {
      * @param settings Sonic Server Options such as schema data for client and server packets, alongside websocket options
      */ 
     constructor(settings: SonicServerOptions) {
+        super();
+
         const { clientPackets = [], serverPackets = [], websocketOptions = {} } = settings;
  
         this.wss = new WS.WebSocketServer(websocketOptions);
@@ -139,41 +139,6 @@ export class SonicWSServer implements MiddlewareHolder<ServerMiddleware> {
                     console.warn(`Could not check SonicWS version.`);
                 });
         }
-    }
-
-    private middlewares: ServerMiddleware[] = [];
-
-    addMiddleware(middleware: ServerMiddleware): void {
-        this.middlewares.push(middleware);
-
-        const m: any = middleware;
-        try {
-            if (typeof m.init === 'function') m.init(this);
-        } catch (e) {
-            console.warn('Middleware init threw an error:', e);
-        }
-    }
-
-    async callMiddleware<K extends FuncKeys<ServerMiddleware> & keyof ServerMiddleware>(
-            method: K,
-            ...values: Parameters<NonNullable<Extract<ServerMiddleware[K], (...args: any[]) => any>>>
-        ): Promise<boolean> {
-        let cancelled = false;
-
-        for (const middleware of this.middlewares) {
-            const fn = middleware[method];
-            if (!fn) continue;
-
-            try {
-                if (await (fn as (...args: any[]) => Promise<boolean> | boolean)(...values)) {
-                    cancelled = true;
-                }
-            } catch (e) {
-                console.warn(`Middleware ${String(method)} threw an error:`, e);
-            }
-        }
-
-        return cancelled;
     }
 
     private generateSocketID(): number {

@@ -18,12 +18,10 @@ import { DefineEnum } from "../util/enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../util/enums/EnumType";
 import { SonicWSConnection } from "../server/SonicWSConnection";
 import { compressBools, convertVarInt, decompressBools, readVarInt } from "../util/packets/CompressionUtil";
-import { ProcessedPacket, UnFlattenData } from "../util/packets/PacketUtils";
+import { UnFlattenData } from "../util/packets/PacketUtils";
 import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, createReceiveProcessor, createSendProcessor, createValidator, PacketReceiveProcessor, PacketSendProcessor, PacketTypeValidator } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
-import { as8String } from "../util/BufferUtil";
-import { processCharCodes } from "../util/StringUtil";
-import { Connection } from "../Connection";
+import { processCharCodes, as8String } from "../util/StringUtil";
 
 export type ValidatorFunction = ((socket: SonicWSConnection, values: any) => boolean) | null;
 

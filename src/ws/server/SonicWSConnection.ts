@@ -22,20 +22,15 @@ import { Packet } from "../packets/Packets";
 import { RateHandler } from "../util/packets/RateHandler";
 import { stringifyBuffer, toPacketBuffer } from "../util/BufferUtil";
 import { CloseCodes, Connection } from "../Connection";
-import { AsyncPQ, ConnectionMiddleware, FuncKeys, PacketQueue, SendQueue, ServerPQ } from "../PacketProcessor";
+import { AsyncPQ, PacketQueue, SendQueue, ServerPQ } from "../PacketProcessor";
+
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
 
-export class SonicWSConnection implements Connection {
-
-    /** Raw 'ws' library socket */
-    public socket: WS.WebSocket;
+export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
 
     private host: SonicWSServer;
 
-    private listeners: Record<string, Array<(...data: any[]) => void>>;
-
     private print: boolean = false;
-    private name: string;
     
     private handshakePacket: string | null;
     private handshakeLambda!: (data: WS.MessageEvent) => void;
@@ -48,36 +43,26 @@ export class SonicWSConnection implements Connection {
         this.messageHandler(parsed);
     }
 
-    private batcher: BatchHelper;
-    private rater: RateHandler;
+    private rater: RateHandler<this>;
 
     private enabledPackets: Record<string, boolean> = {};
 
     /** If the packet handshake has been completed; `wss.requireHandshake(packet)` */
     public handshakeComplete: boolean = false;
-    
-    /** The index of the connection; unique for all connected, recycles old disconnected ids. Should be safe for INTS_C unless you have more than 27,647 connected at once. */
-    public id: number;
-    _timers: Record<number, [number, (closed: boolean) => void, boolean]> = {};
 
     private asyncMap: Record<string, boolean> = {};
     private asyncData: Record<string, [boolean, PacketQueue<ServerPQ>]> = {};
 
-    private closed: boolean = false;
-
     constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number) {
-        this.socket = socket;
-        this.host = host;
+        super(socket, id, "Socket " + id, socket.on, socket.removeEventListener);
 
-        this.id = id;
-        this.name = "Socket " + id;
+        this.host = host;
         
         this.handshakePacket = handshakePacket;
 
-        this.listeners = {};
-        for (const tag of host.clientPackets.getTags()) {
+        for (const pack of host.clientPackets.getPackets()) {
+            const tag = pack.tag;
             this.listeners[tag] = [];
-            const pack = host.clientPackets.getPacket(tag);
             pack.lastReceived[this.id] = undefined;
             this.enabledPackets[tag] = pack.defaultEnabled;
             this.asyncMap[tag] = pack.async;
@@ -86,7 +71,6 @@ export class SonicWSConnection implements Connection {
 
         this.setInterval = this.setInterval.bind(this);
 
-        this.batcher = new BatchHelper();
         this.batcher.registerSendPackets(this.host.serverPackets, this);
         this.invalidPacket = this.invalidPacket.bind(this);
 
@@ -107,15 +91,7 @@ export class SonicWSConnection implements Connection {
             this.socket.addEventListener('message', this.handshakeLambda);
         }
 
-        this.socket.on('open', () => this.callMiddleware('onStatusChange', WebSocket.OPEN));
-
         this.socket.on('close', () => {
-            this.callMiddleware('onStatusChange', WebSocket.CLOSED);
-            this.closed = true;
-            for(const [id, callback, shouldCall] of Object.values(this._timers)) {
-                this.clearTimeout(id);
-                if(shouldCall) callback(true);
-            }
             for (const packet of host.clientPackets.getPackets()) {
                 delete packet.lastReceived[this.id];
             }
@@ -259,41 +235,6 @@ export class SonicWSConnection implements Connection {
         }
     }
 
-    private middlewares: ConnectionMiddleware[] = [];
-
-    addMiddleware(middleware: ConnectionMiddleware): void {
-        this.middlewares.push(middleware);
-
-        const m: any = middleware;
-        try {
-            if (typeof m.init === 'function') m.init(this);
-        } catch (e) {
-            console.warn('Middleware init threw an error:', e);
-        }
-    }
-
-    async callMiddleware<K extends FuncKeys<ConnectionMiddleware> & keyof ConnectionMiddleware>(
-            method: K,
-            ...values: Parameters<NonNullable<Extract<ConnectionMiddleware[K], (...args: any[]) => any>>>
-        ): Promise<boolean> {
-        let cancelled = false;
-
-        for (const middleware of this.middlewares) {
-            const fn = middleware[method];
-            if (!fn) continue;
-
-            try {
-                if (await (fn as (...args: any[]) => Promise<boolean> | boolean)(...values)) {
-                    cancelled = true;
-                }
-            } catch (e) {
-                console.warn(`Middleware ${String(method)} threw an error:`, e);
-            }
-        }
-
-        return cancelled;
-    }
-
     /**
      * Enables a packet for the client.
      * @param tag The tag of the packet
@@ -307,14 +248,6 @@ export class SonicWSConnection implements Connection {
      */
     public disablePacket(tag: string) {
         this.enabledPackets[tag] = false;
-    }
-
-    /**
-     * Checks if the connection is closed
-     * @returns If it's closed or not
-     */
-    public isClosed(): boolean {
-        return this.closed || this.socket.readyState == WS.CLOSED;
     }
 
     /**
@@ -397,36 +330,7 @@ export class SonicWSConnection implements Connection {
         if(this.print)
             console.log(`\x1b[32m⬆ \x1b[38;5;245m(${this.id},${data.byteLength})\x1b[0m`,
             (data.length > 0 && this.host.serverPackets.getTag(data[0])) || "<INVALID>", stringifyBuffer(data));
-        this.socket.send(data);
-    }
-
-    public close(code: number = 1000, reason?: string | Buffer): void {
-        this.closed = true;
-        this.socket.close(code, reason);
-    }
-
-    public setTimeout(call: () => void, time: number, callOnClose: boolean = false): number {
-        const timeout = setTimeout(() => {
-            call();
-            this.clearTimeout(timeout);
-        }, time) as unknown as number;
-        this._timers[timeout] = [timeout, call, callOnClose];
-        return timeout;
-    }
-
-    public setInterval(call: () => void, time: number, callOnClose: boolean = false): number {
-        const interval = setInterval(call, time) as unknown as number;
-        this._timers[interval] = [interval, call, callOnClose];
-        return interval;
-    }
-
-    public clearTimeout(id: number): void {
-        clearTimeout(id);
-        delete this._timers[id];
-    }
-
-    public clearInterval(id: number): void {
-        this.clearTimeout(id);
+        super.raw_send(data);
     }
 
     /**
@@ -436,21 +340,6 @@ export class SonicWSConnection implements Connection {
      */
     public tag(tag: string, replace: boolean = true) {
         this.host.tag(this, tag, replace);
-    }
-    
-    /**
-     * Sets the name of this connection for the debug menu; good for setting e.g. usernames on games
-     */
-    public async setName(name: string): Promise<void> {
-        if(await this.callMiddleware("onNameChange", name)) return;
-        this.name = name;
-    }
-
-    /**
-     * @returns Name of the socket, defaults to Socket [ID] unless set with setName()
-     */
-    public getName(): string {
-        return this.name;
     }
 
 }
