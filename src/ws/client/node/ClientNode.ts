@@ -26,6 +26,6 @@ export class SonicWS extends SonicWSCore<WS.WebSocket, Buffer> {
      */
     constructor(url: string, options?: WS.ClientOptions) {
         const ws = new WS.WebSocket(url, options);
-        super(ws, (val: Buffer) => Promise.resolve(new Uint8Array(val)), ws.on.bind(ws), ws.removeEventListener.bind(ws));
+        super(ws, (val: Buffer) => Promise.resolve(new Uint8Array(val)), ws.addEventListener.bind(ws), ws.removeEventListener.bind(ws));
     }
 }

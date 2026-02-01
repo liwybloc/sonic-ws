@@ -339,7 +339,7 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
      * @param port Port of the server/http, defaults to 0 which finds an open port
      * @param password Toggles the requirement of a password to access the server. Defaults to empty, which doesn't ask for a password.
      */
-    public OpenDebug(data: {port?: number, password?: string}) {
+    public OpenDebug(data: {port?: number, password?: string} = {}) {
         if (this.debugServer != null) throw new Error("Attempted to open a debug server when one has already been opened.");
         this.debugServer = new DebugServer(this, data);
     }

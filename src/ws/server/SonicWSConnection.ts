@@ -54,7 +54,7 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
     private asyncData: Record<string, [boolean, PacketQueue<ServerPQ>]> = {};
 
     constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number) {
-        super(socket, id, "Socket " + id, socket.on, socket.removeEventListener);
+        super(socket, id, "Socket " + id, socket.addEventListener.bind(socket), socket.removeEventListener.bind(socket));
 
         this.host = host;
         
