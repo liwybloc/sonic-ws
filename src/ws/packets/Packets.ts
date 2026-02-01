@@ -18,7 +18,7 @@ import { DefineEnum } from "../util/enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../util/enums/EnumType";
 import { SonicWSConnection } from "../server/SonicWSConnection";
 import { compressBools, convertVarInt, decompressBools, readVarInt } from "../util/packets/CompressionUtil";
-import { UnFlattenData } from "../util/packets/PacketUtils";
+import { ArguableType, UnFlattenData } from "../util/packets/PacketUtils";
 import { createObjReceiveProcessor, createObjSendProcessor, createObjValidator, createReceiveProcessor, createSendProcessor, createValidator, PacketReceiveProcessor, PacketSendProcessor, PacketTypeValidator } from "./PacketProcessors";
 import { PacketType } from "./PacketType";
 import { processCharCodes, as8String } from "../util/StringUtil";
@@ -26,7 +26,7 @@ import { processCharCodes, as8String } from "../util/StringUtil";
 export type ValidatorFunction = ((socket: SonicWSConnection, values: any) => boolean) | null;
 
 export type ConvertType<T> = T extends EnumPackage ? PacketType.ENUMS : T;
-type ImpactType<T extends (PacketType | readonly PacketType[]), K> = T extends PacketType[] ? K[] : K;
+type ImpactType<T extends (PacketType | readonly PacketType[]), K> = T extends readonly PacketType[] ? K[] : K;
 
 export class Packet<T extends (PacketType | readonly PacketType[])> {
     public defaultEnabled: boolean;
@@ -36,11 +36,11 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public readonly maxSize: number;
     public readonly minSize: number;
 
-    public readonly type: T;
+    public readonly type: ImpactType<T, PacketType>;
     public readonly enumData: EnumPackage[];
 
-    public readonly dataMax: ImpactType<T, number>;
-    public readonly dataMin: ImpactType<T, number>;
+    public dataMax: ImpactType<T, number>;
+    public dataMin: ImpactType<T, number>;
 
     public readonly dataBatching: number;
     public readonly maxBatchSize: number;
@@ -84,29 +84,31 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         this.gzipCompression = schema.gzipCompression;
 
         this.object = schema.object;
-        if(schema.testObject()) {
-            this.type    = schema.type as unknown as T;
-            this.dataMax = schema.dataMax;
-            this.dataMin = schema.dataMin;
-            this.maxSize = (this.type as PacketType[]).length;
-            this.minSize = (this.type as PacketType[]).length;
 
-            const PT = this as unknown as Packet<PacketType[]>;
-            this.receiveProcessor = createObjReceiveProcessor(PT);
-            this.sendProcessor    = createObjSendProcessor(PT);
-            this.validator        = createObjValidator(PT);
-        } else {
-            this.type    = schema.type as unknown as T;
-            this.dataMax = schema.dataMax;
-            this.dataMin = schema.dataMin;
-            this.maxSize = this.dataMax as number;
-            this.minSize = this.dataMin as number;
+        this.type    = schema.type;
+        this.dataMax = schema.dataMax;
+        this.dataMin = schema.dataMin;
 
-            const PT = this.type as PacketType;
-            this.receiveProcessor = createReceiveProcessor(PT, this.enumData, this.dataMax as number);
-            this.sendProcessor    = createSendProcessor(PT, this.gzipCompression, this.dataBatching != 0);
-            this.validator        = createValidator(PT, this.dataMax as number, this.dataMin as number, this as Packet<PacketType>, this.gzipCompression);
-        }
+        if(schema.testObject(this)) {
+            this.maxSize = this.minSize = this.type.length;
+            
+            for(let i=0;i<this.type.length;i++)
+                if(this.type[i] == PacketType.NONE) 
+                    this.dataMax[i] = this.dataMin[i] = 0;
+
+            this.receiveProcessor = createObjReceiveProcessor(this);
+            this.sendProcessor    = createObjSendProcessor(this);
+            this.validator        = createObjValidator(this);
+        } else if (((_: any): _ is Packet<PacketType> => true)(this)) {
+            this.maxSize = this.dataMax;
+            this.minSize = this.dataMin;
+
+            if(this.type == PacketType.NONE) (this.dataMax as any) = (this.dataMin as any) = 0;
+
+            this.receiveProcessor = createReceiveProcessor(this.type, this.enumData, this.dataMax);
+            this.sendProcessor    = createSendProcessor(this.type, this.gzipCompression, this.dataBatching != 0);
+            this.validator        = createValidator(this.type, this.dataMax, this.dataMin, this, this.gzipCompression);
+        } else throw'';
         
         this.processReceive  = (data: Uint8Array, validationResult: any) => this.receiveProcessor(data, validationResult, 0);
         this.processSend     = async (data: any[]) => new Uint8Array(await this.sendProcessor(tag, data));
@@ -237,10 +239,10 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
 
             // convert any enums into their indexed form for best bandwidth
             let index = 0;
-            const finalTypes: (PacketType | EnumPackage)[] = types.map(x => x == PacketType.ENUMS ? enums[index++] : x); // convert enums to their enum packages
+            const finalTypes: ArguableType[] = types.map(x => x == PacketType.ENUMS ? enums[index++] : x); // convert enums to their enum packages
 
             // make schema
-            const schema = PacketSchema.object(finalTypes, dataMaxes, dataMins, dontSpread, autoFlatten, dataBatching, -1, -1, async, gzipCompression);
+            const schema = new PacketSchema<readonly PacketType[]>(true, finalTypes, async, dataMins, dataMaxes, -1, dontSpread, autoFlatten, false, dataBatching, -1, gzipCompression);
             return [
                 new Packet(tag, schema, null, false, client),
                 // +1 to go next
@@ -264,8 +266,10 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         // do enum stuff
         const finalType = type == PacketType.ENUMS ? enums[0] : type; // convert enum to enum package
 
+    
         // make schema
-        const schema = PacketSchema.single(finalType, dataMax, dataMin, dontSpread, dataBatching, -1, -1, async, gzipCompression, rereference);
+        const schema = new PacketSchema<PacketType>(false, finalType, async, dataMin, dataMax, -1, dontSpread, false, rereference, dataBatching, -1, gzipCompression);
+        
         return [
             new Packet(tag, schema, null, false, client),
             (offset - beginningOffset),
@@ -286,17 +290,19 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     }
 }
 
+const convertType = (type: ArguableType, ed: EnumPackage[]): PacketType => (type instanceof EnumPackage ? (ed.push(type), PacketType.ENUMS) : type);
+
 export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
-    public type!: ImpactType<T, PacketType>;
-    public dataMax!: ImpactType<T, number>;
-    public dataMin!: ImpactType<T, number>;
-
-    public dataBatching: number = 0;
-    public maxBatchSize: number = 10;
-
-    public rateLimit: number = 0;
-
+    public type: ImpactType<T, PacketType>;
     public enumData: EnumPackage[] = [];
+
+    public dataMax: ImpactType<T, number>;
+    public dataMin: ImpactType<T, number>;
+
+    public dataBatching: number;
+    public maxBatchSize: number;
+
+    public rateLimit: number;
 
     public dontSpread: boolean = false;
     public autoFlatten: boolean = false;
@@ -307,70 +313,26 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
 
     public object: boolean;
 
-    constructor(object: boolean) {
+    constructor(object: boolean, type: ImpactType<T, ArguableType>, async: boolean, dataMin: ImpactType<T, number>, dataMax: ImpactType<T, number>, rateLimit: number,
+                dontSpread: boolean, autoFlatten: boolean, rereference: boolean, dataBatching: number, maxBatchSize: number, gzipCompression: boolean) {
+        // todo add rereference to objects
         this.object = object;
+        this.async = async;
+        this.dataMin = dataMin;
+        this.dataMax = dataMax;
+        this.rateLimit = rateLimit;
+        this.dontSpread = dontSpread;
+        this.autoFlatten = autoFlatten;
+        this.rereference = rereference;
+        this.dataBatching = dataBatching;
+        this.maxBatchSize = maxBatchSize;
+        this.gzipCompression = gzipCompression;
+
+        this.type = (object ? (type as ArguableType[]).map(t => convertType(t, this.enumData)) : convertType((type as ArguableType), this.enumData)) as ImpactType<T, PacketType>;
     }
 
-    testObject(): this is PacketSchema<PacketType[]> {
+    testObject(packet: Packet<PacketType | readonly PacketType[]>): packet is Packet<PacketType[]> {
         return this.object;
-    }
-
-    public static single<T extends PacketType | EnumPackage>(type: T, dataMax: number, dataMin: number, dontSpread: boolean, dataBatching: number,
-                         maxBatchSize: number, rateLimit: number, async: boolean, gzipCompression: boolean, rereference: boolean): PacketSchema<ConvertType<T>> {
-        const schema = new PacketSchema(false);
-
-        if(typeof type == 'number') {
-            schema.type = type as PacketType;
-            if(type == PacketType.NONE) dataMax = dataMin = 0; // remove garbage data issues
-        } else {
-            schema.type = PacketType.ENUMS;
-            schema.enumData = [type as EnumPackage];
-        }
-
-        schema.async = async;
-        schema.dataMin = dataMin;
-        schema.dataMax = dataMax;
-        schema.rateLimit = rateLimit;
-        schema.dontSpread = dontSpread;
-        schema.rereference = rereference;
-        schema.dataBatching = dataBatching;
-        schema.maxBatchSize = maxBatchSize;
-        schema.gzipCompression = gzipCompression;
-
-        return schema;
-    }
-
-    public static object<T extends readonly (PacketType | EnumPackage)[]>(
-        types: T, dataMaxes: number[], dataMins: number[], dontSpread: boolean,
-        autoFlatten: boolean, dataBatching: number, maxBatchSize: number, rateLimit: number,
-        async: boolean, gzipCompression: boolean
-    ): PacketSchema<ConvertType<T[number]>[]> {
-        if(types.length != dataMaxes.length || types.length != dataMins.length)
-            throw new Error("There is an inbalance between the amount of types, data maxes, and data mins!");
-
-        const schema = new PacketSchema<PacketType[]>(true);
-
-        schema.type = [];
-        types.forEach(type => {
-            if(typeof type == 'number') {
-                schema.type.push(type as PacketType);
-            } else {
-                schema.type.push(PacketType.ENUMS);
-                schema.enumData.push(type as EnumPackage);
-            }
-        });
-
-        schema.async = async;
-        schema.dataMin = dataMins;
-        schema.dataMax = dataMaxes;
-        schema.rateLimit = rateLimit;
-        schema.dontSpread = dontSpread;
-        schema.autoFlatten = autoFlatten;
-        schema.dataBatching = dataBatching;
-        schema.maxBatchSize = maxBatchSize;
-        schema.gzipCompression = gzipCompression;
-
-        return schema;
     }
     
 }

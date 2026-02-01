@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-import { ConnectionMiddleware, FuncKeys, IMiddlewareHolder, MiddlewareHolder } from "./PacketProcessor";
+import { ConnectionMiddleware, IMiddlewareHolder, MiddlewareHolder } from "./PacketProcessor";
 import { BatchHelper } from "./util/packets/BatchHelper";
 
 /**
  * Holds shared connection values. Lets helper functions work on client and server.
- * @internal
  */
 export interface IConnection<T> extends IMiddlewareHolder<ConnectionMiddleware> {
 

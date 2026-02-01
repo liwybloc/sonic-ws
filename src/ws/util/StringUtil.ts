@@ -16,8 +16,6 @@
 
 import { bitsToBytes } from "./packets/CompressionUtil";
 
-export const SURROGATE_MIN = 0xD800, SURROGATE_MAX = 0xDFFF, MAX_UTF8 = 0xFFFF, MAX_UTF16 = 0x10FFFF;
-
 export function processCharCodes(text: string): number[] {
     return Array.from(text, char => char.codePointAt(0)!);
 }

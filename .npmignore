@@ -1,5 +1,6 @@
 dist/ws/client/browser/**/*
-dist/ws/debug/DebugClient.ts
+dist/ws/debug/DebugClient.d.ts
+dist/ws/debug/DebugClient.js
 src/**/*
 html/**/*
 bundled/**/*

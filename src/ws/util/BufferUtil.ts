@@ -14,10 +14,14 @@
  * limitations under the License.
  */
 
-export function splitArray(arr: any, x: number): any {
-    const result: any[] = [];
-    for (let i = 0; i < arr.length; i += x) 
-        result.push(arr.slice(i, i + x));
+type BuildTuple<T, L extends number, R extends unknown[] = []> = 
+    R['length'] extends L ? R : BuildTuple<T, L, [T, ...R]>;
+export function splitArray<T, N extends number>(arr: T[], size: N): Array<BuildTuple<T, N>> {
+    const result: Array<BuildTuple<T, N>> = [];
+    for (let i = 0; i < arr.length; i += size) {
+        const chunk = arr.slice(i, i + size) as BuildTuple<T, N>;
+        result.push(chunk);
+    }
     return result;
 }
 

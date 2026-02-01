@@ -54,7 +54,7 @@ function VARINT_VERIF(cap: number, min: number): PacketTypeSubValidator {
     }
 };
 
-export function createValidator<T extends PacketType>(type: T, dataCap: number, dataMin: number, packet: Packet<T | T[]>, gzipCompression: boolean): PacketTypeValidator {
+export function createValidator<T extends PacketType>(type: T, dataCap: number, dataMin: number, packet: Packet<T> | Packet<T[]>, gzipCompression: boolean): PacketTypeValidator {
     function genFunc(): PacketTypeSubValidator {
         switch(type) {
             case PacketType.NONE        : return (data: Uint8Array) => data.length == 0;

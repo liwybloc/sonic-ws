@@ -21,22 +21,11 @@ import { splitArray } from "../BufferUtil";
 // the highest 8-bit
 export const MAX_BYTE = 0xFF;
 // we split the usable range in half to separate positive and negative encodings
-export const NEGATIVE_BYTE = Math.floor(MAX_BYTE / 2);
-// overflow is used as our "base" in a positional number system (like base 10, but very large)
-// we use this to reduce the number of characters needed to represent large numbers
-export const BYTE_OVERFLOW = NEGATIVE_BYTE + 1;
-
+export const NEGATIVE_BYTE = 0x7F;
 // the highest 16-bit
 export const MAX_SHORT = 0xFFFF;
-// we split the usable range in half to separate positive and negative encodings
-export const NEGATIVE_SHORT = Math.floor(MAX_SHORT / 2);
 // overflow for shorts in construction
 export const SHORT_CC_OVERFLOW = MAX_BYTE + 1;
-// overflow for shorts base
-export const SHORT_OVERFLOW = MAX_SHORT + 1;
-
-// highest number INT_D can optimally support
-export const MAX_INT_D = Number.MAX_SAFE_INTEGER;
 
 // for varint to overflow; is 128
 export const UVARINT_OVERFLOW = NEGATIVE_BYTE + 1,
@@ -51,16 +40,8 @@ export const UVARINT_OVERFLOW = NEGATIVE_BYTE + 1,
 export const ONE_EIGHT = 1/8, ONE_FOURTH = 1/4;
 export const EMPTY_UINT8 = new Uint8Array([]);
 
-// precompute powers
-const VARINT_OVERFLOW_POWS: number[] = [];
-export const varIntOverflowPow = (num: number) => VARINT_OVERFLOW_POWS[num] ??= UVARINT_OVERFLOW ** num;
-
 const TWO_POWS: number[] = [];
 const twoPow = (num: number) => TWO_POWS[num] ??= Math.pow(2, num);
-
-for(let i = 0; i <= 3; i++) {
-    varIntOverflowPow(i);
-}
 
 export type SHORT_BITS = [high: number, low: number];
 
@@ -87,57 +68,6 @@ export function toByte(n: number): number {
     // limit check
     if (n > MAX_BYTE || n < -MAX_BYTE - 1) throw new Error(`Byte Numbers must be within range -${MAX_BYTE + 1} and ${MAX_BYTE}: ${n}`);
     return n;
-}
-
-// calculate how many characters (digits) are needed to store this number in OVERFLOW base
-export function sectorSize(number: number, pow: any) {
-    number = Math.abs(number);
-
-    // iterative system because it's faster than log
-    let count = 1;
-    // i like my code 𝑓𝑟𝑒𝑎𝑘𝑦
-    for (let num = pow(1); number >= num; num = pow(++count));
-
-    return count;
-}
-
-// encodes a number into a safe array using a large base (OVERFLOW)
-export function convertBase(number: number, chars: number, neg: number, overflow: number, overflowFunc: any): number[] {
-    // no nan/infinity
-    if(!isFinite(number)) throw new Error("Cannot use a non-finite number: " + number);
-    // zero
-    if(number == 0) return Array.from({length: chars}).map(() => 0);
-    if(chars == 1) return [number];
-
-    // store the sign and work with the absolute value
-    const negative = number < 0;
-    number = Math.abs(number);
-
-    // limit range
-    if (number > MAX_INT_D) throw new Error(`Non-float numbers must be within range -${MAX_INT_D.toLocaleString()} and ${MAX_INT_D.toLocaleString()}: ${number}`);
-
-    let result = [];
-
-    // for each character except the last, extract the digit at that position
-    // this is similar to how base conversion works: divide by base^position
-    const posPowerAmt = chars - 1;
-    for (let i = 0; i < posPowerAmt; i++) {
-        const power = overflowFunc(posPowerAmt - i);
-        const based = Math.floor(number / power);
-        result.push(based);
-        // remove it from the number so it doesnt effect future iterations
-        number -= based * power;
-    }
-
-    // the last digit is just the remainder
-    result.push(number % overflow);
-
-    // if the number was negative, we offset each character to indicate the sign
-    // we only offset non-zero digits to avoid collisions with the null character
-    const bits = negative ? result.map(part => part > 0 ? part + neg : part)
-                            : result;
-
-    return bits;
 }
 
 // boolean stuff
@@ -173,7 +103,7 @@ const FLOAT_SPECIAL = 0xFF, DOUBLE_SPECIAL = 0x7FF;
 // assembles floating point values into 4 bytes
 function assembleFloatingPoint(expSize: number, fractSize: number, sign: number, exponent: number, mantissa: number) {
     const bin = sign.toString(2) + exponent.toString(2).padStart(expSize, "0") + mantissa.toString(2).padStart(fractSize, "0");
-    return splitArray(bin, 8).map((x: string) => parseBin(x));
+    return splitArray(Array.from(bin), 8).map((x: string[]) => parseBin(x.join("")));
 }
 
 function assembleSingleFloat(sign: number, exponent: number, mantissa: number) {
@@ -283,22 +213,33 @@ export function mapShort_ZZ(short: number): SHORT_BITS {
 
 // yeah!
 
-export function convertVarInt(num: number) {
-    if(num > MAX_UVARINT || num < 0) throw new Error(`Variable Ints must be within range 0 and ${MAX_VARINT}: ${num}`);
-    const chars = sectorSize(num, varIntOverflowPow);
-    return convertBase(num, chars, VARINT_OVERFLOW, UVARINT_OVERFLOW, varIntOverflowPow).map((x, i) => i == 0 ? x : x | VARINT_CHAIN_FLAG).reverse();
+export function convertVarInt(num: number): number[] {
+    if (num > MAX_UVARINT || num < 0) 
+        throw new Error(`Variable Ints must be within range 0 and ${MAX_VARINT}: ${num}`);
+    if (num === 0) return [0];
+
+    const result: number[] = [];
+    while (num > 0) {
+        let byte = num & 0x7F; // take 7 bits
+        num >>>= 7;
+        if (num > 0) byte |= VARINT_CHAIN_FLAG;
+        result.push(byte);
+    }
+    return result;
 }
 
-export function readVarInt(arr: number[] | Uint8Array, off: number): [offset: number, number: number] {
-    let num = [];
-    let cont;
+export function readVarInt(arr: number[] | Uint8Array, off: number): [number, number] {
+    let num = 0;
+    let shift = 0;
+    let byte: number;
+
     do {
-        const part = arr[off++];
-        cont = (part & VARINT_CHAIN_FLAG) != 0;
-        num.push(cont ? part ^ VARINT_CHAIN_FLAG : part);
-    } while (cont);
-    const number = num.reduce((p, c, i) => p + c * varIntOverflowPow(i), 0);
-    return [off, number];
+        byte = arr[off++];
+        num += (byte & ~VARINT_CHAIN_FLAG) << shift;
+        shift += 7;
+    } while ((byte & VARINT_CHAIN_FLAG) !== 0);
+
+    return [off, num];
 }
 
 export function deconvertVarInts(arr: Uint8Array | number[]): number[] {
@@ -312,17 +253,11 @@ export function deconvertVarInts(arr: Uint8Array | number[]): number[] {
     return res;
 }
 
-export function bytesToBits(bytes: ArrayLike<number>): string {
-    return Array.from(bytes).map(b => b.toString(2).padStart(8, '0')).join('');
-}
-export function bitsToBytes(bitString: string): Uint8Array {
-    const bytes = [];
-    for (let i = 0; i < bitString.length; i += 8) {
-        const byte = bitString.slice(i, i + 8).padEnd(8, '0');
-        bytes.push(parseInt(byte, 2));
-    }
-    return new Uint8Array(bytes);
-}
+export const bytesToBits = (bytes: ArrayLike<number>) =>
+    Array.from(bytes).map(b => b.toString(2).padStart(8, '0')).join('');
+
+export const bitsToBytes = (bits: string) =>
+    new Uint8Array(bits.match(/.{1,8}/g)?.map(b => parseInt(b.padEnd(8, '0'), 2)) ?? []);
 
 const gzipError = "Your browser is too old to support compression. Please update!";
 export async function compressGzip(data: Uint8Array<ArrayBuffer>, ident: string = ""): Promise<Uint8Array> {

@@ -297,8 +297,8 @@ export function CreatePacket<T extends ArguableType>(
         throw new Error(`Invalid packet type: ${type}`);
     }
 
-    const schema = PacketSchema.single(type, clampDataMax(dataMax), clampDataMin(dataMin, dataMax),
-                    dontSpread, dataBatching, maxBatchSize, rateLimit, async, gzipCompression, rereference);
+    const schema = new PacketSchema<PacketType>(false, type, async, clampDataMin(dataMin, dataMax), clampDataMax(dataMax), rateLimit,
+                    dontSpread, false, rereference, dataBatching, maxBatchSize, gzipCompression);
 
     return new Packet<ConvertType<T>>(tag, schema, validator, enabled, false);
 }
@@ -339,8 +339,7 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
     const clampedDataMaxes = dataMaxes.map(clampDataMax);
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
-    const schema = PacketSchema.object(types, clampedDataMaxes, clampedDataMins,
-        dontSpread, autoFlatten, dataBatching, maxBatchSize, rateLimit, async, gzipCompression) as unknown as PacketSchema<V>;
+    const schema = new PacketSchema<readonly PacketType[]>(true, types as any, async, clampedDataMins, clampedDataMaxes, rateLimit, dontSpread, autoFlatten, false, dataBatching, maxBatchSize, gzipCompression);
 
     return new Packet<V>(tag, schema, validator, enabled, false);
 }

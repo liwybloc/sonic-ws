@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { minify } from 'terser';
 
 const DIST_DIR = './dist';
 const LICENSE = `/**
@@ -21,52 +22,7 @@ function getFiles(dir, exts) {
     return files;
 }
 
-function stripCommentsJS(code) {
-    let result = LICENSE;
-    let i = 0;
-    const len = code.length;
-    let inString = null;
-    let inTemplateExpr = false;
-    let inRegex = false;
-
-    while (i < len) {
-        const c = code[i];
-        const next = code[i + 1];
-
-        if (!inString && !inRegex) {
-            if (c === '/' && next === '/') {
-                i += 2;
-                while (i < len && code[i] !== '\n') i++;
-                continue;
-            }
-            if (c === '/' && next === '*') {
-                i += 2;
-                while (i < len && !(code[i] === '*' && code[i + 1] === '/')) i++;
-                i += 2;
-                continue;
-            }
-        }
-
-        if (inString) {
-            if (c === '\\') {
-                result += code.slice(i, i + 2);
-                i += 2;
-                continue;
-            }
-            if (c === inString && !inTemplateExpr) {
-                inString = null;
-            }
-        } else if (c === '"' || c === "'" || c === '`') {
-            inString = c;
-        }
-
-        result += c;
-        i++;
-    }
-
-    return result;
-}
-
+// Keep your TS comment stripper as-is
 function stripNonJSDocTS(code) {
     let result = LICENSE;
     let i = 0;
@@ -117,16 +73,33 @@ function stripNonJSDocTS(code) {
     return result;
 }
 
-function processFile(file) {
+async function processFile(file) {
     const code = fs.readFileSync(file, 'utf-8');
-    const minified = file.endsWith('.js') ? stripCommentsJS(code) : stripNonJSDocTS(code);
-    fs.writeFileSync(file, minified, 'utf-8');
-    console.log(`Processed ${file}`);
+
+    if (file.endsWith('.js') && !file.includes("index.js")) {
+        try {
+            const result = await minify(code, {
+                compress: true,
+                module: true,
+                format: {
+                    preamble: LICENSE
+                }
+            });
+            fs.writeFileSync(file, result.code, 'utf-8');
+            console.log(`Minified ${file}`);
+        } catch (err) {
+            console.error(`Error minifying ${file}:`, err);
+        }
+    } else if (file.endsWith('.ts')) {
+        const minified = stripNonJSDocTS(code);
+        fs.writeFileSync(file, minified, 'utf-8');
+        console.log(`Processed ${file}`);
+    }
 }
 
-function main() {
+async function main() {
     const files = getFiles(DIST_DIR, ['.js', '.ts']);
-    for (const file of files) processFile(file);
+    for (const file of files) await processFile(file);
 }
 
 main();
