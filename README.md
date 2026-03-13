@@ -130,6 +130,7 @@ button.addEventListener("click", () => {
 ## KNOWN ISSUES
 - Data batching is bugged I believe
 - Should replace the "Data min shouldn't be higher than datamax" with setting dataMin to dataMax
+- Inconsistent naming scheme; very sorry for this
 
 ## PLANNED FEATURES
 - Better encoding for the first packet that sends packet information
