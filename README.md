@@ -135,3 +135,11 @@ button.addEventListener("click", () => {
 ## PLANNED FEATURES
 - Better encoding for the first packet that sends packet information
 - Support for other languages: Python, Go, Rust
+
+## LICENSE
+This project is source-available.
+
+You are free to use, modify, and contribute for personal,
+non-commercial purposes.
+
+Commercial use requires a separate license.
