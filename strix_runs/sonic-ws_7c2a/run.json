@@ -1,0 +1,51 @@
+{
+  "run_id": "sonic-ws_7c2a",
+  "run_name": "sonic-ws_7c2a",
+  "start_time": "2026-07-01T18:14:58.539395+00:00",
+  "end_time": "2026-07-01T18:24:46.109660+00:00",
+  "status": "failed",
+  "targets_info": [
+    {
+      "type": "local_code",
+      "details": {
+        "target_path": "/data/Code/js/sonic-ws",
+        "workspace_subdir": "sonic-ws"
+      },
+      "original": "/data/Code/js/sonic-ws"
+    }
+  ],
+  "llm_usage": {
+    "requests": 0,
+    "input_tokens": 0,
+    "input_tokens_details": [
+      {
+        "cached_tokens": 0
+      }
+    ],
+    "output_tokens": 0,
+    "output_tokens_details": [
+      {
+        "reasoning_tokens": 0
+      }
+    ],
+    "total_tokens": 0,
+    "request_usage_entries": [],
+    "cost": 0.0,
+    "agents": []
+  },
+  "scan_mode": "deep",
+  "instruction": "",
+  "non_interactive": false,
+  "local_sources": [
+    {
+      "source_path": "/data/Code/js/sonic-ws",
+      "workspace_subdir": "sonic-ws"
+    }
+  ],
+  "diff_scope": {
+    "active": false,
+    "mode": "auto"
+  },
+  "scope_mode": "auto",
+  "diff_base": null
+}

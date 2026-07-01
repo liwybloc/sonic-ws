@@ -6,13 +6,13 @@
       "esModuleInterop": true,                  
       "skipLibCheck": true,                     
       "forceConsistentCasingInFileNames": true,
-      "outDir": "./dist/",                       
+      "outDir": "./dist/ts/",
       "declaration": true,
       "stripInternal": true,
-      "rootDir": "./src/",
+      "rootDir": "./src/ts/",
       "target": "es2024",
       "lib":["ES2024","dom"]   
     },
-    "include": ["./src/**/*"],
+    "include": ["./src/ts/**/*"],
     "exclude": ["node_modules"]
 }

@@ -1,0 +1,29 @@
+[package]
+name = "sonic-ws-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+sonic-ws-core = { path = ".." }
+
+[[bin]]
+name = "decode_packet"
+path = "fuzz_targets/decode_packet.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_schema"
+path = "fuzz_targets/decode_schema.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { minify } from 'terser';
 
-const DIST_DIR = './dist';
+const DIST_DIR = './dist/ts';
 const LICENSE = `/**
  * Copyright (c) 2026 Lily (liwybloc)
  * License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026

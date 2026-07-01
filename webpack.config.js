@@ -8,10 +8,12 @@ const LICENSE = `/*!
  */\n;\n`;
 
 module.exports = {
-  entry: './html/ws/client/browser/ClientBrowser.js',
+  entry: './dist/ts/ws/client/browser/ClientBrowser.js',
   output: {
-    filename: 'SonicWS_bundle.js',
+    filename: 'bundle.js',
+    webassemblyModuleFilename: 'bundle.wasm',
     path: path.resolve(__dirname, 'bundled'),
+    clean: true,
   },
   resolve: {
     extensions: ['.js'],
@@ -28,6 +30,9 @@ module.exports = {
     ],
   },
   mode: 'production',
+  experiments: {
+    asyncWebAssembly: true,
+  },
   optimization: {
     minimize: true,
     minimizer: [

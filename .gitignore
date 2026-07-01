@@ -48,6 +48,7 @@ web_modules/
 # TypeScript cache
 *.tsbuildinfo
 dist/
+target/
 
 # Optional npm cache directory
 .npm
@@ -127,7 +128,7 @@ out
 .pnp.*
 
 # Tests
-test*
+test-site
 .dev
 
 # vscode shit
@@ -135,3 +136,6 @@ test*
 
 # browser output
 html*
+
+# rust output
+*.node
