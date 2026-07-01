@@ -139,3 +139,6 @@ html*
 
 # rust output
 *.node
+
+# strix
+strix_runs
