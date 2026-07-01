@@ -1,6 +1,6 @@
 {
   "name": "sonic-ws",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "description": "Ultra-lightweight, high-performance, and bandwidth efficient websocket library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,7 +8,7 @@
     "webpack": "webpack --mode production",
     "build_web": "rimraf ./html && tsc --moduleResolution nodenext --module nodenext --outDir ./html src/ws/client/browser/ClientBrowser.ts && npm run webpack",
     "build_node": "rimraf ./dist && tsc -d",
-    "build": "npm run build_node && npm run build_web && rimraf ./dist/ws/client/browser && rimraf ./dist/ws/debug/DebugClient.d.ts && rimraf ./dist/ws/debug/DebugClient.js",
+    "build": "npm run build_node && npm run build_web && rimraf ./dist/ws/client/browser && rimraf ./dist/ws/debug/DebugClient.d.ts && rimraf ./dist/ws/debug/DebugClient.js && node minify",
     "test_web": "npm run build && node test-site/server.mjs",
     "test_node": "npm run build_node && node test.mjs",
     "publish": "npm run build && node minify && cp ./bundled/SonicWS_bundle.js ./release/SonicWS_bundle.js && sleep 1"
@@ -22,7 +22,7 @@
   },
   "homepage": "https://github.com/liwybloc/sonic-ws#readme",
   "author": "lily",
-  "license": "Apache-2.0",
+  "license": "LicenseRef-Lily-Personal-NonCommercial-2026",
   "dependencies": {
     "open": "^11.0.0",
     "ws": "^8.18.2"

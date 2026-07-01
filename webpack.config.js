@@ -2,10 +2,9 @@ const path = require('path');
 const webpack = require('webpack');
 
 const LICENSE = `/*!
- * SonicWS
- * (c) 2026 Lily (liwybloc)
- * Released under the Apache-2.0 License
- * https://www.apache.org/licenses/LICENSE-2.0
+ * Copyright (c) 2026 Lily (liwybloc)
+ * License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
+ * See LICENSE for personal, non-commercial license terms.
  */\n;\n`;
 
 module.exports = {

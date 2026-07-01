@@ -4,8 +4,9 @@ import { minify } from 'terser';
 
 const DIST_DIR = './dist';
 const LICENSE = `/**
- * Copyright 2026 Lily (liwybloc)
- * Licensed under the Apache License, Version 2.0.
+ * Copyright (c) 2026 Lily (liwybloc)
+ * License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
+ * See LICENSE for personal, non-commercial license terms.
  */
 `;
 
@@ -22,7 +23,6 @@ function getFiles(dir, exts) {
     return files;
 }
 
-// Keep your TS comment stripper as-is
 function stripNonJSDocTS(code) {
     let result = LICENSE;
     let i = 0;

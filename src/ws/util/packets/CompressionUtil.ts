@@ -1,17 +1,14 @@
 /*
- * Copyright 2026 Lily (liwybloc)
+ * Copyright (c) 2026 Lily (liwybloc)
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed for personal, non-commercial use only.
+ * Commercial use, redistribution, sublicensing, sale, rental, lease,
+ * or inclusion in a paid product or service is prohibited without prior
+ * written permission from the copyright holder.
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * See the LICENSE file in the project root for the full license terms.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
  */
 
 import { splitArray } from "../BufferUtil";
