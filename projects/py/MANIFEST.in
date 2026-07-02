@@ -1,0 +1,6 @@
+include LICENSE
+include README.md
+recursive-include src/sonic_ws *.py
+recursive-include tests *.py
+recursive-include vendor/core *
+recursive-include vendor/bundled *

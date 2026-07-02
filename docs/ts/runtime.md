@@ -12,10 +12,11 @@ The Rust core bounds raw-DEFLATE expansion. Schema-aware paths derive tighter li
 
 ## Build outputs
 
-- TypeScript sources: `src/ts`
-- compiled Node modules: `dist/ts`
-- Rust crate: `src/core`
+- TypeScript package: `projects/ts`
+- TypeScript sources: `projects/ts/src`
+- compiled Node modules: `projects/ts/dist`
+- Rust crate: `projects/core`
 - browser outputs: `bundled/bundle.js`, `bundled/bundle.wasm`
-- generated WASM bindings: `src/ts/native/wasm`
+- generated WASM bindings: `projects/ts/src/native/wasm`
 
-Use the package scripts in `package.json` to build Node and browser targets. Generated outputs should be rebuilt whenever Rust FFI signatures change.
+Run the package scripts from `projects/ts`. Generated outputs should be rebuilt whenever Rust FFI signatures change. `npm pack` stages the canonical root README, license, and browser bundle without maintaining duplicate tracked copies.

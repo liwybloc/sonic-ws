@@ -46,7 +46,7 @@ Security:
 - Prevents niche bugs found in other websocket libraries, such as functions calling after the socket already closed.
 
 Performance & Scaling:
-- Can handle very large packets in microseconds
+- Can parse very large packets in microseconds
 - Can support megabytes of data and millions of values with minimal latency
 - Can broadcast to a filtered list of connections such as all, except sender, or any other subset
 - Built-in packet batching feature with no boilerplate and with per-client queues and bandwidth efficiency
@@ -86,8 +86,8 @@ NodeJS/Typescript:
 ```sh
 npm install sonic-ws
 ```
-Python*: (*unpublished currently)
-```
+Python* (*unpublished currently):
+```sh
 pip install sonic-ws
 ```
 
@@ -95,20 +95,38 @@ pip install sonic-ws
 
 Building requires Node.js, Rust with the `wasm32-unknown-unknown` target, and `wasm-pack`.
 
+From the repository root, use the build dispatcher:
+
 ```sh
+./build.sh all       # Build every project
+./build.sh rust      # Rust core only
+./build.sh ts        # Complete Node/browser package
+./build.sh py        # Python wheel and sdist
+./build.sh test      # Run all test suites
+./build.sh help      # List every target
+```
+
+The underlying TypeScript commands can also be run directly:
+
+```sh
+cd projects/ts
+npm install
 npm run build       # TypeScript, Node WASM, browser WASM, and browser bundle
-npm run build_py    # Pip installs the python project
 npm run build_node  # Node distribution and WASM fallback
 npm run build_web   # Browser bundle and WASM
 npm run test_node   # Node end-to-end packet tests
 npm run test_web    # Headless browser/WASM end-to-end tests
 ```
 
-The Rust crate lives in `src/core`, and the TypeScript API lives in `src/ts`. Generated JavaScript is written to `dist/ts`; browser artifacts are written to `bundled/bundle.js` and `bundled/bundle.wasm`.
+The workspace is split into `projects/core`, `projects/ts`, and `projects/py`.
+Each project owns its source, tests, and packaging configuration. Shared browser
+artifacts remain at `bundled/bundle.js` and `bundled/bundle.wasm`.
 
-The Python package lives in `src/py`. It provides asyncio clients and servers
-using the same protocol and builds a platform-specific Rust codec library into
-its wheel:
+Build or install the Python project separately:
+
+```sh
+python -m pip install ./projects/py
+```
 
 Full API documentation:
 

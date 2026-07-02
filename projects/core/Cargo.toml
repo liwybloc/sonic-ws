@@ -1,0 +1,35 @@
+
+[package]
+name = "sonic-ws-core"
+version = "0.1.0"
+edition = "2024"
+description = "Language-neutral SonicWS packet codec core"
+license = "LicenseRef-Lily-Personal-NonCommercial-2026"
+
+[lib]
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[features]
+default = []
+c-api = []
+node = ["dep:napi", "dep:napi-derive"]
+wasm = ["dep:js-sys", "dep:wasm-bindgen"]
+python = []
+
+[dependencies]
+flate2 = "1"
+napi = { version = "2", optional = true, default-features = false, features = ["napi8"] }
+napi-derive = { version = "2", optional = true }
+js-sys = { version = "0.3", optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+
+[build-dependencies]
+napi-build = "2"
+
+[[bench]]
+name = "encode"
+harness = false
+
+[[bench]]
+name = "decode"
+harness = false

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sonic-ws"
+version = "2.0.1"
+description = "Python client and server for the SonicWS binary WebSocket protocol"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["websockets>=14"]
+license = "LicenseRef-Lily-Personal-NonCommercial-2026"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Lily" }
+]
+keywords = ["websocket", "binary", "codec", "asyncio", "rust"]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://github.com/liwybloc/sonic-ws"
+Documentation = "https://github.com/liwybloc/sonic-ws/tree/main/docs/py"
+Repository = "https://github.com/liwybloc/sonic-ws"
+Issues = "https://github.com/liwybloc/sonic-ws/issues"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = ["sonic_ws"]

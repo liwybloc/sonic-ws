@@ -8,10 +8,10 @@ The binding exposes signed/unsigned number, float, string, boolean, raw decode, 
 
 ## Building and wheels
 
-`src/py/setup.py` runs:
+`projects/py/setup.py` runs:
 
 ```text
-cargo build --release --features python --manifest-path src/core/Cargo.toml
+cargo build --release --features python --manifest-path projects/core/Cargo.toml
 ```
 
 It then bundles `_native.so`, `_native.dylib`, or `_native.dll`, plus the JavaScript/WASM browser client served by the Python server. Native libraries are platform- and architecture-specific. Publish separate wheels for Linux architectures/libc targets, macOS architectures, and Windows architectures. Python itself does not execute the browser WASM binding.
@@ -20,7 +20,9 @@ Set `SONIC_WS_CORE_PATH=/absolute/path/to/library` to test a particular build.
 
 ## Compatibility contract
 
-TypeScript and Python use protocol version 22, the same schema serializer, one-based packet keys, raw DEFLATE, object sector frames, batch frames, enum ordering, and JSONUtil binary representation. `src/ts/tests/test_compat.mjs` and `src/py/tests/test_compat.py` exercise every supported packet mode in both server/client directions.
+TypeScript and Python use protocol version 22, the same schema serializer, one-based packet keys, raw DEFLATE, object sector frames, batch frames, enum ordering, and JSONUtil binary representation. `projects/ts/tests/test_compat.mjs` and `projects/py/tests/test_compat.py` exercise every supported packet mode in both server/client directions.
+
+The Python project uses the standard `src/` package layout. Wheel builds copy the canonical root browser bundle and compile the sibling Rust project. Source-distribution builds temporarily stage those workspace inputs so the published sdist can build independently.
 
 ## Security boundaries
 

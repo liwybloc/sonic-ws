@@ -1,0 +1,18 @@
+{
+    "compilerOptions": {
+      "moduleResolution": "nodenext",
+      "module": "nodenext",  
+      "strict": true,                           
+      "esModuleInterop": true,                  
+      "skipLibCheck": true,                     
+      "forceConsistentCasingInFileNames": true,
+      "outDir": "./dist/",
+      "declaration": true,
+      "stripInternal": true,
+      "rootDir": "./src/",
+      "target": "es2024",
+      "lib":["ES2024","dom"]   
+    },
+    "include": ["./src/**/*"],
+    "exclude": ["node_modules", "./tests/**/*"]
+}
