@@ -70,103 +70,25 @@ Whether you're making a real-time game, a dashboard, a distributed system, or an
 
 You define the packets each side is allowed to send. SonicWS exchanges that schema during the connection handshake, assigns compact numeric packet IDs, and validates incoming data before calling your listeners.
 
-The TypeScript layer handles connections, packet definitions, middleware, and the public API. The Rust core handles the wire format:
+The TypeScript/python layer handles connections, packet definitions, middleware, and the public API. The Rust core handles the wire format:
 
 - Primitive and object packet encoding/decoding
 - Packet validation and range checks
 - Enum, string, boolean, varint, delta, float, and hex codecs
 - Object framing, batching, and raw DEFLATE compression
-- TypeScript-side JSON conversion transported through reserved wire type 16 as raw bytes
+- TypeScript/Python-side JSON conversion transported through reserved wire type 16 as raw bytes
 
 The same Rust implementation is exposed through N-API for native Node use and through WASM for browsers and the portable Node fallback. Protocol behavior therefore does not depend on which runtime is connected.
 
 ## INSTALLATION
 
+NodeJS/Typescript:
 ```sh
 npm install sonic-ws
 ```
-
-## SAMPLES
-
-### Node (Client & Server)
-```js
-import { SonicWS, SonicWSServer, CreatePacket, PacketType } from "sonic-ws";
+Python*: (*unpublished currently)
 ```
-
-Browser (Client):
-```html
-<script src="/SonicWS/bundle.js"></script>
-<script>
-    async function connect() {
-        await SonicWS.initialize();
-        const ws = new SonicWS(`ws://${location.host}`);
-        // Register listeners and send packets here.
-    }
-
-    connect();
-</script>
-```
-
-`SonicWSServer` serves this browser bundle and its WASM module automatically at
-`/SonicWS/bundle.js` and `/SonicWS/bundle.wasm`. Set
-`sonicServerSettings.serveBrowserClient` to `false` to disable these routes.
-
-The WASM core must finish initializing before constructing a browser client. Node initializes its codec automatically.
-
-### Simple Example: Clicker Server
-
-#### Server
-```js
-const wss = new SonicWSServer({
-    clientPackets: [
-        CreatePacket({ tag: "click", type: PacketType.NONE }),
-        CreatePacket({ tag: "token", type: PacketType.STRINGS }),
-    ],
-    serverPackets: [
-        CreatePacket({ tag: "pointsInfo", type: PacketType.UVARINT }),
-        CreatePacket({ tag: "notification", type: PacketType.STRINGS }),
-    ],
-    websocketOptions: { port: 1234 },
-});
-
-wss.requireHandshake("token");
-
-wss.on_connect(ws => {
-    console.log("Client connected:", ws.id);
-
-    let clicks = 0;
-
-    ws.on("token", token => {
-        if(!isValidToken(token)) // No listeners will ever trigger after this, unlike base websocket
-            return ws.close();
-    })
-
-    // auto validation, no boilerplate. always passed the token check
-    ws.on("click", () => {
-        ws.send("pointsInfo", ++clicks);
-    });
-
-    ws.setInterval(() => ws.send("notification", "Keep going!"), 5000); // auto cleanup on close
-});
-
-wss.on_ready(() => console.log("Server ready!"));
-```
-
-#### Client
-```js
-await SonicWS.initialize();
-const ws = new SonicWS("ws://localhost:1234");
-
-ws.on_ready(() => console.log("Connected to server"));
-
-ws.on("pointsInfo", clicks => console.log("Total Clicks: ", clicks));
-
-ws.on("notification", msg => console.log("Notification:", msg));
-
-button.addEventListener("click", () => {
-    ws.send("click");
-});
-
+pip install sonic-ws
 ```
 
 ## BUILDING AND TESTING
@@ -175,6 +97,7 @@ Building requires Node.js, Rust with the `wasm32-unknown-unknown` target, and `w
 
 ```sh
 npm run build       # TypeScript, Node WASM, browser WASM, and browser bundle
+npm run build_py    # Pip installs the python project
 npm run build_node  # Node distribution and WASM fallback
 npm run build_web   # Browser bundle and WASM
 npm run test_node   # Node end-to-end packet tests
@@ -182,6 +105,15 @@ npm run test_web    # Headless browser/WASM end-to-end tests
 ```
 
 The Rust crate lives in `src/core`, and the TypeScript API lives in `src/ts`. Generated JavaScript is written to `dist/ts`; browser artifacts are written to `bundled/bundle.js` and `bundled/bundle.wasm`.
+
+The Python package lives in `src/py`. It provides asyncio clients and servers
+using the same protocol and builds a platform-specific Rust codec library into
+its wheel:
+
+Full API documentation:
+
+- [TypeScript / Node / browser](docs/ts/README.md)
+- [Python](docs/py/README.md)
 
 ## KNOWN ISSUES
 
@@ -191,8 +123,8 @@ The Rust crate lives in `src/core`, and the TypeScript API lives in `src/ts`. Ge
 ## PLANNED FEATURES
 - Better encoding for the first packet that sends packet information
 - Publish the Rust core as a standalone, documented crate
-- Add first-class Python and Go bindings
-- Provide prebuilt N-API binaries for the main Node platforms
+- Add first-class Go bindings
+- Provide prebuilt N-API binaries for the main Node platforms to avoid using WASM for the server
 
 ## LICENSE
 This project is source-available.

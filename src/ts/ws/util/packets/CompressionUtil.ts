@@ -5,6 +5,7 @@
 
 /** Utilities still required by schema serialization and the connection handshake. */
 export const MAX_BYTE = 0xff;
+export const MAX_USHORT = 0xffff;
 export const MAX_UVARINT = (0x80 ** 7) - 1;
 export const EMPTY_UINT8 = new Uint8Array([]);
 

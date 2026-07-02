@@ -304,11 +304,6 @@ pub fn decode_booleans(data: Uint8Array, count: u32) -> Result<Array, JsValue> {
     }
 }
 
-#[wasm_bindgen(js_name = encodeRaw)]
-pub fn encode_raw(data: Uint8Array) -> Result<Uint8Array, JsValue> {
-    encode(1, SonicValue::Bytes(data.to_vec()))
-}
-
 #[wasm_bindgen(js_name = decodeRaw)]
 pub fn decode_raw(data: Uint8Array) -> Result<Uint8Array, JsValue> {
     match decode(1, data.length(), &data.to_vec())? {

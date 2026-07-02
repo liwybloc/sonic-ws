@@ -140,6 +140,33 @@ html*
 # rust output
 *.node
 
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Python environments and package output
+.venv/
+venv/
+env/
+.python-version
+build/
+*.egg-info/
+*.egg
+wheelhouse/
+*.whl
+
+# Compiled Python/Rust extension artifacts
+src/py/sonic_ws/_native.so
+src/py/sonic_ws/_native.dylib
+src/py/sonic_ws/_native.dll
+
 # strix
 strix_runs
 

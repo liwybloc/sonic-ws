@@ -235,10 +235,6 @@ pub fn decode_booleans(data: Buffer, count: u32) -> Result<Vec<bool>> {
 }
 
 #[napi]
-pub fn encode_raw(data: Buffer) -> Result<Buffer> {
-    encode(1, data.len() as u32, SonicValue::Bytes(data.to_vec()))
-}
-#[napi]
 pub fn decode_raw(data: Buffer) -> Result<Buffer> {
     match decode(1, data.len() as u32, &data)? {
         SonicValue::Bytes(v) => Ok(v.into()),

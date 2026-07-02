@@ -241,14 +241,6 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
         (this.listeners[tag] ??= []).push(listener);
     }
 
-    /**
-     * Listens for all sent messages rawly
-     * @param listener Callback for when data is received
-     */
-    public raw_onsend(listener: (data: Uint8Array) => void): void {
-        this.listeners.send.push(listener);
-    }
-
     private sendQueue: SendQueue = [false, [], undefined];
     
     /**
@@ -274,7 +266,7 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
     public on_ready(listener: () => void): void {
         if (this.pastKeys) listener();
         else this.readyListeners!.push(listener);
-    }
+    } 
 
     /**
      * Listens for when the client closes

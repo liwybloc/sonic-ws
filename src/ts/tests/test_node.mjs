@@ -27,7 +27,7 @@ const {
     CreateEnumPacket,
     DefineEnum,
     WrapEnum,
-} = await import("../dist/ts/index.js");
+} = await import("../../../dist/ts/index.js");
 
 const mixedEnum = DefineEnum("e2e-mixed", ["alpha", 7, true, null, undefined]);
 const objectEnum = DefineEnum("e2e-object", ["left", "right"]);
@@ -133,6 +133,10 @@ try {
     ]), 5_000, "client handshake");
 
     const connection = await connectionPromise;
+    const clientRawSends = [];
+    const serverRawSends = [];
+    client.raw_onsend(data => clientRawSends.push(Uint8Array.from(data)));
+    connection.raw_onsend(data => serverRawSends.push(Uint8Array.from(data)));
     const serverReceives = cases.map(testCase => expectPacket(
         (tag, listener) => connection.on(tag, listener),
         `client_${testCase.name}`,
@@ -143,6 +147,9 @@ try {
     for (const testCase of cases) await connection.send(`server_${testCase.name}`, ...testCase.send);
 
     await withTimeout(Promise.all([...clientReceives, ...serverReceives]), 10_000, "packet roundtrips");
+    assert(clientRawSends.length >= cases.length, "client raw_onsend did not observe sends");
+    assert(serverRawSends.length >= cases.length, "server raw_onsend did not observe sends");
+    assert.equal(CreatePacket({ tag: "rate16", rateLimit: 65_535 }).rateLimit, 65_535);
     console.log(`passed ${cases.length * 2} packet roundtrips across ${cases.length} packet definitions`);
     console.log("KEY_EFFECTIVE is intentionally excluded because it remains W.I.P.");
 } finally {

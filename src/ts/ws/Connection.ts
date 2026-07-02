@@ -65,6 +65,9 @@ export interface IConnection<T> extends IMiddlewareHolder<ConnectionMiddleware> 
      */
     raw_onmessage(listener: (data: T) => void): void;
 
+    /** Listens for all raw outgoing messages. */
+    raw_onsend(listener: (data: Uint8Array) => void): void;
+
     /**
      * Closes the connection
      */
@@ -95,6 +98,7 @@ export abstract class Connection<T extends {
 }, K> extends MiddlewareHolder<ConnectionMiddleware> implements IConnection<K> {
 
     protected listeners: Record<string, Array<(...data: any[]) => void>>;
+    private rawSendListeners: Array<(data: Uint8Array) => void> = [];
 
     private name: string;
     protected closed: boolean = false;
@@ -160,10 +164,15 @@ export abstract class Connection<T extends {
 
     public raw_send(data: Uint8Array): void {
         this.socket.send(data);
+        for (const listener of this.rawSendListeners) listener(data);
     }
 
     public raw_onmessage(listener: (data: K) => void): void {
         this._on("message", listener);
+    }
+
+    public raw_onsend(listener: (data: Uint8Array) => void): void {
+        this.rawSendListeners.push(listener);
     }
 
     public close(code: number = 1000, reason?: string | Buffer): void {

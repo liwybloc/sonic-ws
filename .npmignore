@@ -3,7 +3,6 @@ dist/ws/debug/DebugClient.d.ts
 dist/ws/debug/DebugClient.js
 src/**/*
 html/**/*
-bundled/**/*
 release/**/*
 transpiler/**/*
 .gitattributes
@@ -11,3 +10,5 @@ tsconfig.json
 test*
 webpack.config.js
 minify.js
+strix_runs/**/*
+docs/**/*

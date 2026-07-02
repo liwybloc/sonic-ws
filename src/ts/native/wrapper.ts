@@ -12,7 +12,6 @@ export interface SonicNativeCore {
     decodeStrings(kind: number, data: Uint8Array): string[];
     encodeBooleans(values: boolean[]): Uint8Array;
     decodeBooleans(data: Uint8Array, count: number): boolean[];
-    encodeRaw(data: Uint8Array): Uint8Array;
     decodeRaw(data: Uint8Array): Uint8Array;
     encodeHex(value: string): Uint8Array;
     decodeHex(data: Uint8Array): string;
@@ -51,7 +50,7 @@ function assertNativeCore(value: Partial<SonicNativeCore>): asserts value is Son
     const required: (keyof SonicNativeCore)[] = [
         "encodeSigned", "decodeSigned", "encodeUnsigned", "decodeUnsigned",
         "encodeFloats", "decodeFloats", "encodeStrings", "decodeStrings",
-        "encodeBooleans", "decodeBooleans", "encodeRaw", "decodeRaw",
+        "encodeBooleans", "decodeBooleans", "decodeRaw",
         "encodeHex", "decodeHex", "frameObject", "unframeObject",
         "encodeBatch", "decodeBatch", "deflateRaw", "inflateRaw",
         "validateEncoded", "validateEnum", "validateObject",
@@ -135,7 +134,7 @@ export function encodeNative(
         case PacketType.JSON:
             if (!(input instanceof Uint8Array) && !Array.isArray(input))
                 throw new TypeError(`${type === PacketType.JSON ? "JSON wire data" : "RAW"} requires a Uint8Array or number array`);
-            return core.encodeRaw(input instanceof Uint8Array ? buffer(input) : Uint8Array.from(input as number[]));
+            return input instanceof Uint8Array ? buffer(input) : Uint8Array.from(input as number[]);
         case PacketType.BYTES:
         case PacketType.SHORTS:
         case PacketType.VARINT:

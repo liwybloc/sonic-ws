@@ -17,7 +17,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { SonicWSConnection } from "./SonicWSConnection";
 import { PacketHolder } from "../util/packets/PacketHolder";
-import { convertVarInt, MAX_BYTE } from "../util/packets/CompressionUtil";
+import { convertVarInt, MAX_USHORT } from "../util/packets/CompressionUtil";
 import { deflateNative } from "../../native/wrapper";
 import { SERVER_SUFFIX_NUMS, VERSION } from "../../version";
 import { processPacket } from "../util/packets/PacketUtils";
@@ -27,6 +27,17 @@ import { MiddlewareHolder, SendQueue, ServerMiddleware } from "../PacketProcesso
 import { setHashFunc } from "../util/packets/HashUtil";
 import { CloseCodes } from "../Connection";
 import { DebugServer } from "../debug/DebugServer";
+
+const normalizeRateLimit = (limit: number): number => {
+    if (!Number.isFinite(limit) || limit < 0)
+        throw new Error("Rate limit must be a non-negative finite number.");
+    limit = Math.floor(limit);
+    if (limit > MAX_USHORT) {
+        console.warn(`A rate limit above ${MAX_USHORT} is considered infinite.`);
+        return 0;
+    }
+    return limit;
+};
 
 export type SonicServerSettings = {
     /** If it should check for updates; defaults to true. */
@@ -219,12 +230,7 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
      * @param limit Amount of packets the sockets can send every second, or 0 for infinite
      */
     public setClientRateLimit(limit: number) {
-        // so that i can store limits in 1 packet
-        if(limit > MAX_BYTE) {
-            limit = 0;
-            console.warn(`A rate limit above ${MAX_BYTE} is considered infinite.`);
-        }
-        this.clientRateLimit = limit;
+        this.clientRateLimit = normalizeRateLimit(limit);
     }
 
     /**
@@ -232,12 +238,7 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
      * @param limit Amount of packets the server can send every second, or 0 for infinite
      */
     public setServerRateLimit(limit: number) {
-        // so that i can store limits in 1 packet
-        if(limit > MAX_BYTE) {
-            limit = 0;
-            console.warn(`A rate limit above ${MAX_BYTE} is considered infinite.`);
-        }
-        this.serverRateLimit = limit;
+        this.serverRateLimit = normalizeRateLimit(limit);
     }
 
     /**

@@ -34,7 +34,6 @@ type NativeCore = {
   decodeStrings(kind: number, data: Buffer): string[];
   encodeBooleans(values: boolean[]): Buffer;
   decodeBooleans(data: Buffer, count: number): boolean[];
-  encodeRaw(data: Buffer): Buffer;
   decodeRaw(data: Buffer): Buffer;
   encodeHex(value: string): Buffer;
   decodeHex(data: Buffer): string;
@@ -91,7 +90,7 @@ test("exports the complete native API", () => {
   const expected = [
     "decodeBatch", "decodeBooleans", "decodeFloats", "decodeHex", "decodeRaw",
     "decodeSigned", "decodeStrings", "decodeUnsigned", "deflateRaw", "encodeBatch",
-    "encodeBooleans", "encodeFloats", "encodeHex", "encodeRaw", "encodeSigned",
+    "encodeBooleans", "encodeFloats", "encodeHex", "encodeSigned",
     "encodeStrings", "encodeUnsigned", "frameObject", "inflateRaw", "unframeObject",
     "validateEncoded", "validateEnum", "validateObject",
   ];
@@ -164,7 +163,7 @@ test("packs booleans MSB-first and honors decode count", () => {
 
 test("preserves RAW and HEX data", () => {
   const raw = Buffer.from(Array.from({ length: 256 }, (_, index) => index));
-  assert.deepEqual(native.decodeRaw(native.encodeRaw(raw)), raw);
+  assert.deepEqual(native.decodeRaw(raw), raw);
   assert.deepEqual(bytes(native.encodeHex("00abff")), [0, 0xab, 0xff]);
   assert.equal(native.decodeHex(Buffer.from([0, 0xab, 0xff])), "00abff");
   assert.throws(() => native.encodeHex("abc"), /odd length/);
@@ -263,7 +262,7 @@ test("validates framed object sectors and enum order", () => {
 });
 
 test("rejects invalid packet kinds and mismatched typed helpers", () => {
-  assert.throws(() => native.encodeRaw(Buffer.from([1])) && native.validateEncoded(
+  assert.throws(() => native.validateEncoded(
     99, Buffer.alloc(0), 0, 0, false, false), /unknown packet type/);
   assert.throws(() => native.encodeFloats(PacketType.UVARINT, [1.5]), /expected unsigned integer/);
   assert.throws(() => native.decodeStrings(PacketType.UVARINT, Buffer.from([1])), /did not decode strings/);

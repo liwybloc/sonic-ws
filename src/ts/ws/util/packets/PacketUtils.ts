@@ -15,7 +15,7 @@ import { PacketHolder } from "./PacketHolder";
 import { ConvertType, Packet, PacketSchema, ValidatorFunction } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
 import { EnumPackage } from "../enums/EnumType";
-import { EMPTY_UINT8 } from "./CompressionUtil";
+import { EMPTY_UINT8, MAX_USHORT } from "./CompressionUtil";
 import { SendQueue } from "../../PacketProcessor";
 import { hashValue } from "./HashUtil";
 
@@ -183,6 +183,18 @@ function clampDataMin(dataMin: number, dataMax: number) {
     return dataMin;
 }
 
+/** Normalizes a two-byte per-second rate limit; zero means unlimited. @internal */
+function clampRateLimit(rateLimit: number): number {
+    if (!Number.isFinite(rateLimit) || rateLimit < 0)
+        throw new Error("Rate limit must be a non-negative finite number");
+    rateLimit = Math.floor(rateLimit);
+    if (rateLimit > MAX_USHORT) {
+        console.warn(`A rate limit above ${MAX_USHORT} is considered infinite.`);
+        return 0;
+    }
+    return rateLimit;
+}
+
 /** Valid packet type */
 export type ArguableType = PacketType | EnumPackage;
 
@@ -294,7 +306,7 @@ export function CreatePacket<T extends ArguableType>(
         throw new Error(`Invalid packet type: ${type}`);
     }
 
-    const schema = new PacketSchema<PacketType>(false, type, async, clampDataMin(dataMin, dataMax), clampDataMax(dataMax), rateLimit,
+    const schema = new PacketSchema<PacketType>(false, type, async, clampDataMin(dataMin, dataMax), clampDataMax(dataMax), clampRateLimit(rateLimit),
                     dontSpread, false, rereference, dataBatching, maxBatchSize, gzipCompression);
 
     return new Packet<ConvertType<T>>(tag, schema, validator, enabled, false);
@@ -336,7 +348,7 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
     const clampedDataMaxes = dataMaxes.map(clampDataMax);
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
-    const schema = new PacketSchema<readonly PacketType[]>(true, types as any, async, clampedDataMins, clampedDataMaxes, rateLimit, dontSpread, autoFlatten, false, dataBatching, maxBatchSize, gzipCompression);
+    const schema = new PacketSchema<readonly PacketType[]>(true, types as any, async, clampedDataMins, clampedDataMaxes, clampRateLimit(rateLimit), dontSpread, autoFlatten, false, dataBatching, maxBatchSize, gzipCompression);
 
     return new Packet<V>(tag, schema, validator, enabled, false);
 }

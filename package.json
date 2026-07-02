@@ -1,20 +1,32 @@
 {
   "name": "sonic-ws",
-  "version": "1.3.4",
+  "version": "2.0.1",
   "description": "Ultra-lightweight, high-performance, and bandwidth efficient websocket library",
   "main": "dist/ts/index.js",
   "types": "dist/ts/index.d.ts",
+  "files": [
+    "dist/ts/**/*",
+    "bundled/bundle.js",
+    "bundled/bundle.wasm",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "webpack": "webpack --mode production",
+    
     "build_wasm_browser": "wasm-pack build --release --target bundler --out-dir ../ts/native/wasm/pkg --out-name sonic_ws_core ./src/core --features wasm --no-default-features",
     "build_wasm_node": "wasm-pack build --release --target nodejs --out-dir ../ts/native/wasm/node --out-name sonic_ws_core ./src/core --features wasm --no-default-features",
     "build_wasm": "npm run build_wasm_browser && npm run build_wasm_node",
-    "build_web": "npm run build_wasm_browser && tsc --moduleResolution nodenext --module nodenext --outDir ./dist/ts src/ts/ws/client/browser/ClientBrowser.ts && cpy \"src/ts/native/wasm/pkg/*\" dist/ts/native/wasm/pkg --flat && npm run webpack",
-    "build_node": "npm run build_wasm && rimraf ./dist/ts && tsc -d && cpy \"src/ts/native/wasm/node/*\" dist/ts/native/wasm/node --flat",
+    "build_web": "npm run build_wasm_browser && tsc --moduleResolution nodenext --module nodenext --outDir ./dist/ts src/ts/ws/client/browser/ClientBrowser.ts && cpy \"src/ts/native/wasm/pkg/*\" dist/ts/native/wasm/pkg --flat && rimraf ./dist/ts/native/wasm/pkg/.gitignore && npm run webpack",
+    "build_node": "npm run build_wasm && rimraf ./dist/ts && tsc -d && cpy \"src/ts/native/wasm/node/*\" dist/ts/native/wasm/node --flat && rimraf ./dist/ts/native/wasm/node/.gitignore",
+    "build_py": "python -m pip install ./src/py",
     "build": "npm run build_node && npm run build_web && rimraf ./dist/ts/ws/client/browser && rimraf ./dist/ts/ws/debug/DebugClient.d.ts && rimraf ./dist/ts/ws/debug/DebugClient.js && node minify",
-    "test_web": "npm run build && node tests/test_web.mjs",
-    "test_node": "npm --prefix src/core/tests/typescript run build:native && npm run build_node && node tests/test_node.mjs",
-    "publish": "npm run build && node minify && rimraf ./release/SonicWS_bundle.js ./release/SonicWS_core.wasm && cp ./bundled/bundle.js ./release/bundle.js && cp ./bundled/bundle.wasm ./release/bundle.wasm && sleep 1"
+    
+    "test_web": "npm run build && node src/ts/tests/test_web.mjs",
+    "test_node": "npm --prefix src/core/tests/typescript run build:native && npm run build_node && node src/ts/tests/test_node.mjs",
+    "prepack": "npm run build",
+    
+    "publish": "rimraf ./release/SonicWS_bundle.js ./release/SonicWS_core.wasm && cp ./bundled/bundle.js ./release/bundle.js && cp ./bundled/bundle.wasm ./release/bundle.wasm"
   },
   "repository": {
     "type": "git",
