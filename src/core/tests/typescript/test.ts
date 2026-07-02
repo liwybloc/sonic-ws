@@ -41,9 +41,9 @@ type NativeCore = {
   frameObject(sectors: Buffer[]): Buffer;
   unframeObject(data: Buffer, fieldCount: number): Buffer[];
   encodeBatch(payloads: Buffer[], compress: boolean): Buffer;
-  decodeBatch(data: Buffer, compressed: boolean, maxBatchSize: number): Buffer[];
+  decodeBatch(data: Buffer, compressed: boolean, maxBatchSize: number, maxOutputSize?: number): Buffer[];
   deflateRaw(data: Buffer): Buffer;
-  inflateRaw(data: Buffer): Buffer;
+  inflateRaw(data: Buffer, maxOutputSize?: number): Buffer;
   validateEncoded(kind: number, data: Buffer, min: number, max: number,
     compressed: boolean, batched: boolean, maxBatchSize?: number): void;
   validateEnum(data: Buffer, enumSize: number, min: number, max: number): void;
@@ -196,6 +196,7 @@ test("roundtrips raw DEFLATE", () => {
   const compressed = native.deflateRaw(input);
   assert.ok(compressed.length < input.length);
   assert.deepEqual(native.inflateRaw(compressed), input);
+  assert.throws(() => native.inflateRaw(compressed, input.length - 1), /exceeds limit/);
   assert.throws(() => native.inflateRaw(Buffer.from([0xff])), /deflate/);
 });
 
@@ -207,6 +208,9 @@ test("validates normal and compressed encoded packets", () => {
 
   const compressed = native.deflateRaw(data);
   native.validateEncoded(PacketType.UVARINT, compressed, 3, 3, true, false);
+  const bomb = native.deflateRaw(Buffer.alloc(4096, 0x41));
+  assert.throws(() => native.validateEncoded(
+    PacketType.RAW, bomb, 0, 1, true, false), /exceeds limit/);
   assert.throws(() => native.validateEncoded(
     PacketType.UVARINT, data, 3, 3, true, false), /deflate|outside schema limits/);
 });

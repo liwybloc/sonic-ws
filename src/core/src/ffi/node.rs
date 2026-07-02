@@ -289,9 +289,18 @@ pub fn encode_batch(payloads: Vec<Buffer>, compress: bool) -> Result<Buffer> {
     }
 }
 #[napi]
-pub fn decode_batch(data: Buffer, compressed: bool, max_batch_size: u32) -> Result<Vec<Buffer>> {
+pub fn decode_batch(
+    data: Buffer,
+    compressed: bool,
+    max_batch_size: u32,
+    max_output_size: Option<u32>,
+) -> Result<Vec<Buffer>> {
     let data = if compressed {
-        gzip::decompress(&data).map_err(napi_error)?
+        let limit = max_output_size
+            .map(|value| value as usize)
+            .unwrap_or(gzip::MAX_DECOMPRESSED_SIZE)
+            .min(gzip::MAX_DECOMPRESSED_SIZE);
+        gzip::decompress_limited(&data, limit).map_err(napi_error)?
     } else {
         data.to_vec()
     };
@@ -304,8 +313,12 @@ pub fn deflate_raw(data: Buffer) -> Result<Buffer> {
     gzip::compress(&data).map(Buffer::from).map_err(napi_error)
 }
 #[napi]
-pub fn inflate_raw(data: Buffer) -> Result<Buffer> {
-    gzip::decompress(&data)
+pub fn inflate_raw(data: Buffer, max_output_size: Option<u32>) -> Result<Buffer> {
+    let limit = max_output_size
+        .map(|value| value as usize)
+        .unwrap_or(gzip::MAX_DECOMPRESSED_SIZE)
+        .min(gzip::MAX_DECOMPRESSED_SIZE);
+    gzip::decompress_limited(&data, limit)
         .map(Buffer::from)
         .map_err(napi_error)
 }

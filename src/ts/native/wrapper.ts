@@ -19,9 +19,9 @@ export interface SonicNativeCore {
     frameObject(sectors: Uint8Array[]): Uint8Array;
     unframeObject(data: Uint8Array, fieldCount: number): Uint8Array[];
     encodeBatch(payloads: Uint8Array[], compress: boolean): Uint8Array;
-    decodeBatch(data: Uint8Array, compressed: boolean, maxBatchSize: number): Uint8Array[];
+    decodeBatch(data: Uint8Array, compressed: boolean, maxBatchSize: number, maxOutputSize?: number): Uint8Array[];
     deflateRaw(data: Uint8Array): Uint8Array;
-    inflateRaw(data: Uint8Array): Uint8Array;
+    inflateRaw(data: Uint8Array, maxOutputSize?: number): Uint8Array;
     validateEncoded(kind: number, data: Uint8Array, min: number, max: number,
         compressed: boolean, batched: boolean, maxBatchSize?: number): void;
     validateEnum(data: Uint8Array, enumSize: number, min: number, max: number): void;
@@ -270,16 +270,17 @@ export function decodeNativeBatch(
     data: Uint8Array,
     compressed: boolean,
     maxBatchSize = 0,
+    maxOutputSize?: number,
     core = loadNativeCore(),
 ): Uint8Array[] {
     const nativeLimit = Number.isFinite(maxBatchSize) && maxBatchSize > 0 ? maxBatchSize : 0;
-    return core.decodeBatch(buffer(data), compressed, nativeLimit);
+    return core.decodeBatch(buffer(data), compressed, nativeLimit, maxOutputSize);
 }
 
 export function deflateNative(data: Uint8Array, core = loadNativeCore()): Uint8Array {
     return core.deflateRaw(buffer(data));
 }
 
-export function inflateNative(data: Uint8Array, core = loadNativeCore()): Uint8Array {
-    return core.inflateRaw(buffer(data));
+export function inflateNative(data: Uint8Array, maxOutputSize?: number, core = loadNativeCore()): Uint8Array {
+    return core.inflateRaw(buffer(data), maxOutputSize);
 }

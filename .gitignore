@@ -142,3 +142,6 @@ html*
 
 # strix
 strix_runs
+
+# node
+package-lock.json

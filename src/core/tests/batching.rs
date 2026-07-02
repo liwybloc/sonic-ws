@@ -66,3 +66,11 @@ fn rejects_tampered_lengths_and_varints() {
     assert!(decode_batches(&[3, 1, 2]).is_err());
     assert!(decode_batches(&[0x80]).is_err());
 }
+
+#[test]
+fn compressed_batch_rejects_expansion_beyond_schema_bound() {
+    let definition = packet(true, 2);
+    let expanded = encode_batches(&[vec![b'A'; 1000]]).unwrap();
+    let compressed = sonic_ws_core::compression::gzip::compress(&expanded).unwrap();
+    assert!(decode_for_packet(&definition, &compressed).is_err());
+}

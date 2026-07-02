@@ -34,7 +34,7 @@ pub fn decode_batches_limited(bytes: &[u8], max_batch_size: usize) -> Result<Vec
 
 pub fn decode_for_packet(packet: &PacketDef, bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
     let decoded = if packet.schema.gzip_compression {
-        gzip::decompress(bytes)?
+        gzip::decompress_for_packet(packet, bytes, true)?
     } else {
         bytes.to_vec()
     };

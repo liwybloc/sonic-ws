@@ -361,9 +361,18 @@ pub fn encode_batch(values: Array, compressed: bool) -> Result<Uint8Array, JsVal
 }
 
 #[wasm_bindgen(js_name = decodeBatch)]
-pub fn decode_batch(data: Uint8Array, compressed: bool, max: u32) -> Result<Array, JsValue> {
+pub fn decode_batch(
+    data: Uint8Array,
+    compressed: bool,
+    max: u32,
+    max_output_size: Option<u32>,
+) -> Result<Array, JsValue> {
     let data = if compressed {
-        gzip::decompress(&data.to_vec()).map_err(error)?
+        let limit = max_output_size
+            .map(|value| value as usize)
+            .unwrap_or(gzip::MAX_DECOMPRESSED_SIZE)
+            .min(gzip::MAX_DECOMPRESSED_SIZE);
+        gzip::decompress_limited(&data.to_vec(), limit).map_err(error)?
     } else {
         data.to_vec()
     };
@@ -381,8 +390,12 @@ pub fn deflate_raw(data: Uint8Array) -> Result<Uint8Array, JsValue> {
 }
 
 #[wasm_bindgen(js_name = inflateRaw)]
-pub fn inflate_raw(data: Uint8Array) -> Result<Uint8Array, JsValue> {
-    gzip::decompress(&data.to_vec())
+pub fn inflate_raw(data: Uint8Array, max_output_size: Option<u32>) -> Result<Uint8Array, JsValue> {
+    let limit = max_output_size
+        .map(|value| value as usize)
+        .unwrap_or(gzip::MAX_DECOMPRESSED_SIZE)
+        .min(gzip::MAX_DECOMPRESSED_SIZE);
+    gzip::decompress_limited(&data.to_vec(), limit)
         .map(|v| Uint8Array::from(v.as_slice()))
         .map_err(error)
 }

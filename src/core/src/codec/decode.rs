@@ -148,7 +148,7 @@ pub fn decode_packet(packet: &PacketDef, bytes: &[u8]) -> Result<SonicValue> {
         && packet.schema.gzip_compression
         && packet.schema.data_batching == 0
     {
-        gzip::decompress(bytes)?
+        gzip::decompress_for_packet(packet, bytes, false)?
     } else {
         bytes.to_vec()
     };

@@ -78,3 +78,15 @@ fn raw_deflate_roundtrips() {
         data
     );
 }
+
+#[test]
+fn raw_deflate_rejects_output_beyond_the_limit() {
+    let data = vec![b'A'; 4096];
+    let compressed = gzip::compress(&data).unwrap();
+    let error = gzip::decompress_limited(&compressed, 1024).unwrap_err();
+    assert!(error.to_string().contains("exceeds limit"));
+    assert_eq!(
+        gzip::decompress_limited(&compressed, data.len()).unwrap(),
+        data
+    );
+}
