@@ -78,7 +78,7 @@ The TypeScript/python layer handles connections, packet definitions, middleware,
 - Object framing, batching, and raw DEFLATE compression
 - TypeScript/Python-side JSON conversion transported through reserved wire type 16 as raw bytes
 
-The same Rust implementation is exposed through N-API for native Node use and through WASM for browsers and the portable Node fallback. Protocol behavior therefore does not depend on which runtime is connected.
+The same Rust implementation is exposed through N-API for native Node use and through WASM for browsers, Python, and the portable Node fallback. Python loads its packaged WASM core through `wasmtime`, so the Python package does not need separate SonicWS DLL, dylib, or shared-object releases. Protocol behavior therefore does not depend on which runtime is connected.
 
 Automatic browser-file serving at `/SonicWS/bundle.js` and
 `/SonicWS/bundle.wasm` is supported only by the Node.js server, where it can be
@@ -147,6 +147,21 @@ Full API documentation:
 
 - [TypeScript / Node / browser](docs/ts/README.md)
 - [Python](docs/py/README.md)
+
+Packet schemas can now map the existing single-type wire format directly to application objects:
+
+```js
+const entitySnapshot = CreatePacket({
+  tag: "entitySnapshot",
+  type: PacketType.VARINT,
+  schema: ["id", "type", "x", "y", "z", "pitch", "yaw"],
+  autoFlatten: true,
+});
+
+await ws.send("entitySnapshot", [...entities.values()]);
+```
+
+This remains a homogeneous `VARINT` packet. Schema mapping, row-major `autoFlatten`, object-packet `autoTranspose`, quantization, bounds, and packet groups are application-layer conveniences and do not turn the codec into a mixed-type serializer. See the packet documentation above for TypeScript and Python examples.
 
 ## KNOWN ISSUES
 

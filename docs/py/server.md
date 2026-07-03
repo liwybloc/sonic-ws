@@ -22,6 +22,7 @@ A TypeScript-shaped settings dictionary is also accepted, including `clientPacke
 - `set_client_rate_limit(limit)`, `set_server_rate_limit(limit)`; both default to 500/s, accept 1…65,535, and treat zero or larger values as unlimited
 - `enable_packet(tag)`, `disable_packet(tag)`
 - `await broadcast(tag, *values)`
+- `await broadcast_safe(tag, *values)` and `await broadcast_variant(parent, variant, *values)`
 - `await broadcast_filtered(tag, predicate, *values)`
 - `await broadcast_tagged(connection_tag, packet_tag, *values)`
 - `get_connected()`, `get_socket(id)`, `await close_socket(id, code=1000, reason="")`
@@ -33,7 +34,7 @@ CamelCase aliases exist for the corresponding TypeScript methods.
 
 ## Connection methods
 
-`SonicWSConnection` provides `on`, `off`, `send`, `broadcast` (all other clients), `broadcast_filtered`, `enable_packet`, `disable_packet`, `tag`, raw methods, timers, middleware, names, `on_close`, and `close`. `handshake_complete`, `id`, `tags`, `socket`, and `host` are available.
+`SonicWSConnection` provides `on`, `off`, `send`, `send_safe`, `send_variant`, `broadcast` (all other clients), `broadcast_filtered`, `enable_packet`, `disable_packet`, `tag`, raw methods, timers, middleware, names, `on_close`, and `close`. `handshake_complete`, `id`, mutable `state`, `tags`, `socket`, and `host` are available. A TypeScript-shaped server settings dictionary may provide `onSendError(error, context)` for safe-send failures.
 
 `toggle_print` / `togglePrint` toggles the connection diagnostic flag. Python applications should normally use middleware or standard logging for structured packet diagnostics.
 

@@ -28,6 +28,8 @@ from .packets import (
     CreatePacket,
     CreateObjPacket,
     CreateEnumPacket,
+    create_packet_group,
+    CreatePacketGroup,
     flatten_data,
     unflatten_data,
     FlattenData,

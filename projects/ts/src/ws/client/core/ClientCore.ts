@@ -60,6 +60,7 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
             }
             for(const packet of this.clientPackets.getPackets()) {
                 delete packet.lastSent[0];
+                packet.clearQuantizationState(0);
             }
             for(const packet of this.serverPackets.getPackets()) {
                 delete packet.lastReceived[0];
@@ -139,9 +140,17 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
     
     public async listenPacket(data: string | [any[], boolean], tag: string, packetQueue: PacketQueue<ClientPQ>, isAsync: boolean, asyncData: AsyncPQ<ClientPQ>): Promise<void> {
         const listeners = this.listeners[tag];
-        if (!listeners) return console.warn("Warn: No listener for packet " + tag);
-
-        await this.enqueuePacket(data, listeners, packetQueue, isAsync, asyncData);
+        const packet = this.serverPackets.getPacket(tag);
+        const parentListeners = packet.parent ? this.listeners[packet.parent] : undefined;
+        if (!listeners && !parentListeners) {
+            console.warn("Warn: No listener for packet " + tag);
+            await this.triggerNextPacket(packetQueue, isAsync, asyncData);
+            return;
+        }
+        if (listeners) await listenPacket(data, listeners, this.invalidPacket);
+        if (typeof data !== "string" && packet.parent && packet.variant)
+            for (const listener of parentListeners ?? []) await listener({ variant: packet.variant, payload: data[0] });
+        await this.triggerNextPacket(packetQueue, isAsync, asyncData);
 
         await this.callMiddleware('onReceive_post', tag, typeof data == 'string' ? [data] : data[0]);
     }
@@ -238,7 +247,8 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
             return;
         }
 
-        (this.listeners[tag] ??= []).push(listener);
+        const resolved = this.serverPackets.resolveTag(tag);
+        (this.listeners[resolved] ??= []).push(listener);
     }
 
     private sendQueue: SendQueue = [false, [], undefined];
@@ -257,6 +267,15 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
         else this.batcher.batchPacket(code, data);
 
         await this.callMiddleware('onSend_post', tag, data, data.length);
+    }
+
+    public sendVariant(parent: string, variant: string, ...values: any[]): Promise<void> {
+        return this.send(this.clientPackets.getVariantTag(parent, variant), ...values);
+    }
+
+    public async sendSafe(tag: string, ...values: any[]): Promise<boolean> {
+        try { await this.send(tag, ...values); return true; }
+        catch (error) { console.error(`Failed to send packet "${tag}"`, error); return false; }
     }
 
     /**

@@ -37,9 +37,33 @@ create_packet(
 
 `noDataRange=True` selects the protocol-wide range. Use `async_=True` in keyword-call syntax (`{"async": True}` also works in a settings dictionary). Numeric data limits are clamped to 0…2,048,383 like TypeScript. Rate limits accept 1…65,535; zero or a larger value means unlimited. Rereference requires a nonzero minimum. `dataBatching` must fit in one byte because it is serialized in the schema.
 
-Object packets use `types`, `dataMins`, and `dataMaxes`; scalar min/max values are repeated for every sector. `autoFlatten=True` transposes rows into sectors before encoding and reverses the operation after decoding. Objects do not support rereference.
+Object packets use `types`, `dataMins`, and `dataMaxes`; scalar min/max values are repeated for every sector. Prefer `autoTranspose=True` with a schema for repeated records. Legacy `autoFlatten=True` still transposes positional rows into sectors. Objects do not support rereference.
 
 `CreatePacket`, `CreateObjPacket`, and `CreateEnumPacket` are aliases.
+
+## Schemas, layouts, and quantization
+
+Python accepts the same metadata as TypeScript:
+
+```py
+movement = CreatePacket(
+    tag="movementMove",
+    type=PacketType.SHORTS,
+    schema=["dx", "dy", "dz"],
+    dataMin=3,
+    dataMax=3,
+    quantized={"scale": 32767, "trackError": True},
+    min=-1,
+    max=1,
+)
+await socket.send("movementMove", {"dx": .5, "dy": 0, "dz": -.5})
+```
+
+All fields are required and extras are rejected. Positional sends remain valid and encode identically. Schema listeners receive one dictionary. `min` and `max` validate application-level values in both directions. Quantization rounds on send and divides on receive. `trackError` defaults to true and carries each rounding residual into the next value for that packet and connection; set it to false for stateless rounding.
+
+Homogeneous `autoFlatten=True` maps fixed-width dictionaries to row-major values. Object `autoTranspose=True` maps repeated dictionaries to column-major sectors; object `autoFlatten=True` remains an alias. Non-divisible homogeneous payloads are rejected. Variable-width records are not implemented.
+
+`CreatePacketGroup(...)` returns child packets to include in a packet list. Use `send_variant`/`sendVariant`; listeners may subscribe to `movement.move` or to `movement`, whose event is `{"variant": "move", "payload": ...}`.
 
 ## Values and listener spreading
 

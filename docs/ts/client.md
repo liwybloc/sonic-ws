@@ -8,6 +8,8 @@ Node: `new SonicWS(url, wsClientOptions?)`. Browser: `await SonicWS.initialize()
 
 - `on(tag, listener)`: listen for a server packet. Values are positional unless `dontSpread` is true.
 - `send(tag, ...values): Promise<void>`: validate, encode, optionally rereference/batch/compress, and send a client packet.
+- `sendVariant(parent, variant, ...values)`: send a packet-group child.
+- `sendSafe(tag, ...values): Promise<boolean>`: catch and report send failures without changing `send`.
 - `on_ready(listener)`: run after schema negotiation.
 - `on_close(listener)`: observe closure.
 - `raw_send(Uint8Array)`: bypass packet framing. Only use for protocol-aware extensions.
@@ -17,6 +19,7 @@ Node: `new SonicWS(url, wsClientOptions?)`. Browser: `await SonicWS.initialize()
 - `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`: connection-owned timers cancelled at close. `callOnClose` invokes the callback during closure.
 - `addMiddleware(middleware)` and `callMiddleware(method, ...args)`.
 - `setName(name)`, `getName()`: names are mainly useful on server-side connections and debugging.
+- `state`: mutable application-owned state scoped to the connection.
 
 Browser clients also expose `on_tamper`, `OpenDebug`, `WrapEnum`, `DeWrapEnum`, `FlattenData`, and `UnFlattenData`. DOM debug and anti-tamper functions have no Node equivalent.
 

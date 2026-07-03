@@ -77,6 +77,7 @@ test_python() {
     export PYTHONPATH="$PY/src${PYTHONPATH:+:$PYTHONPATH}"
     python3 "$PY/tests/test_codec.py"
     python3 "$PY/tests/test_parity.py"
+    python3 -m unittest "$PY/tests/test_features.py" -v
     python3 -u "$PY/tests/test_integration.py"
     python3 -u "$PY/tests/test_runtime.py"
 }

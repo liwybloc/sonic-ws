@@ -50,8 +50,9 @@ export async function processPacket(
             }
             packet.lastSent[id] = serialized;
         }
+        values = packet.prepareSend(values, id);
 
-        if (packet.autoFlatten) {
+        if (packet.autoFlatten && packet.object && !packet.fields) {
             values = FlattenData(values[0]);
         } else {
             if (values.length > packet.maxSize) throw new Error(`Packet "${tag}" only allows ${packet.maxSize} values!`);
@@ -250,6 +251,16 @@ export type SinglePacketSettings = SharedPacketSettings & {
     dataMin?: number;
     /** If this is true, it will save the last received of this value, and if no data is sent, it'll re-use the previous value. This is not compatible with dataMin: 0. Defaults to false. */
     rereference?: boolean;
+    /** Field names used to map positional values to and from an object. */
+    schema?: readonly string[];
+    /** Treat one array of records as fixed-width row-major data. Requires schema. */
+    autoFlatten?: boolean;
+    /** Packet-level numeric quantization. trackError defaults to true and enables per-connection error feedback. */
+    quantized?: { scale: number; trackError?: boolean };
+    /** Inclusive application-level numeric minimum. */
+    min?: number;
+    /** Inclusive application-level numeric maximum. */
+    max?: number;
 };
 
 /** Settings for multi-typed packets */
@@ -262,6 +273,15 @@ export type MultiPacketSettings = SharedPacketSettings & {
     dataMins?: number[] | number;
     /** Will automatically run FlattenData() and UnFlattenData() on values; this will optimize [[x,y,z],[x,y,z]...] for wire transfer */
     autoFlatten?: boolean;
+    /** Field names for records transposed into object-packet columns. */
+    schema?: readonly string[];
+    /** Column-major repeated-record mapping. autoFlatten remains a deprecated alias. */
+    autoTranspose?: boolean;
+};
+
+export type PacketGroupSettings = {
+    tag: string;
+    variants: Record<string, Omit<SinglePacketSettings, "tag">>;
 };
 
 /** Settings for single-typed enum packets */
@@ -289,13 +309,15 @@ export type KeyEffectivePacketSettings = SharedPacketSettings & {
 export function CreatePacket<T extends ArguableType>(
     settings: SinglePacketSettings & { type?: T }
 ): Packet<ConvertType<T>> {
-    let { tag, type = PacketType.NONE, dataMax = 1, dataMin = 1, noDataRange = false, dontSpread = false,
+    const repeatedDefaultRange = settings.autoFlatten === true && settings.dataMax === undefined && settings.dataMin === undefined;
+    let { tag, type = PacketType.NONE, dataMax = 1, dataMin, noDataRange = false, dontSpread = false,
           validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false,
-          gzipCompression = type == PacketType.JSON, rereference = false } = settings;
+          gzipCompression = type == PacketType.JSON, rereference = false, schema: fields, autoFlatten = false,
+          quantized, min, max } = settings;
 
     if(!tag) throw new Error("Tag not selected!");
 
-    if(noDataRange) {
+    if(noDataRange || repeatedDefaultRange) {
         dataMin = rereference ? 1 : 0;
         dataMax = MAX_DATA_MAX;
     } else if(dataMin == undefined) dataMin = type == PacketType.NONE ? 0 : dataMax;
@@ -306,8 +328,15 @@ export function CreatePacket<T extends ArguableType>(
         throw new Error(`Invalid packet type: ${type}`);
     }
 
+    validateFields(fields, tag);
+    if (autoFlatten && (!fields || fields.length === 0)) throw new Error(`Packet "${tag}" autoFlatten requires schema`);
+    if (fields && !autoFlatten && dataMin === dataMax && fields.length !== dataMax)
+        throw new Error(`Packet "${tag}" schema length must match its fixed value count (${dataMax})`);
+    validateNumericOptions(type, quantized, min, max, tag);
+
     const schema = new PacketSchema<PacketType>(false, type, async, clampDataMin(dataMin, dataMax), clampDataMax(dataMax), clampRateLimit(rateLimit),
-                    dontSpread, false, rereference, dataBatching, maxBatchSize, gzipCompression);
+                    dontSpread, autoFlatten, rereference, dataBatching, maxBatchSize, gzipCompression,
+                    fields, quantized, min, max);
 
     return new Packet<ConvertType<T>>(tag, schema, validator, enabled, false);
 }
@@ -322,12 +351,18 @@ export function CreatePacket<T extends ArguableType>(
 export function CreateObjPacket<T extends readonly ArguableType[], V extends readonly PacketType[] = {[K in keyof T]: ConvertType<T[K]>}>(
     settings: MultiPacketSettings & { readonly types: T }
 ): Packet<V> {
-    let { tag, types = [], dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false,
+    let { tag, types = [], dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false, autoTranspose,
+          schema: fields,
           validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false,
           gzipCompression = types && (types as ArguableType[]).includes(PacketType.JSON) } = settings;
 
     if(!tag) throw new Error("Tag not selected!");
     if(!types || types.length == 0) throw new Error("Types is set to 0 length");
+    validateFields(fields, tag);
+    if (fields && fields.length !== types.length) throw new Error(`Packet "${tag}" schema length must match types length`);
+    if (autoTranspose !== undefined && autoFlatten && autoTranspose !== autoFlatten)
+        throw new Error(`Packet "${tag}" has conflicting autoFlatten and autoTranspose options`);
+    const transpose = autoTranspose ?? autoFlatten;
 
     for(const type of types) {
         if (!isInvalidType(type)) continue;
@@ -348,9 +383,37 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
     const clampedDataMaxes = dataMaxes.map(clampDataMax);
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
-    const schema = new PacketSchema<readonly PacketType[]>(true, types as any, async, clampedDataMins, clampedDataMaxes, clampRateLimit(rateLimit), dontSpread, autoFlatten, false, dataBatching, maxBatchSize, gzipCompression);
+    const schema = new PacketSchema<readonly PacketType[]>(true, types as any, async, clampedDataMins, clampedDataMaxes, clampRateLimit(rateLimit), dontSpread, transpose, false, dataBatching, maxBatchSize, gzipCompression, fields);
 
     return new Packet<V>(tag, schema, validator, enabled, false);
+}
+
+/** Creates normal child packets for a tagged variant group. Spread the result into a packet list. */
+export function CreatePacketGroup(settings: PacketGroupSettings): Packet<any>[] {
+    if (!settings.tag || settings.tag.includes("$")) throw new Error("Packet group tag is required and cannot contain '$'");
+    const entries = Object.entries(settings.variants);
+    if (!entries.length) throw new Error(`Packet group "${settings.tag}" requires at least one variant`);
+    return entries.map(([variant, definition]) => {
+        if (!variant || variant.includes("$")) throw new Error("Packet variant names cannot be empty or contain '$'");
+        return CreatePacket({ ...definition, tag: `__${settings.tag}$${variant}` } as SinglePacketSettings);
+    });
+}
+
+function validateFields(fields: readonly string[] | undefined, tag: string): void {
+    if (!fields) return;
+    if (!fields.length || fields.some(field => typeof field !== "string" || !field))
+        throw new Error(`Packet "${tag}" schema must contain non-empty field names`);
+    if (new Set(fields).size !== fields.length) throw new Error(`Packet "${tag}" schema fields must be unique`);
+}
+
+const NUMERIC_TYPES = new Set<any>([PacketType.BYTES, PacketType.UBYTES, PacketType.SHORTS, PacketType.USHORTS,
+    PacketType.VARINT, PacketType.UVARINT, PacketType.DELTAS, PacketType.FLOATS, PacketType.DOUBLES]);
+function validateNumericOptions(type: ArguableType, quantized: { scale: number } | undefined, min: number | undefined, max: number | undefined, tag: string): void {
+    if (min !== undefined && max !== undefined && min > max) throw new Error(`Packet "${tag}" min cannot exceed max`);
+    if ((quantized || min !== undefined || max !== undefined) && !NUMERIC_TYPES.has(type))
+        throw new Error(`Packet "${tag}" numeric options require a numeric packet type`);
+    if (quantized && (!Number.isFinite(quantized.scale) || quantized.scale <= 0))
+        throw new Error(`Packet "${tag}" quantization scale must be positive and finite`);
 }
 
 /**

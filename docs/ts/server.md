@@ -2,7 +2,7 @@
 
 ## Options
 
-`new SonicWSServer({ clientPackets, serverPackets, websocketOptions, sonicServerSettings })`.
+`new SonicWSServer({ clientPackets, serverPackets, websocketOptions, sonicServerSettings, onSendError })`. `onSendError(error, context)` receives failures caught by safe send helpers.
 
 `websocketOptions` is passed to `ws.WebSocketServer`. `sonicServerSettings` supports:
 
@@ -17,6 +17,7 @@
 - `setClientRateLimit(limit)`, `setServerRateLimit(limit)`: per-connection messages/second. Both default to 500/s. The stored range is an unsigned 16-bit value: zero or values over 65,535 mean unlimited.
 - `enablePacket(tag)`, `disablePacket(tag)`: change defaults and all current connections.
 - `broadcast(tag, ...values)`, `broadcastFiltered(tag, predicate, ...values)`, `broadcastTagged(connectionTag, packetTag, ...values)`.
+- `broadcastSafe(tag, ...values)` and `broadcastVariant(parent, variant, ...values)`.
 - `getConnected()`, `getSocket(id)`, `closeSocket(id, code?, reason?)`.
 - `tag(connection, tag, replace = true)`: assign one or multiple broadcast groups.
 - `addMiddleware(middleware)`.
@@ -24,6 +25,6 @@
 
 ## `SonicWSConnection`
 
-Server connection methods include `on`, `send`, `broadcast` (all other users), `broadcastFiltered` (matching other users), `enablePacket`, `disablePacket`, `tag`, `on_close`, `close`, `setName`, `getName`, timer/raw methods, middleware, and `togglePrint`. `handshakeComplete` reports required-handshake state; `id` is unique among currently connected sockets.
+Server connection methods include `on`, `send`, `sendSafe`, `sendVariant`, `broadcast` (all other users), `broadcastFiltered` (matching other users), `enablePacket`, `disablePacket`, `tag`, `on_close`, `close`, `setName`, `getName`, timer/raw methods, middleware, and `togglePrint`. `handshakeComplete` reports required-handshake state; `id` is unique among currently connected sockets. `state` is a mutable application-owned object scoped to the connection.
 
 Close codes 4000–4008 represent rate limit, undersized input, invalid key, invalid packet, invalid data, repeated handshake, disabled packet, middleware rejection, and manual shutdown. `getClosureCause(code)` converts known standard/private codes to names.

@@ -16,7 +16,7 @@ from .codec import inflate
 from .packets import Packet, read_varint, flatten_data, unflatten_data
 from .enums import wrap_enum, dewrap_enum
 
-VERSION = 22
+VERSION = 23
 
 
 class SonicWS(Connection):
@@ -78,6 +78,8 @@ class SonicWS(Connection):
             else:
                 raise
         finally:
+            for packet in self.client_packets.packets:
+                packet.quantization_errors.pop(0, None)
             if not self._ready.done():
                 self._ready.set_exception(
                     ConnectionError("connection closed before the SonicWS handshake")
@@ -109,20 +111,31 @@ class SonicWS(Connection):
         async with self._send_lock:
             if await self._middleware("onSend_pre", tag, list(values), 0, 0):
                 return
+            tag = self.client_packets.resolve(tag)
             packet = self.client_packets.packet(tag)
-            if packet.auto_flatten:
-                values = (flatten_data(values[0]),)
             code = self.client_packets.code(tag)
             if packet.rereference and packet.last_sent.get(0) == values:
                 data = b""
             else:
-                data = packet.encode(values)
+                data = packet.encode(values, 0)
                 packet.last_sent[0] = values
             if packet.data_batching:
                 await self._batch(code, packet, data)
             else:
                 await self.raw_send(bytes([code]) + data)
             await self._middleware("onSend_post", tag, data, len(data))
+
+    async def send_variant(self, parent, variant, *values):
+        await self.send(self.client_packets.variant_tag(parent, variant), *values)
+
+    async def send_safe(self, tag, *values):
+        try:
+            await self.send(tag, *values)
+            return True
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('Failed to send packet "%s"', tag)
+            return False
 
     async def wait_ready(self):
         await self._ready
@@ -141,6 +154,8 @@ class SonicWS(Connection):
     UnFlattenData = staticmethod(unflatten_data)
     onReady = on_ready
     waitReady = wait_ready
+    sendVariant = send_variant
+    sendSafe = send_safe
 
 
 async def _invoke(callback):

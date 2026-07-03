@@ -174,6 +174,7 @@ projects/py/vendor/
 projects/ts/README.md
 projects/ts/LICENSE
 projects/ts/bundled/
+projects/ts/package-lock.json
 
 # strix
 strix_runs

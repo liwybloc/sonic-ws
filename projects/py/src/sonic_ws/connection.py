@@ -68,6 +68,8 @@ class PacketHolder:
         self.packets = list(packets)
         self.by_tag = {p.tag: p for p in self.packets}
         self.tags = [p.tag for p in self.packets]
+        self.variants = {f"{p.parent}.{p.variant}": p.tag for p in self.packets if p.parent}
+        self.parents = {p.parent for p in self.packets if p.parent}
         if len(self.packets) > 254:
             raise ValueError("SonicWS supports at most 254 packets per direction")
 
@@ -75,6 +77,7 @@ class PacketHolder:
         return b"".join(packet.serialize() for packet in self.packets)
 
     def code(self, tag):
+        tag = self.resolve(tag)
         try:
             return self.tags.index(tag) + 1
         except ValueError as exc:
@@ -86,10 +89,19 @@ class PacketHolder:
         return self.tags[code - 1]
 
     def packet(self, tag):
-        return self.by_tag[tag]
+        return self.by_tag[self.resolve(tag)]
 
     def __contains__(self, tag):
-        return tag in self.by_tag
+        return self.resolve(tag) in self.by_tag or tag in self.parents
+
+    def resolve(self, tag):
+        return self.variants.get(tag, tag)
+
+    def variant_tag(self, parent, variant):
+        try:
+            return self.variants[f"{parent}.{variant}"]
+        except KeyError as error:
+            raise ValueError(f"Unknown packet variant: {parent}.{variant}") from error
 
 
 class Connection:
@@ -107,6 +119,7 @@ class Connection:
         self._rate_windows = defaultdict(deque)
         self._async_packet_locks = defaultdict(asyncio.Lock)
         self._send_lock = asyncio.Lock()
+        self.state = {}
 
     def _within_rate(self, key, limit):
         if not limit or limit < 0:
@@ -278,7 +291,10 @@ async def dispatch_packet(connection, packet, payload, socket_for_validator=None
             if cache_key not in packet.last_received:
                 raise ValueError("no previous value to rereference")
             values = packet.last_received[cache_key]
-            await connection._emit(packet.tag, values, not packet.dont_spread)
+            await connection._emit(packet.tag, values, bool(not packet.dont_spread and not packet.schema))
+            if packet.parent:
+                await connection._emit(f"{packet.parent}.{packet.variant}", values, False)
+                await connection._emit(packet.parent, {"variant": packet.variant, "payload": values}, False)
             return
         payloads = (
             decode_batch(payload, packet.gzip_compression, packet.max_batch_size)
@@ -292,10 +308,13 @@ async def dispatch_packet(connection, packet, payload, socket_for_validator=None
             if packet.validator:
                 args = (
                     values
-                    if isinstance(values, list) and not packet.dont_spread
+                    if isinstance(values, list) and not packet.dont_spread and not packet.schema
                     else [values]
                 )
                 if not await _call(packet.validator, socket_for_validator, *args):
                     raise ValueError("custom packet validation failed")
-            await connection._emit(packet.tag, values, not packet.dont_spread)
+            await connection._emit(packet.tag, values, bool(not packet.dont_spread and not packet.schema))
+            if packet.parent:
+                await connection._emit(f"{packet.parent}.{packet.variant}", values, False)
+                await connection._emit(packet.parent, {"variant": packet.variant, "payload": values}, False)
             await connection._middleware("onReceive_post", packet.tag, values)

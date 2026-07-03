@@ -112,6 +112,8 @@ export abstract class Connection<T extends {
 
     /** The index of the connection; unique for all connected, not unique after disconnection. */
     public id: number;
+    /** Mutable application-owned state scoped to this connection. */
+    public state: Record<string, unknown> = {};
 
     constructor(socket: T, id: number, name: string, addListener: Function, removeListener: Function) {
         super();

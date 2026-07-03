@@ -11,6 +11,8 @@ Options are forwarded to `websockets.asyncio.client.connect`. A background reade
 ## Methods and attributes
 
 - `await send(tag, *values)`
+- `await send_variant(parent, variant, *values)` / `sendVariant`
+- `await send_safe(tag, *values)` / `sendSafe`, returning a boolean
 - `on(tag, listener)` and `off(tag, listener)`
 - `on_ready(listener)` / `onReady`; `wait_ready()` / `waitReady`
 - `on_close(listener)`
@@ -19,7 +21,7 @@ Options are forwarded to `websockets.asyncio.client.connect`. A background reade
 - `await set_name(name)`, `get_name()`
 - `set_timeout`, `set_interval`, `clear_timeout`, `clear_interval`; returned handles are `asyncio.Task` objects
 - `add_middleware`, `await call_middleware(name, *args)`
-- `id`, `client_packets`, `server_packets`, and underlying `socket`
+- `id`, mutable `state`, `client_packets`, `server_packets`, and underlying `socket`
 
 Static compatibility helpers are `WrapEnum`, `DeWrapEnum`, `FlattenData`, and `UnFlattenData`.
 

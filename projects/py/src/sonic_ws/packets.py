@@ -12,6 +12,8 @@
 from dataclasses import dataclass, field
 from typing import Any, Callable, Sequence
 import warnings
+import json
+import math
 from .packet_type import PacketType
 from .enums import EnumPackage, Undefined, define_enum
 from .codec import (
@@ -85,6 +87,16 @@ class Packet:
     client: bool = False
     last_sent: dict[int, Any] = field(default_factory=dict)
     last_received: dict[int, Any] = field(default_factory=dict)
+    quantization_errors: dict[int, float] = field(default_factory=dict, repr=False)
+    schema: tuple[str, ...] | None = None
+    quantized: dict[str, Any] | None = None
+    value_min: float | None = None
+    value_max: float | None = None
+
+    def __post_init__(self):
+        if self.quantized is not None:
+            self.quantized = dict(self.quantized)
+            self.quantized.setdefault("trackError", True)
 
     @property
     def object(self):
@@ -110,7 +122,96 @@ class Packet:
     def max_size(self):
         return len(self.types) if self.object else self.data_maxes[0]
 
-    def encode(self, values: Sequence[Any]) -> bytes:
+    @property
+    def auto_transpose(self):
+        return self.auto_flatten if self.object else False
+
+    @property
+    def parent(self):
+        if self.tag.startswith("__") and "$" in self.tag[2:]:
+            return self.tag[2:].rsplit("$", 1)[0]
+        return None
+
+    @property
+    def variant(self):
+        return self.tag.rsplit("$", 1)[1] if self.parent else None
+
+    def _record(self, record, context):
+        if not self.schema or not isinstance(record, dict):
+            raise ValueError(f'Packet "{self.tag}" {context} requires an object record')
+        missing = [name for name in self.schema if name not in record]
+        extra = [name for name in record if name not in self.schema]
+        if missing:
+            raise ValueError(f'Packet "{self.tag}" is missing schema field(s): {", ".join(missing)}')
+        if extra:
+            raise ValueError(f'Packet "{self.tag}" has unknown schema field(s): {", ".join(extra)}')
+        return [record[name] for name in self.schema]
+
+    def _numbers(self, values, direction, state_key=-1):
+        scale = self.quantized.get("scale") if self.quantized else None
+        result = []
+        for value in values:
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
+                raise ValueError(f'Packet "{self.tag}" {direction} value must be a finite number')
+            logical = value / scale if direction == "receive" and scale else value
+            if self.value_min is not None and logical < self.value_min:
+                raise ValueError(f'Packet "{self.tag}" value {logical} is below minimum {self.value_min}')
+            if self.value_max is not None and logical > self.value_max:
+                raise ValueError(f'Packet "{self.tag}" value {logical} exceeds maximum {self.value_max}')
+            if direction == "send" and scale:
+                residual = self.quantization_errors.get(state_key, 0.0) if self.quantized.get("trackError", True) else 0.0
+                adjusted = logical * scale + residual
+                wire = math.floor(adjusted + 0.5)
+                if self.quantized.get("trackError", True):
+                    self.quantization_errors[state_key] = adjusted - wire
+                result.append(wire)
+            else:
+                result.append(logical)
+        return result
+
+    def prepare_send(self, values, state_key=-1):
+        values = list(values)
+        if self.object:
+            if self.auto_flatten and self.schema:
+                if len(values) != 1 or not isinstance(values[0], (list, tuple)):
+                    raise ValueError(f'Packet "{self.tag}" autoTranspose requires one array of records')
+                rows = [self._record(row, "autoTranspose") for row in values[0]]
+                return [[row[column] for row in rows] for column in range(len(self.schema))]
+            if self.auto_flatten:
+                return flatten_data(values[0])
+            return values
+        if self.auto_flatten:
+            if len(values) != 1 or not isinstance(values[0], (list, tuple)):
+                raise ValueError(f'Packet "{self.tag}" autoFlatten requires one array of records')
+            values = [item for row in values[0] for item in self._record(row, "autoFlatten")]
+        elif self.schema and len(values) == 1 and isinstance(values[0], dict):
+            values = self._record(values[0], "schema mapping")
+        if self.quantized or self.value_min is not None or self.value_max is not None:
+            values = self._numbers(values, "send", state_key)
+        return values
+
+    def finish_receive(self, values):
+        if self.object:
+            if self.auto_flatten and self.schema:
+                count = len(values[0]) if values else 0
+                if any(len(column) != count for column in values):
+                    raise ValueError(f'Packet "{self.tag}" autoTranspose columns have different lengths')
+                return [{name: values[column][row] for column, name in enumerate(self.schema)} for row in range(count)]
+            return unflatten_data(values) if self.auto_flatten else values
+        decoded = list(values) if isinstance(values, (list, tuple)) else [values]
+        if self.quantized or self.value_min is not None or self.value_max is not None:
+            decoded = self._numbers(decoded, "receive")
+        if self.auto_flatten:
+            width = len(self.schema)
+            if len(decoded) % width:
+                raise ValueError(f'Packet "{self.tag}" flat value count {len(decoded)} is not divisible by schema length {width}')
+            return [{name: decoded[row * width + column] for column, name in enumerate(self.schema)} for row in range(len(decoded) // width)]
+        if self.schema:
+            return dict(zip(self.schema, decoded))
+        return values
+
+    def encode(self, values: Sequence[Any], state_key=-1) -> bytes:
+        values = self.prepare_send(values, state_key)
         if self.object:
             if len(values) != len(self.types):
                 raise ValueError("object field count mismatch")
@@ -203,8 +304,7 @@ class Packet:
                 and not self.data_mins[0] <= count <= self.data_maxes[0]
             ):
                 raise ValueError("value count outside schema limits")
-        values = unflatten_data(values) if self.auto_flatten else values
-        return values
+        return self.finish_receive(values)
 
     def serialize(self) -> bytes:
         flags = [
@@ -217,10 +317,12 @@ class Packet:
         ]
         flag_byte = sum(int(v) << (7 - i) for i, v in enumerate(flags))
         tag = self.tag.encode("latin1")
+        metadata = json.dumps({"schema": self.schema, "quantized": self.quantized, "min": self.value_min, "max": self.value_max}, separators=(",", ":")).encode()
         shared = (
             bytes([len(tag)])
             + tag
-            + bytes([flag_byte, self.data_batching, len(self.enum_data)])
+            + bytes([flag_byte]) + varint(len(metadata)) + metadata
+            + bytes([self.data_batching, len(self.enum_data)])
             + b"".join(e.serialize() for e in self.enum_data)
         )
         if not self.object:
@@ -250,6 +352,9 @@ class Packet:
         dont, asynchronous, obj, auto, gzip, reref = [
             bool(flags & (1 << (7 - i))) for i in range(6)
         ]
+        offset, metadata_length = read_varint(data, offset)
+        metadata = json.loads(data[offset : offset + metadata_length])
+        offset += metadata_length
         batching, enum_count = data[offset], data[offset + 1]
         offset += 2
         enums = []
@@ -318,6 +423,10 @@ class Packet:
                 max_batch_size=0 if client else 10,
                 gzip_compression=gzip,
                 client=client,
+                schema=tuple(metadata["schema"]) if metadata.get("schema") else None,
+                quantized=metadata.get("quantized"),
+                value_min=metadata.get("min"),
+                value_max=metadata.get("max"),
             ),
             offset - start,
         )
@@ -392,14 +501,32 @@ def create_packet(settings=None, **kwargs):
     value = s.pop("type", PacketType.NONE)
     enum = value if isinstance(value, EnumPackage) else None
     kind = PacketType.ENUMS if enum else PacketType(value)
-    no_range = bool(s.pop("noDataRange", s.pop("no_data_range", False)))
+    fields = s.pop("schema", None)
+    fields = tuple(fields) if fields is not None else None
+    auto_flatten = bool(s.pop("autoFlatten", s.pop("auto_flatten", False)))
+    repeated_default = auto_flatten and "dataMax" not in s and "data_max" not in s and "dataMin" not in s and "data_min" not in s
+    no_range = bool(s.pop("noDataRange", s.pop("no_data_range", False))) or repeated_default
     rereference = bool(s.pop("rereference", False))
+    quantized = s.pop("quantized", None)
+    value_min = s.pop("min", None)
+    value_max = s.pop("max", None)
     maximum = MAX_DATA_MAX if no_range else _data_max(s.pop("dataMax", s.pop("data_max", 1)))
-    default_min = 1 if "dataMax" not in s and "data_max" not in s else maximum
-    minimum = 1 if no_range and rereference else (0 if no_range else s.pop("dataMin", s.pop("data_min", 0 if kind == PacketType.NONE else default_min)))
+    minimum = 1 if no_range and rereference else (0 if no_range else s.pop("dataMin", s.pop("data_min", 0 if kind == PacketType.NONE else maximum)))
     minimum = _data_min(minimum, maximum, kind)
     if rereference and minimum == 0:
         raise ValueError("rereference cannot be enabled when dataMin is 0")
+    _validate_schema(fields, tag)
+    if auto_flatten and not fields:
+        raise ValueError(f'Packet "{tag}" autoFlatten requires schema')
+    if fields and not auto_flatten and minimum == maximum and len(fields) != maximum:
+        raise ValueError(f'Packet "{tag}" schema length must match its fixed value count ({maximum})')
+    numeric = kind in {PacketType.BYTES, PacketType.UBYTES, PacketType.SHORTS, PacketType.USHORTS, PacketType.VARINT, PacketType.UVARINT, PacketType.DELTAS, PacketType.FLOATS, PacketType.DOUBLES}
+    if (quantized is not None or value_min is not None or value_max is not None) and not numeric:
+        raise ValueError(f'Packet "{tag}" numeric options require a numeric packet type')
+    if quantized is not None and (not math.isfinite(quantized.get("scale", 0)) or quantized.get("scale", 0) <= 0):
+        raise ValueError(f'Packet "{tag}" quantization scale must be positive and finite')
+    if value_min is not None and value_max is not None and value_min > value_max:
+        raise ValueError(f'Packet "{tag}" min cannot exceed max')
     common = _common(s, default_gzip=kind == PacketType.JSON)
     packet = Packet(
         tag=tag,
@@ -408,6 +535,11 @@ def create_packet(settings=None, **kwargs):
         data_maxes=(maximum,),
         enum_data=(enum,) if enum else (),
         rereference=rereference,
+        schema=fields,
+        auto_flatten=auto_flatten,
+        quantized=dict(quantized) if quantized else None,
+        value_min=value_min,
+        value_max=value_max,
         **common,
     )
     _finish(s)
@@ -428,6 +560,11 @@ def create_obj_packet(settings=None, **kwargs):
     n = len(types)
     if n == 0:
         raise ValueError("types cannot be empty")
+    fields = s.pop("schema", None)
+    fields = tuple(fields) if fields is not None else None
+    _validate_schema(fields, tag)
+    if fields and len(fields) != n:
+        raise ValueError(f'Packet "{tag}" schema length must match types length')
     no_range = bool(s.pop("noDataRange", s.pop("no_data_range", False)))
     maxes = [MAX_DATA_MAX] * n if no_range else s.pop("dataMaxes", s.pop("data_maxes", [1] * n))
     maxes = [maxes] * n if isinstance(maxes, int) else list(maxes)
@@ -438,7 +575,11 @@ def create_obj_packet(settings=None, **kwargs):
     maxes = [_data_max(v) for v in maxes]
     mins = [_data_min(v, maxes[i], types[i]) for i, v in enumerate(mins)]
     common = _common(s, default_gzip=PacketType.JSON in types)
-    auto_flatten = bool(s.pop("autoFlatten", s.pop("auto_flatten", False)))
+    old_auto = s.pop("autoFlatten", s.pop("auto_flatten", None))
+    transpose = s.pop("autoTranspose", s.pop("auto_transpose", None))
+    if old_auto is not None and transpose is not None and bool(old_auto) != bool(transpose):
+        raise ValueError(f'Packet "{tag}" has conflicting autoFlatten and autoTranspose options')
+    auto_flatten = bool(transpose if transpose is not None else old_auto)
     packet = Packet(
         tag=tag,
         types=tuple(types),
@@ -447,6 +588,7 @@ def create_obj_packet(settings=None, **kwargs):
         enum_data=tuple(enums),
         is_object=True,
         auto_flatten=auto_flatten,
+        schema=fields,
         **common,
     )
     _finish(s)
@@ -459,8 +601,35 @@ def create_enum_packet(settings=None, **kwargs):
     return create_packet(s)
 
 
+def _validate_schema(fields, tag):
+    if fields is None:
+        return
+    if not fields or any(not isinstance(name, str) or not name for name in fields):
+        raise ValueError(f'Packet "{tag}" schema must contain non-empty field names')
+    if len(set(fields)) != len(fields):
+        raise ValueError(f'Packet "{tag}" schema fields must be unique')
+
+
+def create_packet_group(settings=None, **kwargs):
+    s = _settings(settings, kwargs)
+    tag = s.pop("tag")
+    variants = s.pop("variants")
+    _finish(s)
+    if not tag or "$" in tag:
+        raise ValueError("Packet group tag is required and cannot contain '$'")
+    if not variants:
+        raise ValueError(f'Packet group "{tag}" requires at least one variant')
+    packets = []
+    for variant, definition in variants.items():
+        if not variant or "$" in variant:
+            raise ValueError("Packet variant names cannot be empty or contain '$'")
+        packets.append(create_packet({**definition, "tag": f"__{tag}${variant}"}))
+    return packets
+
+
 CreatePacket = create_packet
 CreateObjPacket = create_obj_packet
 CreateEnumPacket = create_enum_packet
+CreatePacketGroup = create_packet_group
 FlattenData = flatten_data
 UnFlattenData = unflatten_data

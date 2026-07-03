@@ -59,6 +59,7 @@ export type SonicServerOptions = {
     /** Default WS Options */
     readonly websocketOptions?: WS.ServerOptions;
     readonly sonicServerSettings?: SonicServerSettings;
+    readonly onSendError?: (error: unknown, context: { packetTag: string; connection?: SonicWSConnection; operation?: "broadcast" }) => void;
 }
 
 export type PacketTypings = readonly Packet<PacketType | readonly PacketType[]>[];
@@ -86,6 +87,7 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
     tagsInv: Map<String, Set<SonicWSConnection>> = new Map();
 
     private serverwideSendQueue: SendQueue = [false, [], undefined];
+    private readonly sendErrorHandler?: SonicServerOptions["onSendError"];
 
     /**
      * Initializes and hosts a websocket with sonic protocol
@@ -96,6 +98,7 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
         super();
 
         const { clientPackets = [], serverPackets = [], websocketOptions = {} } = settings;
+        this.sendErrorHandler = settings.onSendError;
  
         this.wss = new WS.WebSocketServer(websocketOptions);
 
@@ -333,6 +336,20 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
 
     public async broadcast(tag: string, ...values: any): Promise<void> {
         await this.broadcastInternal(tag, { type: "all" }, values);
+    }
+
+    public async broadcastSafe(tag: string, ...values: any[]): Promise<boolean> {
+        try { await this.broadcast(tag, ...values); return true; }
+        catch (error) { this.handleSendError(error, { packetTag: tag, operation: "broadcast" }); return false; }
+    }
+
+    public broadcastVariant(parent: string, variant: string, ...values: any[]): Promise<void> {
+        return this.broadcast(this.serverPackets.getVariantTag(parent, variant), ...values);
+    }
+
+    public handleSendError(error: unknown, context: { packetTag: string; connection?: SonicWSConnection; operation?: "broadcast" }): void {
+        if (this.sendErrorHandler) this.sendErrorHandler(error, context);
+        else console.error(`Failed to send packet "${context.packetTag}"`, error);
     }
 
     /**

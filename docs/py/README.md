@@ -1,6 +1,6 @@
 # SonicWS Python documentation
 
-The Python package is an asyncio client and server compatible with the TypeScript SonicWS protocol. It uses the same Rust codec through a small C ABI loaded with `ctypes`; Python owns WebSocket lifecycle, callbacks, middleware, JSON conversion, and Python object conversion.
+The Python package is an asyncio client and server compatible with the TypeScript SonicWS protocol. It runs the shared Rust codec as packaged WebAssembly through `wasmtime`; Python owns WebSocket lifecycle, callbacks, middleware, JSON conversion, and Python object conversion.
 
 ## Contents
 

@@ -20,7 +20,7 @@ from .codec import deflate
 from .packets import varint, flatten_data
 from .middleware import BCInfo
 
-VERSION = 22
+VERSION = 23
 MAX_USHORT = 65_535
 logger = logging.getLogger(__name__)
 
@@ -91,6 +91,8 @@ class SonicWSConnection(Connection):
         except ConnectionClosed:
             pass
         finally:
+            for packet in self.host.server_packets.packets:
+                packet.quantization_errors.pop(self.id, None)
             code = getattr(self.socket, "close_code", 1000) or 1000
             reason = getattr(self.socket, "close_reason", "") or ""
             await self._shutdown(code, reason)
@@ -109,18 +111,28 @@ class SonicWSConnection(Connection):
         async with self._send_lock:
             if await self._middleware("onSend_pre", tag, list(values), int(time.time() * 1000), time.perf_counter() * 1000):
                 return
+            tag = self.host.server_packets.resolve(tag)
             packet = self.host.server_packets.packet(tag)
             code = self.host.server_packets.code(tag)
             if packet.rereference and packet.last_sent.get(self.id) == values:
                 data = b""
             else:
-                data = packet.encode(
-                    (flatten_data(values[0]),) if packet.auto_flatten else values
-                )
+                data = packet.encode(values, self.id)
                 packet.last_sent[self.id] = values
             if await self._middleware("onSend_post", tag, data, len(data)):
                 return
             await self.send_processed(code, data, packet)
+
+    async def send_variant(self, parent, variant, *values):
+        await self.send(self.host.server_packets.variant_tag(parent, variant), *values)
+
+    async def send_safe(self, tag, *values):
+        try:
+            await self.send(tag, *values)
+            return True
+        except Exception as error:
+            self.host.handle_send_error(error, {"packetTag": tag, "connection": self})
+            return False
 
     async def send_processed(self, code, data, packet):
         if not self._within_rate("server", self.host.server_rate_limit) or not self._within_rate("server:" + packet.tag, packet.rate_limit):
@@ -155,6 +167,8 @@ class SonicWSConnection(Connection):
     sendProcessed = send_processed
     broadcastFiltered = broadcast_filtered
     togglePrint = toggle_print
+    sendVariant = send_variant
+    sendSafe = send_safe
 
 
 class SonicWSServer:
@@ -178,6 +192,9 @@ class SonicWSServer:
             host = options.pop("host", host)
             port = options.pop("port", port)
             kwargs = {**options, **kwargs}
+            self.on_send_error = settings.get("onSendError", settings.get("on_send_error"))
+        else:
+            self.on_send_error = None
         self.client_packets = PacketHolder(client_packets)
         self.server_packets = PacketHolder(server_packets)
         self.host = host
@@ -317,12 +334,28 @@ class SonicWSServer:
         packet = self.server_packets.packet(tag)
         if packet.rereference:
             raise ValueError("cannot broadcast a rereferenced packet")
-        encoded_values = (flatten_data(values[0]),) if packet.auto_flatten else values
-        data = packet.encode(encoded_values)
+        data = packet.encode(values, -1)
         if await self._middleware("onPacketBroadcast_post", tag, info, data, len(data)):
             return
         code = self.server_packets.code(tag)
         await asyncio.gather(*(connection.send_processed(code, data, packet) for connection in recipients))
+
+    async def broadcast_safe(self, tag, *values):
+        try:
+            await self.broadcast(tag, *values)
+            return True
+        except Exception as error:
+            self.handle_send_error(error, {"packetTag": tag, "operation": "broadcast"})
+            return False
+
+    async def broadcast_variant(self, parent, variant, *values):
+        await self.broadcast(self.server_packets.variant_tag(parent, variant), *values)
+
+    def handle_send_error(self, error, context):
+        if self.on_send_error:
+            self.on_send_error(error, context)
+        else:
+            logger.exception('Failed to send packet "%s"', context["packetTag"], exc_info=error)
 
     def enable_packet(self, tag):
         self.client_packets.packet(tag).default_enabled = True
@@ -389,6 +422,8 @@ class SonicWSServer:
     setServerRateLimit = set_server_rate_limit
     broadcastFiltered = broadcast_filtered
     broadcastTagged = broadcast_tagged
+    broadcastSafe = broadcast_safe
+    broadcastVariant = broadcast_variant
     enablePacket = enable_packet
     disablePacket = disable_packet
     getConnected = get_connected

@@ -75,7 +75,7 @@ export class BatchHelper {
             if(typeof listen == 'string') return "Batched packet: " + listen;
 
             // store result
-            result.push([listen[0], !packet.dontSpread]);
+            result.push(listen);
         }
         return result;
     }

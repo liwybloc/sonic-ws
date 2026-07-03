@@ -31,6 +31,8 @@ export class PacketHolder {
     private packetMap: Record<string, Packet<PacketType | readonly PacketType[]>>;
     /** List of all packet instances */
     private packets!: PacketTypings;
+    private variants: Record<string, string> = {};
+    private parents = new Set<string>();
 
     /**
      * Creates a new PacketHolder with an array of packets
@@ -64,8 +66,14 @@ export class PacketHolder {
      */
     public holdPackets(packets: PacketTypings): void {
         this.packets = packets;
-        for (const packet of packets)
-            this.createKey(packet.tag), this.packetMap[packet.tag] = packet;
+        for (const packet of packets) {
+            this.createKey(packet.tag);
+            this.packetMap[packet.tag] = packet;
+            if (packet.parent && packet.variant) {
+                this.variants[`${packet.parent}.${packet.variant}`] = packet.tag;
+                this.parents.add(packet.parent);
+            }
+        }
     }
 
     /**
@@ -73,6 +81,7 @@ export class PacketHolder {
      * @param tag The packet tag
      */
     public getKey(tag: string): number {
+        tag = this.resolveTag(tag);
         if(!(tag in this.keys)) throw new Error(`Not a valid tag: ${tag}`);
         return this.keys[tag];
     }
@@ -91,6 +100,7 @@ export class PacketHolder {
      * @param tag The packet tag
      */
     public getPacket(tag: string): Packet<any> {
+        tag = this.resolveTag(tag);
         if(!(tag in this.packetMap)) throw new Error("Unknown packet tag: " + tag);
         return this.packetMap[tag];
     }
@@ -108,7 +118,15 @@ export class PacketHolder {
      * @param tag The packet tag
      */
     public hasTag(tag: string): boolean {
-        return tag in this.keys;
+        return this.resolveTag(tag) in this.keys || this.parents.has(tag);
+    }
+
+    public resolveTag(tag: string): string { return this.variants[tag] ?? tag; }
+
+    public getVariantTag(parent: string, variant: string): string {
+        const tag = this.variants[`${parent}.${variant}`];
+        if (!tag) throw new Error(`Unknown packet variant: ${parent}.${variant}`);
+        return tag;
     }
 
     /** Returns the mapping of tags to keys */

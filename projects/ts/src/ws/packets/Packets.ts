@@ -45,6 +45,12 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
 
     public readonly dontSpread: boolean;
     public readonly autoFlatten: boolean;
+    public readonly fields?: readonly string[];
+    public readonly quantized?: { scale: number; trackError?: boolean };
+    public readonly valueMin?: number;
+    public readonly valueMax?: number;
+    public readonly parent?: string;
+    public readonly variant?: string;
 
     public readonly rateLimit: number;
 
@@ -61,6 +67,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public customValidator: ((socket: SonicWSConnection, ...values: any[]) => boolean) | null;
     lastReceived: Record<number, any> = {};
     lastSent: Record<number, number | bigint> = {};
+    private quantizationErrors: Record<number, number> = {};
 
     constructor(tag: string, schema: PacketSchema<T>, customValidator: ValidatorFunction, enabled: boolean, client: boolean) {
         this.tag = tag;
@@ -76,6 +83,13 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         this.dataBatching    = schema.dataBatching;
         this.maxBatchSize    = client ? Infinity : schema.maxBatchSize;
         this.gzipCompression = schema.gzipCompression;
+        this.fields = schema.fields;
+        this.quantized = schema.quantized ? { ...schema.quantized, trackError: schema.quantized.trackError ?? true } : undefined;
+        this.valueMin = schema.valueMin;
+        this.valueMax = schema.valueMax;
+        const group = /^__(.+)\$([^$]+)$/.exec(tag);
+        this.parent = group?.[1];
+        this.variant = group?.[2];
 
         this.object = schema.object;
 
@@ -162,6 +176,93 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         this.customValidator = customValidator;
     }
 
+    private assertRecord(record: any, context: string): any[] {
+        if (!this.fields) throw new Error(`Packet "${this.tag}" ${context} requires schema`);
+        if (record === null || typeof record !== "object" || Array.isArray(record))
+            throw new Error(`Packet "${this.tag}" ${context} requires an object record`);
+        const missing = this.fields.filter(field => !Object.prototype.hasOwnProperty.call(record, field));
+        if (missing.length) throw new Error(`Packet "${this.tag}" is missing schema field(s): ${missing.join(", ")}`);
+        const extra = Object.keys(record).filter(field => !this.fields!.includes(field));
+        if (extra.length) throw new Error(`Packet "${this.tag}" has unknown schema field(s): ${extra.join(", ")}`);
+        return this.fields.map(field => record[field]);
+    }
+
+    private logical(values: any[], direction: "send" | "receive", stateKey: number = -1): any[] {
+        const scale = this.quantized?.scale;
+        return values.map(value => {
+            if (typeof value !== "number" || !Number.isFinite(value))
+                throw new Error(`Packet "${this.tag}" ${direction} value must be a finite number`);
+            const logical = direction === "receive" && scale ? value / scale : value;
+            if (this.valueMin !== undefined && logical < this.valueMin)
+                throw new Error(`Packet "${this.tag}" value ${logical} is below minimum ${this.valueMin}`);
+            if (this.valueMax !== undefined && logical > this.valueMax)
+                throw new Error(`Packet "${this.tag}" value ${logical} exceeds maximum ${this.valueMax}`);
+            if (direction === "send" && scale) {
+                const adjusted = logical * scale + (this.quantized?.trackError ? (this.quantizationErrors[stateKey] ?? 0) : 0);
+                const wire = Math.round(adjusted);
+                if (this.quantized?.trackError) this.quantizationErrors[stateKey] = adjusted - wire;
+                return wire;
+            }
+            return logical;
+        });
+    }
+
+    /** Converts ergonomic application values into the existing positional wire model. */
+    public prepareSend(values: any[], stateKey: number = -1): any[] {
+        if (this.object) {
+            if (this.autoFlatten && this.fields) {
+                if (values.length !== 1 || !Array.isArray(values[0]))
+                    throw new Error(`Packet "${this.tag}" autoTranspose requires one array of records`);
+                const rows = values[0].map((row: any) => this.assertRecord(row, "autoTranspose"));
+                return this.fields.map((_, column) => rows.map((row: any[]) => row[column]));
+            }
+            return values;
+        }
+
+        let flat = values;
+        if (this.autoFlatten) {
+            if (values.length !== 1 || !Array.isArray(values[0]))
+                throw new Error(`Packet "${this.tag}" autoFlatten requires one array of records`);
+            flat = values[0].flatMap((row: any) => this.assertRecord(row, "autoFlatten"));
+            if (this.fields && flat.length % this.fields.length !== 0)
+                throw new Error(`Packet "${this.tag}" flat value count must be divisible by schema length ${this.fields.length}`);
+        } else if (this.fields && values.length === 1 && values[0] !== null && typeof values[0] === "object" && !Array.isArray(values[0])) {
+            flat = this.assertRecord(values[0], "schema mapping");
+        }
+        return this.quantized || this.valueMin !== undefined || this.valueMax !== undefined ? this.logical(flat, "send", stateKey) : flat;
+    }
+
+    /** Clears error-feedback state for a disconnected sender. */
+    public clearQuantizationState(stateKey: number): void {
+        delete this.quantizationErrors[stateKey];
+    }
+
+    /** Converts decoded positional data into schema objects and application-level numbers. */
+    public finishReceive(decoded: any): any {
+        if (this.object) {
+            if (this.autoFlatten && this.fields) {
+                const columns = decoded as any[][];
+                const count = columns[0]?.length ?? 0;
+                if (columns.some(column => column.length !== count))
+                    throw new Error(`Packet "${this.tag}" autoTranspose columns have different lengths`);
+                return Array.from({ length: count }, (_, row) => Object.fromEntries(this.fields!.map((field, col) => [field, columns[col][row]])));
+            }
+            return this.autoFlatten ? UnFlattenData(decoded) : decoded;
+        }
+
+        let values = Array.isArray(decoded) ? decoded : [decoded];
+        if (this.quantized || this.valueMin !== undefined || this.valueMax !== undefined) values = this.logical(values, "receive");
+        if (this.autoFlatten) {
+            const width = this.fields!.length;
+            if (values.length % width !== 0)
+                throw new Error(`Packet "${this.tag}" flat value count ${values.length} is not divisible by schema length ${width}`);
+            return Array.from({ length: values.length / width }, (_, row) =>
+                Object.fromEntries(this.fields!.map((field, col) => [field, values[row * width + col]])));
+        }
+        if (this.fields) return Object.fromEntries(this.fields.map((field, index) => [field, values[index]]));
+        return decoded;
+    }
+
     public async listen(value: Uint8Array, socket: SonicWSConnection | null): Promise<[processed: any, flatten: boolean] | string> {
         try {
             const [dcData, validationResult] = await this.validate(value);
@@ -170,16 +271,16 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
 
             const processed = this.processReceive(dcData, validationResult);
             
-            const useableData = this.autoFlatten ? UnFlattenData(processed) : processed;
+            const useableData = this.finishReceive(processed);
 
             if(this.customValidator != null) {
-                if(!this.dontSpread) {
+                if(!this.dontSpread && !this.fields) {
                     if(!this.customValidator(socket!, ...useableData)) return "Didn't pass custom validator";
                 } else {
                     if(!this.customValidator(socket!, useableData)) return "Didn't pass custom validator";
                 }
             }
-            return [useableData, !this.dontSpread];
+            return [useableData, this.fields ? false : !this.dontSpread];
         } catch (err) {
             console.error("There was an error processing the packet! This is probably my fault... report at https://github.com/liwybloc/sonic-ws", err);
             return "Error: " + err;
@@ -188,10 +289,18 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
 
     public serialize(): number[] {
 
+        const metadata = new TextEncoder().encode(JSON.stringify({
+            schema: this.fields,
+            quantized: this.quantized,
+            min: this.valueMin,
+            max: this.valueMax,
+        }));
+
         // shared values for both
         const sharedData: number[] = [
             this.tag.length, ...processCharCodes(this.tag),
             compressBools([this.dontSpread, this.async, this.object, this.autoFlatten, this.gzipCompression, this.rereference]),
+            ...convertVarInt(metadata.length), ...metadata,
             this.dataBatching,
             this.enumData.length, ...this.enumData.map(x => x.serialize()).flat(),
         ];
@@ -236,6 +345,12 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
 
         // then read dontSpread and async
         const [dontSpread, async, isObject, autoFlatten, gzipCompression, rereference] = decompressBools(data[offset++]);
+
+        const [metadataOffset, metadataLength] = readVarInt(data, offset);
+        offset = metadataOffset;
+        const metadata = JSON.parse(new TextDecoder().decode(data.slice(offset, offset += metadataLength))) as {
+            schema?: string[]; quantized?: { scale: number; trackError?: boolean }; min?: number; max?: number;
+        };
 
         // read batching, up 1
         const dataBatching: number = data[offset++];
@@ -288,7 +403,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             const finalTypes: ArguableType[] = types.map(x => x == PacketType.ENUMS ? enums[index++] : x); // convert enums to their enum packages
 
             // make schema
-            const schema = new PacketSchema<readonly PacketType[]>(true, finalTypes, async, dataMins, dataMaxes, -1, dontSpread, autoFlatten, false, dataBatching, -1, gzipCompression);
+            const schema = new PacketSchema<readonly PacketType[]>(true, finalTypes, async, dataMins, dataMaxes, -1, dontSpread, autoFlatten, false, dataBatching, -1, gzipCompression, metadata.schema);
             return [
                 new Packet(tag, schema, null, false, client),
                 // +1 to go next
@@ -314,7 +429,8 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
 
     
         // make schema
-        const schema = new PacketSchema<PacketType>(false, finalType, async, dataMin, dataMax, -1, dontSpread, false, rereference, dataBatching, -1, gzipCompression);
+        const schema = new PacketSchema<PacketType>(false, finalType, async, dataMin, dataMax, -1, dontSpread, autoFlatten, rereference, dataBatching, -1, gzipCompression,
+            metadata.schema, metadata.quantized, metadata.min, metadata.max);
         
         return [
             new Packet(tag, schema, null, false, client),
@@ -358,9 +474,14 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
     public gzipCompression: boolean = false;
 
     public object: boolean;
+    public fields?: readonly string[];
+    public quantized?: { scale: number; trackError?: boolean };
+    public valueMin?: number;
+    public valueMax?: number;
 
     constructor(object: boolean, type: ImpactType<T, ArguableType>, async: boolean, dataMin: ImpactType<T, number>, dataMax: ImpactType<T, number>, rateLimit: number,
-                dontSpread: boolean, autoFlatten: boolean, rereference: boolean, dataBatching: number, maxBatchSize: number, gzipCompression: boolean) {
+                dontSpread: boolean, autoFlatten: boolean, rereference: boolean, dataBatching: number, maxBatchSize: number, gzipCompression: boolean,
+                fields?: readonly string[], quantized?: { scale: number; trackError?: boolean }, valueMin?: number, valueMax?: number) {
         // todo add rereference to objects
         this.object = object;
         this.async = async;
@@ -373,6 +494,10 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
         this.dataBatching = dataBatching;
         this.maxBatchSize = maxBatchSize;
         this.gzipCompression = gzipCompression;
+        this.fields = fields ? [...fields] : undefined;
+        this.quantized = quantized ? { ...quantized } : undefined;
+        this.valueMin = valueMin;
+        this.valueMax = valueMax;
 
         this.type = (object ? (type as ArguableType[]).map(t => convertType(t, this.enumData)) : convertType((type as ArguableType), this.enumData)) as ImpactType<T, PacketType>;
     }

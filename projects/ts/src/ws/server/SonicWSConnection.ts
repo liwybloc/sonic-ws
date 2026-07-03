@@ -94,6 +94,7 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
             }
             for (const packet of host.serverPackets.getPackets()) {
                 delete packet.lastSent[this.id];
+                packet.clearQuantizationState(this.id);
             }
         });
     }
@@ -168,6 +169,12 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
         if (this.closed) return;
 
         await listenPacket(data, this.listeners[tag], this.invalidPacket);
+
+        const packet = this.host.clientPackets.getPacket(tag);
+        if (typeof data !== "string" && packet.parent && packet.variant) {
+            for (const listener of this.listeners[packet.parent] ?? [])
+                await listener({ variant: packet.variant, payload: data[0] });
+        }
 
         await this.callMiddleware('onReceive_post', tag, typeof data == 'string' ? [data] : data[0]);
 
@@ -263,8 +270,9 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
     public on(tag: string, listener: (...values: any) => void): void {
         if (!this.host.clientPackets.hasTag(tag as string))
             throw new Error(`Tag "${String(tag)}" has not been created!`);
-        this.listeners[tag as string] ??= [];
-        this.listeners[tag as string].push(listener as any);
+        const resolved = this.host.clientPackets.resolveTag(tag);
+        this.listeners[resolved] ??= [];
+        this.listeners[resolved].push(listener as any);
     }
 
     /**
@@ -289,6 +297,15 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
         const [code, data, packet] = await processPacket(this.host.serverPackets, tag, values, this.sendQueue, this.id);
         if(await this.callMiddleware('onSend_post', tag, data, data.length))  return;
         this.send_processed(code, data, packet);
+    }
+
+    public sendVariant(parent: string, variant: string, ...values: any[]): Promise<void> {
+        return this.send(this.host.serverPackets.getVariantTag(parent, variant), ...values);
+    }
+
+    public async sendSafe(tag: string, ...values: any[]): Promise<boolean> {
+        try { await this.send(tag, ...values); return true; }
+        catch (error) { this.host.handleSendError(error, { packetTag: tag, connection: this }); return false; }
     }
 
     /**

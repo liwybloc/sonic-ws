@@ -9,74 +9,70 @@
 #
 # License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
 
-import ctypes, os, pathlib, struct, sys
-
-
-class _Buffer(ctypes.Structure):
-    _fields_ = [
-        ("data", ctypes.POINTER(ctypes.c_ubyte)),
-        ("len", ctypes.c_size_t),
-        ("capacity", ctypes.c_size_t),
-        ("ok", ctypes.c_bool),
-    ]
+import os, pathlib, struct, threading
+import wasmtime
 
 
 def _load():
-    names = {"win32": "_native.dll", "darwin": "_native.dylib"}
-    name = names.get(sys.platform, "_native.so")
     candidates = [
         os.getenv("SONIC_WS_CORE_PATH"),
-        pathlib.Path(__file__).with_name(name),
+        pathlib.Path(__file__).with_name("_core.wasm"),
         pathlib.Path(__file__).parents[3]
         / "core"
         / "target"
+        / "wasm32-unknown-unknown"
         / "release"
-        / name.replace("_native", "libsonic_ws_core"),
-        pathlib.Path(__file__).parents[3]
-        / "core"
-        / "target"
-        / "debug"
-        / name.replace("_native", "libsonic_ws_core"),
+        / "sonic_ws_core.wasm",
     ]
     for candidate in candidates:
         if candidate and pathlib.Path(candidate).exists():
-            return ctypes.CDLL(str(candidate))
+            engine = wasmtime.Engine()
+            store = wasmtime.Store(engine)
+            module = wasmtime.Module.from_file(engine, str(candidate))
+            instance = wasmtime.Instance(store, module, [])
+            exports = instance.exports(store)
+            return store, exports
     raise ImportError(
-        "SonicWS Rust core not found; install the package or run cargo build --release --features python"
+        "SonicWS WASM core not found; install the package or run ./build.sh py"
     )
 
 
-_lib = _load()
-_lib.sonic_ws_python_call.restype = _Buffer
-_lib.sonic_ws_python_call.argtypes = [
-    ctypes.c_uint8,
-    ctypes.c_uint8,
-    ctypes.c_void_p,
-    ctypes.c_size_t,
-    ctypes.c_uint64,
-]
-_lib.sonic_ws_python_free.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_size_t]
-_lib.sonic_ws_python_validate.restype = ctypes.c_bool
-_lib.sonic_ws_python_validate.argtypes = [
-    ctypes.c_uint8,
-    ctypes.c_void_p,
-    ctypes.c_size_t,
-    ctypes.c_uint64,
-    ctypes.c_uint64,
-    ctypes.c_bool,
-]
+_store, _exports = _load()
+_memory = _exports["memory"]
+_alloc = _exports["sonic_ws_python_wasm_alloc"]
+_free = _exports["sonic_ws_python_wasm_free"]
+_wasm_call = _exports["sonic_ws_python_wasm_call"]
+_validate = _exports["sonic_ws_python_validate"]
+_lock = threading.RLock()
+
+
+def _input(raw):
+    if not raw:
+        return 0
+    pointer = _alloc(_store, len(raw))
+    _memory.write(_store, raw, pointer)
+    return pointer
 
 
 def _call(op, kind, data=b"", arg=0):
-    raw = bytes(data)
-    holder = ctypes.create_string_buffer(raw) if raw else None
-    result = _lib.sonic_ws_python_call(op, int(kind), holder, len(raw), arg)
-    if not result.ok:
-        raise ValueError("Rust codec rejected the value")
-    try:
-        return ctypes.string_at(result.data, result.len)
-    finally:
-        _lib.sonic_ws_python_free(result.data, result.len, result.capacity)
+    with _lock:
+        raw = bytes(data)
+        pointer = _input(raw)
+        try:
+            packed = _wasm_call(_store, op, int(kind), pointer, len(raw), arg)
+        finally:
+            if pointer:
+                _free(_store, pointer, len(raw))
+        packed &= (1 << 64) - 1
+        if packed == (1 << 64) - 1:
+            raise ValueError("Rust codec rejected the value")
+        result_pointer = packed & 0xFFFFFFFF
+        result_length = packed >> 32
+        try:
+            return bytes(_memory.read(_store, result_pointer, result_pointer + result_length))
+        finally:
+            if result_pointer:
+                _free(_store, result_pointer, result_length)
 
 
 def _frame(values):
@@ -200,8 +196,12 @@ def validate_encoded(
             validate_encoded(k, value, minimum, maximum)
         return
     raw = bytes(d)
-    holder = ctypes.create_string_buffer(raw) if raw else None
-    if not _lib.sonic_ws_python_validate(
-        int(k), holder, len(raw), minimum, maximum, compressed
-    ):
+    with _lock:
+        pointer = _input(raw)
+        try:
+            valid = _validate(_store, int(k), pointer, len(raw), minimum, maximum, compressed)
+        finally:
+            if pointer:
+                _free(_store, pointer, len(raw))
+    if not valid:
         raise ValueError("Rust codec validation failed")

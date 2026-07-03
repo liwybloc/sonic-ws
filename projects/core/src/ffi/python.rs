@@ -281,3 +281,43 @@ pub extern "C" fn sonic_ws_python_validate(
     packet.schema.gzip_compression = compressed;
     validate_packet(&packet, data).is_ok()
 }
+
+// The Python WASM loader uses a deliberately small linear-memory ABI. Returning
+// PythonBuffer directly would rely on target-specific aggregate-return rules.
+#[cfg(target_arch = "wasm32")]
+#[unsafe(no_mangle)]
+pub extern "C" fn sonic_ws_python_wasm_alloc(len: u32) -> u32 {
+    let mut value = vec![0u8; len as usize].into_boxed_slice();
+    let pointer = value.as_mut_ptr() as u32;
+    std::mem::forget(value);
+    pointer
+}
+
+#[cfg(target_arch = "wasm32")]
+#[unsafe(no_mangle)]
+pub extern "C" fn sonic_ws_python_wasm_free(pointer: u32, len: u32) {
+    if pointer != 0 {
+        unsafe { drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(pointer as *mut u8, len as usize))) };
+    }
+}
+
+/// Returns `(length << 32) | pointer`, or u64::MAX on failure.
+#[cfg(target_arch = "wasm32")]
+#[unsafe(no_mangle)]
+pub extern "C" fn sonic_ws_python_wasm_call(
+    operation: u8,
+    value: u8,
+    data: u32,
+    len: u32,
+    arg: u64,
+) -> u64 {
+    let result = sonic_ws_python_call(operation, value, data as *const u8, len as usize, arg);
+    if !result.ok || result.len > u32::MAX as usize {
+        return u64::MAX;
+    }
+    let owned = unsafe { Vec::from_raw_parts(result.data, result.len, result.capacity) }.into_boxed_slice();
+    let length = owned.len() as u32;
+    let pointer = if length == 0 { 0 } else { owned.as_ptr() as u32 };
+    std::mem::forget(owned);
+    (u64::from(length) << 32) | u64::from(pointer)
+}

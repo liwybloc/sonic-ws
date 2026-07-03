@@ -41,6 +41,40 @@ Required: `tag`. `type` defaults to `NONE`. Settings:
 - `enabled`: whether clients may send this packet initially.
 - `validator(socket, ...values)`: server-side application validation. Return false to reject the packet.
 
+## Schemas, repeated records, and quantization
+
+`schema` maps positional payloads to objects without changing their wire bytes:
+
+```ts
+const movement = CreatePacket({
+  tag: "movementMove",
+  type: PacketType.SHORTS,
+  schema: ["dx", "dy", "dz"],
+  dataMin: 3,
+  dataMax: 3,
+  quantized: { scale: 32767, trackError: true },
+  min: -1,
+  max: 1,
+});
+await socket.send("movementMove", { dx: .5, dy: 0, dz: -.5 });
+```
+
+All fields are required and extra fields are rejected. Positional sends remain supported and produce identical bytes. `min` and `max` are inclusive application-level bounds. Quantization rounds `value * scale` before encoding and divides after decoding; the integer codec still enforces its native range. `trackError` defaults to true and feeds each rounding residual into the next value encoded by that packet and connection. Set it to false for independent stateless rounding.
+
+Homogeneous `autoFlatten: true` accepts one array of fixed-width records and encodes them row-major. The decoded value count must be divisible by `schema.length`:
+
+```ts
+const snapshots = CreatePacket({
+  tag: "entitySnapshot",
+  type: PacketType.VARINT,
+  schema: ["id", "type", "x", "y", "z", "pitch", "yaw"],
+  autoFlatten: true,
+});
+await socket.send("entitySnapshot", [...entities.values()]);
+```
+
+Variable-width records are not implemented; use another packet or explicit object sectors.
+
 ## Objects
 
 `CreateObjPacket` frames one independently encoded sector per type.
@@ -55,7 +89,27 @@ const state = CreateObjPacket({
 });
 ```
 
-`dataMins` and `dataMaxes` accept either one number for every sector or one number per type. `autoFlatten` transposes row-shaped data before sending and reverses it after decoding. Object enums consume enum packages in the same order as enum sectors.
+`dataMins` and `dataMaxes` accept either one number for every sector or one number per type. With `schema`, `autoTranspose: true` accepts repeated objects and transposes them into column-major sectors, then reconstructs objects on receive. Object `autoFlatten` remains a deprecated alias. Object enums consume enum packages in the same order as enum sectors.
+
+## Packet groups
+
+`CreatePacketGroup` returns normal child packets to spread into a packet list:
+
+```ts
+const movement = CreatePacketGroup({
+  tag: "movement",
+  variants: {
+    still: { type: PacketType.NONE },
+    move: { type: PacketType.VARINT, schema: ["dx", "dy", "dz"], dataMax: 3 },
+  },
+});
+const wss = new SonicWSServer({ clientPackets: [...movement] });
+await socket.sendVariant("movement", "move", { dx: 1, dy: 2, dz: 3 });
+socket.on("movement.move", payload => {});
+socket.on("movement", event => console.log(event.variant, event.payload));
+```
+
+Children use internal tags such as `__movement$move`. Receiving one fires both its child-specific listener and the parent listener.
 
 ## Enums
 
@@ -73,4 +127,4 @@ JSONUtil is richer than JSON text: it preserves compact typed primitives and nes
 
 ## Helpers
 
-`FlattenData(rows)` transposes rows into columns; `UnFlattenData(columns)` reverses it. These are useful manually and are automatically applied by object packets with `autoFlatten: true`.
+`FlattenData(rows)` transposes rows into columns; `UnFlattenData(columns)` reverses it. Prefer homogeneous `autoFlatten` for row-major records and object `autoTranspose` for column-major records.
