@@ -45,7 +45,6 @@ fn packet_type(value: u8) -> Result<PacketType> {
         12 => PacketType::Floats,
         13 => PacketType::Doubles,
         14 => PacketType::Booleans,
-        15 => PacketType::KeyEffective,
         16 => PacketType::Reserved16,
         17 => PacketType::Hex,
         _ => {

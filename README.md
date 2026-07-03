@@ -165,7 +165,6 @@ This remains a homogeneous `VARINT` packet. Schema mapping, row-major `autoFlatt
 
 ## KNOWN ISSUES
 
-- `KEY_EFFECTIVE` is reserved but still a work in progress.
 - Native `.node` addons are platform-specific. WASM is used as the portable fallback, while prebuilt native binaries will need separate builds for each supported operating system and architecture.
 
 ## PLANNED FEATURES

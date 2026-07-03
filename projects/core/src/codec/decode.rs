@@ -137,9 +137,6 @@ fn decode_type(
                     .collect::<Result<Vec<_>>>()?,
             )
         }
-        PacketType::KeyEffective => Err(Error::Unsupported(
-            "KEY_EFFECTIVE is also W.I.P. in TypeScript",
-        )),
     }
 }
 

@@ -59,9 +59,6 @@ export enum PacketType {
     /** One or more true/false */
     BOOLEANS = 14,
     
-    /** Consumes multiple keys to describe the value. E.g. if you want to send a boolean, this could take up 2 keys instead of sending 2 bytes. Currently W.I.P. */
-    KEY_EFFECTIVE = 15,
-
     /** TypeScript-side JSONUtil codec carried as opaque RAW bytes through reserved wire type 16. */
     JSON = 16,
 

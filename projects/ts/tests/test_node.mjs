@@ -240,7 +240,6 @@ try {
     assert.equal(sendErrors.length, 2);
     assert.equal(sendErrors[0].context.packetTag, "not-a-packet");
     console.log(`passed ${cases.length * 2} packet roundtrips across ${cases.length} packet definitions`);
-    console.log("KEY_EFFECTIVE is intentionally excluded because it remains W.I.P.");
 } finally {
     if (client && !client.isClosed()) {
         const closed = new Promise(resolve => client.on_close(resolve));

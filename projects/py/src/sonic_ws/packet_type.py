@@ -29,6 +29,5 @@ class PacketType(IntEnum):
     FLOATS = 12
     DOUBLES = 13
     BOOLEANS = 14
-    KEY_EFFECTIVE = 15
     JSON = 16
     HEX = 17

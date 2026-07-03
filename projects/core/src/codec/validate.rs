@@ -152,9 +152,6 @@ fn validate_type(
                 Ok(())
             }
         }
-        PacketType::KeyEffective => Err(Error::Unsupported(
-            "KEY_EFFECTIVE is also W.I.P. in TypeScript",
-        )),
     }
 }
 

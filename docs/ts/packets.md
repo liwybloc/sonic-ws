@@ -21,7 +21,6 @@ Both sides must define what they may send. `clientPackets` travel client → ser
 | `FLOATS` | numbers | IEEE-754 binary32; expect `Math.fround` precision. |
 | `DOUBLES` | numbers | IEEE-754 binary64. |
 | `BOOLEANS` | booleans | MSB-first bit packing. The schema count determines padding. |
-| `KEY_EFFECTIVE` | — | Reserved and currently unsupported. |
 | `JSON` | any JSONUtil-supported value | JavaScript codec carried as opaque reserved-type bytes. |
 | `HEX` | one hexadecimal string | Even length; decoded lowercase. |
 

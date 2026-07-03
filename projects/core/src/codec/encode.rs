@@ -196,11 +196,6 @@ fn encode_type(
                 )
             }
         }
-        PacketType::KeyEffective => {
-            return Err(Error::Unsupported(
-                "KEY_EFFECTIVE is also W.I.P. in TypeScript",
-            ));
-        }
     }
     Ok(out)
 }

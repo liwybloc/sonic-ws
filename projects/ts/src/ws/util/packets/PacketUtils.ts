@@ -153,7 +153,7 @@ export async function listenPacket(
  * @internal
  */
 function isInvalidType(type: any): boolean {
-    return (!(typeof type == 'number' && type in PacketType) && !(type instanceof EnumPackage)) || type == PacketType.KEY_EFFECTIVE;
+    return !(typeof type == 'number' && type in PacketType) && !(type instanceof EnumPackage);
 }
 
 const MAX_DATA_MAX = 2048383;
@@ -301,10 +301,6 @@ export type EnumPacketSettings = SharedPacketSettings & {
     dataMin?: number;
 }
 
-export type KeyEffectivePacketSettings = SharedPacketSettings & {
-    /** Amount of keys to consume in order to have differing values; defaults to 2. Must be 2+ */
-    count?: number;
-}
 
 /**
  * Creates a structure for a simple single-typed packet.
@@ -475,15 +471,6 @@ export function CreateEnumPacket(settings: EnumPacketSettings): Packet<PacketTyp
         enabled,
         async,
     });
-}
-
-export function CreateKeyEffective(settings: KeyEffectivePacketSettings): Packet<PacketType.KEY_EFFECTIVE> {
-    const { tag, count = 2, validator = null, async = false } = settings;
-    
-    if(!tag) throw new Error("Tag not selected!");
-    if(count < 2) throw new Error("Must have at least 2 key consumptions on key effective packet!");
-
-    throw new Error("Currently W.I.P.");
 }
 
 /**

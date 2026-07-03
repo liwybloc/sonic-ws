@@ -172,16 +172,6 @@ fn mixed_enum_values_roundtrip_through_packet_codec() {
 }
 
 #[test]
-fn unsupported_wire_modes_fail_explicitly() {
-    for kind in [PacketType::KeyEffective] {
-        assert!(
-            encode_packet(&packet(kind), &array(vec![])).is_err(),
-            "{kind:?}"
-        );
-    }
-}
-
-#[test]
 fn reserved_16_is_an_opaque_application_codec_sector() {
     use sonic_ws_core::{codec::decode::decode_packet, codec::validate::validate_packet};
 

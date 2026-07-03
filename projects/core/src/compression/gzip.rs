@@ -65,8 +65,7 @@ fn encoded_size_limit(kind: PacketType, values: u64) -> Option<u64> {
         PacketType::Booleans => values.checked_add(7).map(|value| value / 8),
         PacketType::StringsAscii
         | PacketType::StringsUtf16
-        | PacketType::Reserved16
-        | PacketType::KeyEffective => None,
+        | PacketType::Reserved16 => None,
     }
 }
 

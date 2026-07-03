@@ -229,8 +229,6 @@ export function encodeNative(
         case PacketType.ENUMS:
             if (!enumData) throw new Error("ENUMS requires an EnumPackage");
             return Uint8Array.from(values(input as EnumValue | EnumValue[]).map(value => enumIndex(enumData, value)));
-        case PacketType.KEY_EFFECTIVE:
-            throw new Error("KEY_EFFECTIVE is not implemented");
         default:
             throw new Error(`Unknown packet type: ${type}`);
     }
@@ -269,8 +267,6 @@ export function decodeNative(
                 if (index >= enumData.values.length) throw new Error(`Enum index ${index} is out of range`);
                 return enumData.values[index];
             });
-        case PacketType.KEY_EFFECTIVE:
-            throw new Error("KEY_EFFECTIVE is not implemented");
         default:
             throw new Error(`Unknown packet type: ${type}`);
     }

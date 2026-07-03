@@ -4,7 +4,7 @@ Python accepts camelCase TypeScript setting names and snake_case equivalents. De
 
 ## Packet types
 
-`PacketType` contains `NONE`, `RAW`, `STRINGS_ASCII` (`STRINGS` alias), `STRINGS_UTF16`, `ENUMS`, `BYTES`, `UBYTES`, `SHORTS`, `USHORTS`, `VARINT`, `UVARINT`, `DELTAS`, `FLOATS`, `DOUBLES`, `BOOLEANS`, reserved `KEY_EFFECTIVE`, `JSON`, and `HEX`.
+`PacketType` contains `NONE`, `RAW`, `STRINGS_ASCII` (`STRINGS` alias), `STRINGS_UTF16`, `ENUMS`, `BYTES`, `UBYTES`, `SHORTS`, `USHORTS`, `VARINT`, `UVARINT`, `DELTAS`, `FLOATS`, `DOUBLES`, `BOOLEANS`, `JSON`, and `HEX`.
 
 - `RAW` accepts bytes-like objects and returns `bytes`.
 - ASCII uses the protocol Huffman table and only supports byte-range characters.
@@ -13,7 +13,6 @@ Python accepts camelCase TypeScript setting names and snake_case equivalents. De
 - `FLOATS` decodes binary32 approximations; `DOUBLES` uses binary64.
 - `HEX` accepts exactly one even-length hexadecimal string.
 - `JSON` is encoded in Python, then carried opaquely by the Rust reserved type.
-- `KEY_EFFECTIVE` is reserved and unsupported in both languages.
 
 ## Constructors
 
