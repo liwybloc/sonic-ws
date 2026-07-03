@@ -11,14 +11,10 @@
 
 import asyncio
 import inspect
-import importlib.resources
 import logging
-from pathlib import Path
 import time
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
-from websockets.datastructures import Headers
-from websockets.http11 import Response
 from .connection import Connection, PacketHolder, CloseCodes, dispatch_packet
 from .codec import deflate
 from .packets import varint, flatten_data
@@ -179,20 +175,14 @@ class SonicWSServer:
                 "serverPackets", settings.get("server_packets", server_packets)
             )
             options = dict(settings.get("websocketOptions", {}))
-            sonic_options = dict(settings.get("sonicServerSettings", {}))
             host = options.pop("host", host)
             port = options.pop("port", port)
             kwargs = {**options, **kwargs}
-        else:
-            sonic_options = {}
         self.client_packets = PacketHolder(client_packets)
         self.server_packets = PacketHolder(server_packets)
         self.host = host
         self.port = port
         self.websocket_options = kwargs
-        self.serve_browser_client = sonic_options.get(
-            "serveBrowserClient", sonic_options.get("serve_browser_client", True)
-        )
         self.connections = []
         self.connection_map = {}
         self.connect_listeners = []
@@ -235,38 +225,10 @@ class SonicWSServer:
         return await self._middleware(name, *args)
 
     async def start(self):
-        existing_process_request = self.websocket_options.pop("process_request", None)
-
-        async def process_request(connection, request):
-            if self.serve_browser_client:
-                asset = {
-                    "/SonicWS/bundle.js": ("bundle.js", "text/javascript; charset=utf-8"),
-                    "/SonicWS/bundle.wasm": ("bundle.wasm", "application/wasm"),
-                }.get(request.path)
-                if asset:
-                    body = self._browser_asset(asset[0])
-                    return Response(
-                        200,
-                        "OK",
-                        Headers(
-                            {
-                                "Content-Type": asset[1],
-                                "Content-Length": str(len(body)),
-                                "Cache-Control": "public, max-age=3600",
-                            }
-                        ),
-                        body,
-                    )
-            if existing_process_request:
-                result = existing_process_request(connection, request)
-                return await result if inspect.isawaitable(result) else result
-            return None
-
         self._server = await serve(
             self._accept,
             self.host,
             self.port,
-            process_request=process_request,
             **self.websocket_options,
         )
         if self._server.sockets:
@@ -276,18 +238,6 @@ class SonicWSServer:
             if asyncio.iscoroutine(result):
                 await result
         return self
-
-    @staticmethod
-    def _browser_asset(name):
-        packaged = importlib.resources.files("sonic_ws").joinpath("_browser", name)
-        if packaged.is_file():
-            return packaged.read_bytes()
-        source = Path(__file__).resolve().parents[4] / "bundled" / name
-        if source.is_file():
-            return source.read_bytes()
-        raise FileNotFoundError(
-            f"SonicWS browser asset {name!r} is not installed; rebuild the Python package"
-        )
 
     async def _accept(self, socket):
         if self._available_ids:

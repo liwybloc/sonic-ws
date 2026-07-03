@@ -1,4 +1,12 @@
 # Copyright (c) 2026 Lily (liwybloc)
+#
+# Licensed for personal, non-commercial use only.
+# Commercial use, redistribution, sublicensing, sale, rental, lease,
+# or inclusion in a paid product or service is prohibited without prior
+# written permission from the copyright holder.
+#
+# See the LICENSE file in the project root for the full license terms.
+#
 # License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
 
 import pathlib
@@ -12,10 +20,8 @@ from setuptools.command.bdist_wheel import bdist_wheel
 from setuptools.command.sdist import sdist
 
 PROJECT = pathlib.Path(__file__).resolve().parent
-REPOSITORY = PROJECT.parents[1]
 VENDOR = PROJECT / "vendor"
 CORE = VENDOR / "core" if (VENDOR / "core").is_dir() else PROJECT.parent / "core"
-BUNDLED = VENDOR / "bundled" if (VENDOR / "bundled").is_dir() else REPOSITORY / "bundled"
 
 
 class BinaryDistribution(Distribution):
@@ -47,6 +53,12 @@ class BuildPy(build_py):
         )
         super().run()
 
+        # Prevent browser assets from older builds leaking into Python wheels.
+        shutil.rmtree(
+            pathlib.Path(self.build_lib) / "sonic_ws" / "_browser",
+            ignore_errors=True,
+        )
+
         names = {"win32": "sonic_ws_core.dll", "darwin": "libsonic_ws_core.dylib"}
         source = CORE / "target" / "release" / names.get(
             sys.platform, "libsonic_ws_core.so"
@@ -54,12 +66,6 @@ class BuildPy(build_py):
         target = pathlib.Path(self.build_lib) / "sonic_ws" / ("_native" + source.suffix)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-
-        browser = pathlib.Path(self.build_lib) / "sonic_ws" / "_browser"
-        browser.mkdir(parents=True, exist_ok=True)
-        for name in ("bundle.js", "bundle.wasm"):
-            shutil.copy2(BUNDLED / name, browser / name)
-
 
 class SourceDistribution(sdist):
     """Stage external workspace inputs so the published sdist is self-contained."""
@@ -71,7 +77,6 @@ class SourceDistribution(sdist):
             VENDOR / "core",
             ignore=shutil.ignore_patterns("target", "node_modules", ".git", "*.node"),
         )
-        shutil.copytree(REPOSITORY / "bundled", VENDOR / "bundled")
         try:
             super().run()
         finally:

@@ -1,4 +1,13 @@
 # Copyright (c) 2026 Lily (liwybloc)
+#
+# Licensed for personal, non-commercial use only.
+# Commercial use, redistribution, sublicensing, sale, rental, lease,
+# or inclusion in a paid product or service is prohibited without prior
+# written permission from the copyright holder.
+#
+# See the LICENSE file in the project root for the full license terms.
+#
+# License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
 
 import asyncio
 import json
@@ -24,11 +33,6 @@ async def main():
     server = SonicWSServer(port=0)
     await server.start()
     try:
-        js = await http_get(server.port, "/SonicWS/bundle.js")
-        wasm = await http_get(server.port, "/SonicWS/bundle.wasm")
-        assert js.startswith(b"HTTP/1.1 200") and b"text/javascript" in js[:500]
-        assert wasm.startswith(b"HTTP/1.1 200") and b"application/wasm" in wasm[:500]
-
         dashboard = server.OpenDebug({"port": 0, "password": "secret"})
         await dashboard.wait_ready()
         page = await http_get(dashboard.port, "/")
@@ -40,7 +44,7 @@ async def main():
             assert snapshot["type"] == "snapshot"
     finally:
         await server.shutdown()
-    print("Python browser asset and debug runtime tests passed")
+    print("Python debug runtime tests passed")
 
 
 if __name__ == "__main__":

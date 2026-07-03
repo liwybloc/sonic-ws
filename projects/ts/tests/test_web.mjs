@@ -13,6 +13,7 @@
 
 import assert from "node:assert/strict";
 import http from "node:http";
+import { readFile } from "node:fs/promises";
 import {
 	chromium
 } from "playwright";
@@ -415,6 +416,35 @@ try {
 	await Promise.race([Promise.all(serverReceived), new Promise((_, reject) => setTimeout(() => reject(new Error("web packet timeout")), 10_000))]);
 	assert.equal(await withTimeout(browserResult, 10_000, "browser packet roundtrips"), cases.length);
 	console.log(`passed ${cases.length*2} browser WASM packet roundtrips across ${cases.length} packet definitions`);
+
+	const wasmFixture = await readFile(new URL("../../../bundled/bundle.wasm", import.meta.url));
+	const fallbackPage = await browser.newPage();
+	await fallbackPage.route("**/SonicWS/bundle.wasm", route => route.fulfill({ status: 404, body: "missing" }));
+	await fallbackPage.route("https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/version", route => route.fulfill({ status: 200, body: "22" }));
+	await fallbackPage.route("https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/bundle.wasm", route => route.fulfill({ status: 200, contentType: "application/wasm", body: wasmFixture }));
+	await fallbackPage.goto(`http://127.0.0.1:${address.port}/`);
+	assert.equal(await fallbackPage.evaluate(async () => {
+		await window.SonicWS.initialize();
+		return true;
+	}), true);
+	await fallbackPage.close();
+	console.log("browser: missing local WASM used the version-matched CDN fallback");
+
+	const mismatchPage = await browser.newPage();
+	await mismatchPage.route("**/SonicWS/bundle.wasm", route => route.fulfill({ status: 404, body: "missing" }));
+	await mismatchPage.route("https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/version", route => route.fulfill({ status: 200, body: "999" }));
+	await mismatchPage.goto(`http://127.0.0.1:${address.port}/`);
+	const mismatch = await mismatchPage.evaluate(async () => {
+		try {
+			await window.SonicWS.initialize();
+			return "";
+		} catch (error) {
+			return error instanceof Error ? error.message : String(error);
+		}
+	});
+	assert.match(mismatch, /CDN protocol mismatch: expected 22, received 999/);
+	await mismatchPage.close();
+	console.log("browser: mismatched CDN protocol was rejected");
 } finally {
 	if (browser) await browser.close();
 	await withTimeout(new Promise(resolve => sonicServer.shutdown(() => resolve())), 2_000, "SonicWS server shutdown").catch(() => undefined);

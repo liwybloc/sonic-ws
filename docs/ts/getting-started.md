@@ -34,7 +34,11 @@ client.on_ready(() => client.send("chat", "hello"));
 
 ## Browser
 
-By default, a `SonicWSServer` attached to an HTTP server serves `/SonicWS/bundle.js` and `/SonicWS/bundle.wasm`.
+By default, the Node.js `SonicWSServer` attached to an HTTP server serves `/SonicWS/bundle.js` and `/SonicWS/bundle.wasm`. Automatic asset serving is Node-only. Servers written in Python or another language must serve the files themselves or load the CDN bundle:
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/SonicWS_bundle"></script>
+```
 
 ```html
 <script src="/SonicWS/bundle.js"></script>
@@ -47,7 +51,7 @@ By default, a `SonicWSServer` attached to an HTTP server serves `/SonicWS/bundle
 </script>
 ```
 
-Call `SonicWS.initialize()` before constructing the first browser client. The bundle requests its WASM sibling at `/SonicWS/bundle.wasm`.
+Call `SonicWS.initialize()` before constructing the first browser client. The bundle first requests its local WASM sibling at `/SonicWS/bundle.wasm` and verifies the response is a real WebAssembly binary. If that file is missing or invalid, it checks jsDelivr's `release/version` against the client's protocol version before loading `release/bundle.wasm`. A missing version file, protocol mismatch, or invalid CDN module rejects initialization with an error.
 
 ## Connection lifecycle
 

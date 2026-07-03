@@ -12,7 +12,7 @@ server = SonicWSServer(
 )
 ```
 
-A TypeScript-shaped settings dictionary is also accepted, including `clientPackets`, `serverPackets`, `websocketOptions`, and `sonicServerSettings.serveBrowserClient`. Remaining WebSocket options are forwarded to `websockets.asyncio.server.serve`.
+A TypeScript-shaped settings dictionary is also accepted, including `clientPackets`, `serverPackets`, and `websocketOptions`. Remaining WebSocket options are forwarded to `websockets.asyncio.server.serve`.
 
 ## Server methods
 
@@ -41,4 +41,8 @@ CamelCase aliases exist for the corresponding TypeScript methods.
 
 Global limits and per-packet `rateLimit` use rolling one-second windows and unsigned 16-bit limits. Client violations close with code 4000. Server-side excess sends are dropped, matching TypeScript behavior. Disabled client packets close with code 4006. IDs are unique for active connections and released IDs may be reused.
 
-Python includes a lightweight native debug dashboard for connection, name, receive, send, and broadcast events. It also serves its packaged browser client at `/SonicWS/bundle.js` and `/SonicWS/bundle.wasm` by default; set `sonicServerSettings.serveBrowserClient` to false to disable this. A user `process_request` handler is preserved for all other paths.
+Python includes a lightweight native debug dashboard for connection, name, receive, send, and broadcast events. Automatic browser-bundle serving is only supported by the Node.js server. With Python or another server language, serve the browser artifacts yourself or use the documented CDN script.
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/SonicWS_bundle"></script>
+```

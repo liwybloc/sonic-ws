@@ -80,6 +80,21 @@ The TypeScript/python layer handles connections, packet definitions, middleware,
 
 The same Rust implementation is exposed through N-API for native Node use and through WASM for browsers and the portable Node fallback. Protocol behavior therefore does not depend on which runtime is connected.
 
+Automatic browser-file serving at `/SonicWS/bundle.js` and
+`/SonicWS/bundle.wasm` is supported only by the Node.js server, where it can be
+installed directly on the native HTTP server. If the SonicWS server is written
+in Python or another language, serve the browser files yourself or use the CDN
+bundle:
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/SonicWS_bundle"></script>
+```
+
+The browser loader prefers the server's local `bundle.wasm`. If it isn't
+available, it verifies that jsDelivr's release protocol matches the client and
+then loads the CDN WASM module. Initialization fails on a version mismatch or
+invalid download.
+
 ## INSTALLATION
 
 NodeJS/Typescript:

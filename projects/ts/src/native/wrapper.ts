@@ -1,5 +1,10 @@
 import { PacketType } from "../ws/packets/PacketType";
 import { EnumPackage, EnumValue } from "../ws/util/enums/EnumType";
+import { VERSION } from "../version";
+
+const CDN_RELEASE = "https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release";
+const CDN_WASM = `${CDN_RELEASE}/bundle.wasm`;
+const CDN_VERSION = `${CDN_RELEASE}/version`;
 
 export interface SonicNativeCore {
     encodeSigned(kind: number, values: number[]): Uint8Array;
@@ -36,6 +41,7 @@ export interface NativeObjectSchema {
 }
 
 let loadedCore: SonicNativeCore | undefined;
+let wasmInitialization: Promise<SonicNativeCore> | undefined;
 
 function buffer(data: Uint8Array): Uint8Array {
     if (typeof Buffer !== "undefined") return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
@@ -65,13 +71,76 @@ export function setNativeCore(core: SonicNativeCore): void {
     loadedCore = core;
 }
 
+function fetchUrl(input: RequestInfo | URL): string {
+    if (typeof input === "string") return input;
+    if (input instanceof URL) return input.href;
+    return input.url;
+}
+
+async function isWasm(response: Response): Promise<boolean> {
+    if (!response.ok) return false;
+    const bytes = new Uint8Array(await response.clone().arrayBuffer());
+    return bytes.length >= 4
+        && bytes[0] === 0x00
+        && bytes[1] === 0x61
+        && bytes[2] === 0x73
+        && bytes[3] === 0x6d;
+}
+
+async function fetchCdnWasm(fetcher: typeof fetch): Promise<Response> {
+    const versionResponse = await fetcher(CDN_VERSION, { cache: "no-store" });
+    if (!versionResponse.ok)
+        throw new Error(`Unable to verify SonicWS CDN protocol version (${versionResponse.status})`);
+
+    const remoteVersion = Number((await versionResponse.text()).trim());
+    if (!Number.isInteger(remoteVersion) || remoteVersion !== VERSION)
+        throw new Error(`SonicWS CDN protocol mismatch: expected ${VERSION}, received ${String(remoteVersion)}`);
+
+    const wasmResponse = await fetcher(CDN_WASM);
+    if (!await isWasm(wasmResponse))
+        throw new Error("SonicWS CDN returned an invalid WASM module");
+    return wasmResponse;
+}
+
+async function initializeBrowserWasm(): Promise<SonicNativeCore> {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = fetchUrl(input);
+        if (url === CDN_WASM || !new URL(url, window.location.href).pathname.endsWith("/bundle.wasm"))
+            return originalFetch(input, init);
+
+        try {
+            const local = await originalFetch(input, init);
+            if (await isWasm(local)) return local;
+        } catch {
+            // A missing local file is handled by the version-checked CDN fallback.
+        }
+        return fetchCdnWasm(originalFetch);
+    }) as typeof fetch;
+
+    try {
+        const wasm = await import(/* webpackMode: "eager" */ "./wasm/pkg/sonic_ws_core.js");
+        setNativeCore(wasm as unknown as SonicNativeCore);
+        return loadedCore!;
+    } finally {
+        window.fetch = originalFetch;
+    }
+}
+
 /** Loads and selects the webpack-compatible browser WASM implementation. */
-export async function initializeWasmCore(): Promise<SonicNativeCore> {
-    const wasm = typeof window === "undefined"
-        ? (eval("require") as NodeJS.Require)("./wasm/node/sonic_ws_core.js")
-        : await import(/* webpackMode: "eager" */ "./wasm/pkg/sonic_ws_core.js");
-    setNativeCore(wasm as unknown as SonicNativeCore);
-    return loadedCore!;
+export function initializeWasmCore(): Promise<SonicNativeCore> {
+    if (loadedCore) return Promise.resolve(loadedCore);
+    if (wasmInitialization) return wasmInitialization;
+
+    wasmInitialization = (async () => {
+        if (typeof window !== "undefined") return initializeBrowserWasm();
+        const wasm = (eval("require") as NodeJS.Require)("./wasm/node/sonic_ws_core.js");
+        setNativeCore(wasm as unknown as SonicNativeCore);
+        return loadedCore!;
+    })().finally(() => {
+        wasmInitialization = undefined;
+    });
+    return wasmInitialization;
 }
 
 /** Loads the platform-specific Node addon lazily. */
