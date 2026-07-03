@@ -11,7 +11,7 @@ The binding exposes signed/unsigned number, float, string, boolean, raw decode, 
 `projects/py/setup.py` runs:
 
 ```text
-cargo build --release --features python --target wasm32-unknown-unknown --manifest-path projects/core/Cargo.toml
+cargo build --release --features python --target wasm32-unknown-unknown --target-dir projects/core/target/python-wasm --manifest-path projects/core/Cargo.toml
 ```
 
 with the `wasm32-unknown-unknown` target and bundles the resulting module as `sonic_ws/_core.wasm`. The resulting wheel is `py3-none-any`; one wheel works across supported Python operating systems and architectures. `wasmtime` remains a normal dependency and supplies its own maintained runtime wheel for the current platform. Python wheels do not include or serve the browser JavaScript/WASM bundle.

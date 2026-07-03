@@ -73,6 +73,7 @@ export class PacketHolder {
                 this.variants[`${packet.parent}.${packet.variant}`] = packet.tag;
                 this.parents.add(packet.parent);
             }
+            if (packet.isParent) this.parents.add(packet.tag);
         }
     }
 

@@ -68,7 +68,7 @@ class PacketHolder:
         self.packets = list(packets)
         self.by_tag = {p.tag: p for p in self.packets}
         self.tags = [p.tag for p in self.packets]
-        self.variants = {f"{p.parent}.{p.variant}": p.tag for p in self.packets if p.parent}
+        self.variants = {f"{p.parent}.{p.variant}": p.tag for p in self.packets if p.parent and p.variant}
         self.parents = {p.parent for p in self.packets if p.parent}
         if len(self.packets) > 254:
             raise ValueError("SonicWS supports at most 254 packets per direction")
@@ -292,7 +292,7 @@ async def dispatch_packet(connection, packet, payload, socket_for_validator=None
                 raise ValueError("no previous value to rereference")
             values = packet.last_received[cache_key]
             await connection._emit(packet.tag, values, bool(not packet.dont_spread and not packet.schema))
-            if packet.parent:
+            if packet.parent and packet.variant:
                 await connection._emit(f"{packet.parent}.{packet.variant}", values, False)
                 await connection._emit(packet.parent, {"variant": packet.variant, "payload": values}, False)
             return
@@ -314,7 +314,7 @@ async def dispatch_packet(connection, packet, payload, socket_for_validator=None
                 if not await _call(packet.validator, socket_for_validator, *args):
                     raise ValueError("custom packet validation failed")
             await connection._emit(packet.tag, values, bool(not packet.dont_spread and not packet.schema))
-            if packet.parent:
+            if packet.parent and packet.variant:
                 await connection._emit(f"{packet.parent}.{packet.variant}", values, False)
                 await connection._emit(packet.parent, {"variant": packet.variant, "payload": values}, False)
             await connection._middleware("onReceive_post", packet.tag, values)

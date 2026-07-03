@@ -11,7 +11,7 @@
  * License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
  */
 
-import { CloseCodes, Connection } from "../../Connection";
+import { CloseCodes } from "../../Connection";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
 import { PacketHolder } from "./PacketHolder";
 

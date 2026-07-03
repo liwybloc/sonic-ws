@@ -4,6 +4,19 @@ from sonic_ws import PacketType, CreatePacket, CreateObjPacket, CreatePacketGrou
 
 
 class FeatureTests(unittest.TestCase):
+    def test_schema_constructor(self):
+        class MovementValue:
+            def __init__(self, values):
+                self.x, self.y, self.z = values["x"], values["y"], values["z"]
+
+        packet = CreatePacket(tag="constructed", type=PacketType.VARINT, schema=["x", "y", "z"], dataMax=3, constructor=MovementValue)
+        value = packet.decode(packet.encode((MovementValue({"x": 1, "y": 2, "z": 3}),)))
+        self.assertIsInstance(value, MovementValue)
+        self.assertEqual((value.x, value.y, value.z), (1, 2, 3))
+        restored, _ = type(packet).deserialize(packet.serialize())
+        self.assertEqual(restored.constructor_name, "MovementValue")
+        self.assertIsInstance(restored.decode(restored.encode(({"x": 4, "y": 5, "z": 6},))), MovementValue)
+
     def test_schema_object_matches_positional_wire(self):
         packet = CreatePacket(tag="move", type=PacketType.VARINT, schema=["dx", "dy", "dz"], dataMin=3, dataMax=3)
         self.assertEqual(packet.encode(({"dx": 1, "dy": 2, "dz": 3},)), packet.encode((1, 2, 3)))
@@ -55,9 +68,12 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(restored.schema, ("x",))
         self.assertEqual(restored.quantized["scale"], 10)
         group = CreatePacketGroup(tag="movement", variants={"still": {"type": PacketType.NONE}, "move": {"type": PacketType.VARINT, "schema": ["x"], "dataMax": 1}})
-        self.assertEqual([item.tag for item in group], ["__movement$still", "__movement$move"])
-        self.assertEqual(group[1].parent, "movement")
-        self.assertEqual(group[1].variant, "move")
+        self.assertEqual([item.tag for item in group], ["movement", "movement.still", "movement.move"])
+        self.assertTrue(group[0].is_parent)
+        self.assertEqual(group[0].variant, "")
+        self.assertEqual(group[0].decode(group[0].encode(())), {"variant": "", "payload": None})
+        self.assertEqual(group[2].parent, "movement")
+        self.assertEqual(group[2].variant, "move")
 
 
 if __name__ == "__main__":

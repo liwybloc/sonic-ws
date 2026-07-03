@@ -75,6 +75,29 @@ await socket.send("entitySnapshot", [...entities.values()]);
 
 Variable-width records are not implemented; use another packet or explicit object sectors.
 
+### Constructed schema values
+
+Pass `constructor: Class` to instantiate decoded schema objects:
+
+```ts
+class C2SMovement {
+  x: number; y: number; z: number;
+  constructor({ x, y, z }: { x: number; y: number; z: number }) {
+    this.x = x; this.y = y; this.z = z;
+  }
+}
+
+const movement = CreatePacket({
+  tag: "movement",
+  type: PacketType.VARINT,
+  schema: ["x", "y", "z"],
+  dataMax: 3,
+  constructor: C2SMovement,
+});
+```
+
+Only `"C2SMovement"` is exchanged in schema metadata; executable code is never transmitted or evaluated. Creating the packet registers the class locally. On a peer that does not create the same definition, call `RegisterPacketConstructor(C2SMovement)` before the first value is decoded. Class names must therefore remain stable when bundling/minifying. The same behavior applies to every record produced by `autoFlatten` and `autoTranspose`.
+
 ## Objects
 
 `CreateObjPacket` frames one independently encoded sector per type.
@@ -109,7 +132,7 @@ socket.on("movement.move", payload => {});
 socket.on("movement", event => console.log(event.variant, event.payload));
 ```
 
-Children use internal tags such as `__movement$move`. Receiving one fires both its child-specific listener and the parent listener.
+The helper creates one `NONE` parent plus one normal dot-qualified packet per variant. For example, `movement` with `still` and `move` variants creates `movement`, `movement.still`, and `movement.move`. Receiving a child fires both its child-specific listener and the parent listener. Sending the parent directly represents the empty variant (`variant: ""`).
 
 ## Enums
 

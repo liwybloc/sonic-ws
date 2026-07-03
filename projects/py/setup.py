@@ -33,6 +33,8 @@ class BuildPy(build_py):
                 "python",
                 "--target",
                 "wasm32-unknown-unknown",
+                "--target-dir",
+                str(CORE / "target" / "python-wasm"),
                 "--manifest-path",
                 str(CORE / "Cargo.toml"),
             ],
@@ -48,7 +50,7 @@ class BuildPy(build_py):
         for stale in (pathlib.Path(self.build_lib) / "sonic_ws").glob("_native.*"):
             stale.unlink()
 
-        source = CORE / "target" / "wasm32-unknown-unknown" / "release" / "sonic_ws_core.wasm"
+        source = CORE / "target" / "python-wasm" / "wasm32-unknown-unknown" / "release" / "sonic_ws_core.wasm"
         target = pathlib.Path(self.build_lib) / "sonic_ws" / "_core.wasm"
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)

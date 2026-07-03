@@ -63,7 +63,9 @@ All fields are required and extras are rejected. Positional sends remain valid a
 
 Homogeneous `autoFlatten=True` maps fixed-width dictionaries to row-major values. Object `autoTranspose=True` maps repeated dictionaries to column-major sectors; object `autoFlatten=True` remains an alias. Non-divisible homogeneous payloads are rejected. Variable-width records are not implemented.
 
-`CreatePacketGroup(...)` returns child packets to include in a packet list. Use `send_variant`/`sendVariant`; listeners may subscribe to `movement.move` or to `movement`, whose event is `{"variant": "move", "payload": ...}`.
+Pass `constructor=MovementValue` to construct decoded schema values with `MovementValue(values)`. Only the class name is exchanged; code is never evaluated. Creating the packet registers the class locally. A peer that learns the packet from the handshake must call `register_packet_constructor(MovementValue)` before decoding. Constructor names must match across runtimes.
+
+`CreatePacketGroup(...)` returns a `NONE` parent followed by its normal dot-qualified child packets. Use `send_variant`/`sendVariant`; listeners may subscribe to `movement.move` or to `movement`, whose child event is `{"variant": "move", "payload": ...}`. Sending `movement` itself represents the empty variant.
 
 ## Values and listener spreading
 

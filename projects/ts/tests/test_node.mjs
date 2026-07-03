@@ -28,7 +28,13 @@ const {
     CreatePacketGroup,
     DefineEnum,
     WrapEnum,
+    RegisterPacketConstructor,
 } = await import("../dist/index.js");
+
+class C2SMovement {
+    constructor({ x, y, z }) { this.x = x; this.y = y; this.z = z; }
+}
+RegisterPacketConstructor(C2SMovement);
 
 const mixedEnum = DefineEnum("e2e-mixed", ["alpha", 7, true, null, undefined]);
 const objectEnum = DefineEnum("e2e-object", ["left", "right"]);
@@ -92,6 +98,12 @@ const cases = [
         create: tag => CreatePacket({ tag, type: PacketType.SHORTS, schema: ["dx", "dy", "dz"], dataMin: 3, dataMax: 3, quantized: { scale: 100 }, min: -1, max: 1 }),
         send: [{ dx: .5, dy: 0, dz: -.5 }],
         expected: [{ dx: .5, dy: 0, dz: -.5 }],
+    },
+    {
+        name: "constructed",
+        create: tag => CreatePacket({ tag, type: PacketType.VARINT, schema: ["x", "y", "z"], dataMax: 3, constructor: C2SMovement }),
+        send: [new C2SMovement({ x: 3, y: 4, z: 5 })],
+        expected: [new C2SMovement({ x: 3, y: 4, z: 5 })],
     },
 ];
 
@@ -216,7 +228,13 @@ try {
     const stateless = CreatePacket({ tag: "stateless-q", type: PacketType.VARINT, quantized: { scale: 1024, trackError: false } });
     assert.deepEqual([stateless.prepareSend([1.5283])[0], stateless.prepareSend([1.5283])[0]], [1565, 1565]);
     const group = CreatePacketGroup({ tag: "movement", variants: { still: { type: PacketType.NONE }, move: { type: PacketType.VARINT, schema: ["dx", "dy", "dz"], dataMin: 3, dataMax: 3 } } });
-    assert.deepEqual(group.map(packet => packet.tag), ["__movement$still", "__movement$move"]);
+    assert.deepEqual(group.map(packet => packet.tag), ["movement", "movement.still", "movement.move"]);
+    assert.equal(group[0].type, PacketType.NONE);
+    assert.equal(group[0].variant, "");
+    assert.deepEqual(await group[0].listen(new Uint8Array(), null), [{ variant: "", payload: undefined }, false]);
+    const constructedPacket = CreatePacket({ tag: "constructed-unit", type: PacketType.VARINT, schema: ["x", "y", "z"], dataMax: 3, constructor: C2SMovement });
+    assert.equal(constructedPacket.constructorName, "C2SMovement");
+    assert(constructedPacket.finishReceive([1, 2, 3]) instanceof C2SMovement);
     assert.equal(await connection.sendSafe("not-a-packet"), false);
     assert.equal(await server.broadcastSafe("not-a-packet"), false);
     assert.equal(sendErrors.length, 2);

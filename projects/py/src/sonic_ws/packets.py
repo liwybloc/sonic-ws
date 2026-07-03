@@ -28,6 +28,22 @@ from .jsonutil import compress_json, decompress_json
 
 MAX_DATA_MAX = 2_048_383
 MAX_RATE_LIMIT = 65_535
+_PACKET_CONSTRUCTORS = {}
+
+
+def register_packet_constructor(constructor):
+    name = constructor.__name__
+    if not name:
+        raise ValueError("packet constructors must have a stable class name")
+    existing = _PACKET_CONSTRUCTORS.get(name)
+    if existing is not None and existing is not constructor:
+        raise ValueError(f'a different packet constructor named "{name}" is already registered')
+    _PACKET_CONSTRUCTORS[name] = constructor
+    return constructor
+
+
+def unregister_packet_constructor(name):
+    _PACKET_CONSTRUCTORS.pop(name, None)
 
 
 def varint(value: int) -> bytes:
@@ -92,6 +108,10 @@ class Packet:
     quantized: dict[str, Any] | None = None
     value_min: float | None = None
     value_max: float | None = None
+    group_parent: str | None = None
+    group_variant: str | None = None
+    is_parent: bool = False
+    constructor_name: str | None = None
 
     def __post_init__(self):
         if self.quantized is not None:
@@ -128,24 +148,35 @@ class Packet:
 
     @property
     def parent(self):
-        if self.tag.startswith("__") and "$" in self.tag[2:]:
-            return self.tag[2:].rsplit("$", 1)[0]
-        return None
+        return self.group_parent
 
     @property
     def variant(self):
-        return self.tag.rsplit("$", 1)[1] if self.parent else None
+        return self.group_variant
 
     def _record(self, record, context):
-        if not self.schema or not isinstance(record, dict):
+        if not self.schema or record is None:
             raise ValueError(f'Packet "{self.tag}" {context} requires an object record')
-        missing = [name for name in self.schema if name not in record]
-        extra = [name for name in record if name not in self.schema]
+        mapping = record if isinstance(record, dict) else None
+        missing = [name for name in self.schema if name not in mapping] if mapping is not None else [name for name in self.schema if not hasattr(record, name)]
+        extra = [name for name in mapping if name not in self.schema] if mapping is not None else []
         if missing:
             raise ValueError(f'Packet "{self.tag}" is missing schema field(s): {", ".join(missing)}')
         if extra:
             raise ValueError(f'Packet "{self.tag}" has unknown schema field(s): {", ".join(extra)}')
-        return [record[name] for name in self.schema]
+        return [mapping[name] if mapping is not None else getattr(record, name) for name in self.schema]
+
+    def _construct(self, values):
+        if not self.constructor_name:
+            return values
+        try:
+            constructor = _PACKET_CONSTRUCTORS[self.constructor_name]
+        except KeyError as error:
+            raise ValueError(
+                f'packet constructor "{self.constructor_name}" is not registered locally; '
+                f'call register_packet_constructor({self.constructor_name}) before decoding'
+            ) from error
+        return constructor(values)
 
     def _numbers(self, values, direction, state_key=-1):
         scale = self.quantized.get("scale") if self.quantized else None
@@ -184,7 +215,10 @@ class Packet:
             if len(values) != 1 or not isinstance(values[0], (list, tuple)):
                 raise ValueError(f'Packet "{self.tag}" autoFlatten requires one array of records')
             values = [item for row in values[0] for item in self._record(row, "autoFlatten")]
-        elif self.schema and len(values) == 1 and isinstance(values[0], dict):
+        elif self.schema and len(values) == 1 and (
+            isinstance(values[0], dict)
+            or (self.constructor_name and not isinstance(values[0], (list, tuple, str, bytes, bytearray, int, float, bool)))
+        ):
             values = self._record(values[0], "schema mapping")
         if self.quantized or self.value_min is not None or self.value_max is not None:
             values = self._numbers(values, "send", state_key)
@@ -196,7 +230,7 @@ class Packet:
                 count = len(values[0]) if values else 0
                 if any(len(column) != count for column in values):
                     raise ValueError(f'Packet "{self.tag}" autoTranspose columns have different lengths')
-                return [{name: values[column][row] for column, name in enumerate(self.schema)} for row in range(count)]
+                return [self._construct({name: values[column][row] for column, name in enumerate(self.schema)}) for row in range(count)]
             return unflatten_data(values) if self.auto_flatten else values
         decoded = list(values) if isinstance(values, (list, tuple)) else [values]
         if self.quantized or self.value_min is not None or self.value_max is not None:
@@ -205,9 +239,9 @@ class Packet:
             width = len(self.schema)
             if len(decoded) % width:
                 raise ValueError(f'Packet "{self.tag}" flat value count {len(decoded)} is not divisible by schema length {width}')
-            return [{name: decoded[row * width + column] for column, name in enumerate(self.schema)} for row in range(len(decoded) // width)]
+            return [self._construct({name: decoded[row * width + column] for column, name in enumerate(self.schema)}) for row in range(len(decoded) // width)]
         if self.schema:
-            return dict(zip(self.schema, decoded))
+            return self._construct(dict(zip(self.schema, decoded)))
         return values
 
     def encode(self, values: Sequence[Any], state_key=-1) -> bytes:
@@ -304,7 +338,8 @@ class Packet:
                 and not self.data_mins[0] <= count <= self.data_maxes[0]
             ):
                 raise ValueError("value count outside schema limits")
-        return self.finish_receive(values)
+        result = self.finish_receive(values)
+        return {"variant": "", "payload": result} if self.is_parent else result
 
     def serialize(self) -> bytes:
         flags = [
@@ -317,7 +352,14 @@ class Packet:
         ]
         flag_byte = sum(int(v) << (7 - i) for i, v in enumerate(flags))
         tag = self.tag.encode("latin1")
-        metadata = json.dumps({"schema": self.schema, "quantized": self.quantized, "min": self.value_min, "max": self.value_max}, separators=(",", ":")).encode()
+        metadata = json.dumps({
+            "schema": self.schema,
+            "quantized": self.quantized,
+            "min": self.value_min,
+            "max": self.value_max,
+            "group": ({"parent": self.group_parent, "variant": self.group_variant or "", "isParent": self.is_parent} if self.group_parent is not None else None),
+            "constructor": self.constructor_name,
+        }, separators=(",", ":")).encode()
         shared = (
             bytes([len(tag)])
             + tag
@@ -427,6 +469,10 @@ class Packet:
                 quantized=metadata.get("quantized"),
                 value_min=metadata.get("min"),
                 value_max=metadata.get("max"),
+                group_parent=(metadata.get("group") or {}).get("parent"),
+                group_variant=(metadata.get("group") or {}).get("variant"),
+                is_parent=bool((metadata.get("group") or {}).get("isParent", False)),
+                constructor_name=metadata.get("constructor"),
             ),
             offset - start,
         )
@@ -508,6 +554,7 @@ def create_packet(settings=None, **kwargs):
     no_range = bool(s.pop("noDataRange", s.pop("no_data_range", False))) or repeated_default
     rereference = bool(s.pop("rereference", False))
     quantized = s.pop("quantized", None)
+    packet_constructor = s.pop("constructor", None)
     value_min = s.pop("min", None)
     value_max = s.pop("max", None)
     maximum = MAX_DATA_MAX if no_range else _data_max(s.pop("dataMax", s.pop("data_max", 1)))
@@ -516,6 +563,10 @@ def create_packet(settings=None, **kwargs):
     if rereference and minimum == 0:
         raise ValueError("rereference cannot be enabled when dataMin is 0")
     _validate_schema(fields, tag)
+    if packet_constructor is not None and not fields:
+        raise ValueError(f'Packet "{tag}" constructor requires schema')
+    if packet_constructor is not None:
+        register_packet_constructor(packet_constructor)
     if auto_flatten and not fields:
         raise ValueError(f'Packet "{tag}" autoFlatten requires schema')
     if fields and not auto_flatten and minimum == maximum and len(fields) != maximum:
@@ -540,6 +591,7 @@ def create_packet(settings=None, **kwargs):
         quantized=dict(quantized) if quantized else None,
         value_min=value_min,
         value_max=value_max,
+        constructor_name=packet_constructor.__name__ if packet_constructor else None,
         **common,
     )
     _finish(s)
@@ -561,8 +613,13 @@ def create_obj_packet(settings=None, **kwargs):
     if n == 0:
         raise ValueError("types cannot be empty")
     fields = s.pop("schema", None)
+    packet_constructor = s.pop("constructor", None)
     fields = tuple(fields) if fields is not None else None
     _validate_schema(fields, tag)
+    if packet_constructor is not None and not fields:
+        raise ValueError(f'Packet "{tag}" constructor requires schema')
+    if packet_constructor is not None:
+        register_packet_constructor(packet_constructor)
     if fields and len(fields) != n:
         raise ValueError(f'Packet "{tag}" schema length must match types length')
     no_range = bool(s.pop("noDataRange", s.pop("no_data_range", False)))
@@ -589,6 +646,7 @@ def create_obj_packet(settings=None, **kwargs):
         is_object=True,
         auto_flatten=auto_flatten,
         schema=fields,
+        constructor_name=packet_constructor.__name__ if packet_constructor else None,
         **common,
     )
     _finish(s)
@@ -619,11 +677,22 @@ def create_packet_group(settings=None, **kwargs):
         raise ValueError("Packet group tag is required and cannot contain '$'")
     if not variants:
         raise ValueError(f'Packet group "{tag}" requires at least one variant')
-    packets = []
+    packets = [create_packet(
+        tag=tag,
+        type=PacketType.NONE,
+        dataMin=0,
+        dataMax=0,
+    )]
+    packets[0].group_parent = tag
+    packets[0].group_variant = ""
+    packets[0].is_parent = True
     for variant, definition in variants.items():
         if not variant or "$" in variant:
             raise ValueError("Packet variant names cannot be empty or contain '$'")
-        packets.append(create_packet({**definition, "tag": f"__{tag}${variant}"}))
+        child = create_packet({**definition, "tag": f"{tag}.{variant}"})
+        child.group_parent = tag
+        child.group_variant = variant
+        packets.append(child)
     return packets
 
 
@@ -633,3 +702,5 @@ CreateEnumPacket = create_enum_packet
 CreatePacketGroup = create_packet_group
 FlattenData = flatten_data
 UnFlattenData = unflatten_data
+RegisterPacketConstructor = register_packet_constructor
+UnregisterPacketConstructor = unregister_packet_constructor

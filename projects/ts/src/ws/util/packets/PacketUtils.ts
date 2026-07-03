@@ -18,6 +18,7 @@ import { EnumPackage } from "../enums/EnumType";
 import { EMPTY_UINT8, MAX_USHORT } from "./CompressionUtil";
 import { SendQueue } from "../../PacketProcessor";
 import { hashValue } from "./HashUtil";
+import { PacketConstructor, RegisterPacketConstructor } from "./ConstructorRegistry";
 
 export type ProcessedPacket = [code: number, data: Uint8Array, packet: Packet<any>];
 
@@ -261,6 +262,8 @@ export type SinglePacketSettings = SharedPacketSettings & {
     min?: number;
     /** Inclusive application-level numeric maximum. */
     max?: number;
+    /** Local class constructed from decoded schema fields. The class name is exchanged; peers must register their own matching class. */
+    constructor?: Function;
 };
 
 /** Settings for multi-typed packets */
@@ -277,12 +280,16 @@ export type MultiPacketSettings = SharedPacketSettings & {
     schema?: readonly string[];
     /** Column-major repeated-record mapping. autoFlatten remains a deprecated alias. */
     autoTranspose?: boolean;
+    /** Local class constructed for every decoded schema record. */
+    constructor?: Function;
 };
 
 export type PacketGroupSettings = {
     tag: string;
     variants: Record<string, Omit<SinglePacketSettings, "tag">>;
 };
+
+type GroupMetadata = { parent: string; variant: string; isParent: boolean };
 
 /** Settings for single-typed enum packets */
 export type EnumPacketSettings = SharedPacketSettings & {
@@ -307,9 +314,10 @@ export type KeyEffectivePacketSettings = SharedPacketSettings & {
  * @throws {Error} If the `type` is invalid.
  */
 export function CreatePacket<T extends ArguableType>(
-    settings: SinglePacketSettings & { type?: T }
+    settings: SinglePacketSettings & { type?: T; _group?: GroupMetadata }
 ): Packet<ConvertType<T>> {
     const repeatedDefaultRange = settings.autoFlatten === true && settings.dataMax === undefined && settings.dataMin === undefined;
+    const packetConstructor = Object.prototype.hasOwnProperty.call(settings, "constructor") ? settings.constructor as PacketConstructor : undefined;
     let { tag, type = PacketType.NONE, dataMax = 1, dataMin, noDataRange = false, dontSpread = false,
           validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false,
           gzipCompression = type == PacketType.JSON, rereference = false, schema: fields, autoFlatten = false,
@@ -329,6 +337,8 @@ export function CreatePacket<T extends ArguableType>(
     }
 
     validateFields(fields, tag);
+    if (packetConstructor && !fields) throw new Error(`Packet "${tag}" constructor requires schema`);
+    if (packetConstructor) RegisterPacketConstructor(packetConstructor);
     if (autoFlatten && (!fields || fields.length === 0)) throw new Error(`Packet "${tag}" autoFlatten requires schema`);
     if (fields && !autoFlatten && dataMin === dataMax && fields.length !== dataMax)
         throw new Error(`Packet "${tag}" schema length must match its fixed value count (${dataMax})`);
@@ -336,7 +346,7 @@ export function CreatePacket<T extends ArguableType>(
 
     const schema = new PacketSchema<PacketType>(false, type, async, clampDataMin(dataMin, dataMax), clampDataMax(dataMax), clampRateLimit(rateLimit),
                     dontSpread, autoFlatten, rereference, dataBatching, maxBatchSize, gzipCompression,
-                    fields, quantized, min, max);
+                    fields, quantized, min, max, settings._group, packetConstructor?.name);
 
     return new Packet<ConvertType<T>>(tag, schema, validator, enabled, false);
 }
@@ -351,6 +361,7 @@ export function CreatePacket<T extends ArguableType>(
 export function CreateObjPacket<T extends readonly ArguableType[], V extends readonly PacketType[] = {[K in keyof T]: ConvertType<T[K]>}>(
     settings: MultiPacketSettings & { readonly types: T }
 ): Packet<V> {
+    const packetConstructor = Object.prototype.hasOwnProperty.call(settings, "constructor") ? settings.constructor as PacketConstructor : undefined;
     let { tag, types = [], dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false, autoTranspose,
           schema: fields,
           validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false,
@@ -359,6 +370,8 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
     if(!tag) throw new Error("Tag not selected!");
     if(!types || types.length == 0) throw new Error("Types is set to 0 length");
     validateFields(fields, tag);
+    if (packetConstructor && !fields) throw new Error(`Packet "${tag}" constructor requires schema`);
+    if (packetConstructor) RegisterPacketConstructor(packetConstructor);
     if (fields && fields.length !== types.length) throw new Error(`Packet "${tag}" schema length must match types length`);
     if (autoTranspose !== undefined && autoFlatten && autoTranspose !== autoFlatten)
         throw new Error(`Packet "${tag}" has conflicting autoFlatten and autoTranspose options`);
@@ -383,20 +396,42 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
     const clampedDataMaxes = dataMaxes.map(clampDataMax);
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
-    const schema = new PacketSchema<readonly PacketType[]>(true, types as any, async, clampedDataMins, clampedDataMaxes, clampRateLimit(rateLimit), dontSpread, transpose, false, dataBatching, maxBatchSize, gzipCompression, fields);
+    const schema = new PacketSchema<readonly PacketType[]>(true, types as any, async, clampedDataMins, clampedDataMaxes, clampRateLimit(rateLimit), dontSpread, transpose, false, dataBatching, maxBatchSize, gzipCompression, fields, undefined, undefined, undefined, undefined, packetConstructor?.name);
 
     return new Packet<V>(tag, schema, validator, enabled, false);
 }
 
-/** Creates normal child packets for a tagged variant group. Spread the result into a packet list. */
+/**
+ * Creates a parent packet and its named variants as ordinary packet definitions.
+ *
+ * A group named `movement` with `look`, `move`, and `both` variants returns four
+ * packets: `movement` (`PacketType.NONE`), `movement.look`, `movement.move`, and
+ * `movement.both`. Spread the returned array into `clientPackets` or
+ * `serverPackets`. Send a child with `sendVariant("movement", "move", value)`;
+ * listeners on `movement.move` receive the child payload, while listeners on
+ * `movement` also receive `{ variant: "move", payload }`. Sending `movement`
+ * directly represents the parent/empty variant (`variant: ""`).
+ */
 export function CreatePacketGroup(settings: PacketGroupSettings): Packet<any>[] {
     if (!settings.tag || settings.tag.includes("$")) throw new Error("Packet group tag is required and cannot contain '$'");
     const entries = Object.entries(settings.variants);
     if (!entries.length) throw new Error(`Packet group "${settings.tag}" requires at least one variant`);
-    return entries.map(([variant, definition]) => {
-        if (!variant || variant.includes("$")) throw new Error("Packet variant names cannot be empty or contain '$'");
-        return CreatePacket({ ...definition, tag: `__${settings.tag}$${variant}` } as SinglePacketSettings);
+    const parent = CreatePacket({
+        tag: settings.tag,
+        type: PacketType.NONE,
+        dataMin: 0,
+        dataMax: 0,
+        _group: { parent: settings.tag, variant: "", isParent: true },
     });
+    const children = entries.map(([variant, definition]) => {
+        if (!variant || variant.includes("$")) throw new Error("Packet variant names cannot be empty or contain '$'");
+        return CreatePacket({
+            ...definition,
+            tag: `${settings.tag}.${variant}`,
+            _group: { parent: settings.tag, variant, isParent: false },
+        } as SinglePacketSettings & { _group: GroupMetadata });
+    });
+    return [parent, ...children];
 }
 
 function validateFields(fields: readonly string[] | undefined, tag: string): void {

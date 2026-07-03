@@ -20,6 +20,7 @@ import { PacketType } from "./PacketType";
 import { processCharCodes, as8String } from "../util/StringUtil";
 import { decodeNative, decodeNativeObject, deflateNative, encodeNative, encodeNativeObject, inflateNative, validateNative, validateNativeObject } from "../../native/wrapper";
 import { compressJSON, decompressJSON } from "../util/packets/JSONUtil";
+import { resolvePacketConstructor } from "../util/packets/ConstructorRegistry";
 
 export type ValidatorFunction = ((socket: SonicWSConnection, values: any) => boolean) | null;
 
@@ -51,6 +52,8 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public readonly valueMax?: number;
     public readonly parent?: string;
     public readonly variant?: string;
+    public readonly isParent: boolean;
+    public readonly constructorName?: string;
 
     public readonly rateLimit: number;
 
@@ -87,9 +90,10 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         this.quantized = schema.quantized ? { ...schema.quantized, trackError: schema.quantized.trackError ?? true } : undefined;
         this.valueMin = schema.valueMin;
         this.valueMax = schema.valueMax;
-        const group = /^__(.+)\$([^$]+)$/.exec(tag);
-        this.parent = group?.[1];
-        this.variant = group?.[2];
+        this.parent = schema.group?.parent;
+        this.variant = schema.group?.variant;
+        this.isParent = schema.group?.isParent ?? false;
+        this.constructorName = schema.constructorName;
 
         this.object = schema.object;
 
@@ -187,6 +191,10 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         return this.fields.map(field => record[field]);
     }
 
+    private construct(values: Record<string, any>): any {
+        return this.constructorName ? new (resolvePacketConstructor(this.constructorName))(values) : values;
+    }
+
     private logical(values: any[], direction: "send" | "receive", stateKey: number = -1): any[] {
         const scale = this.quantized?.scale;
         return values.map(value => {
@@ -245,7 +253,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
                 const count = columns[0]?.length ?? 0;
                 if (columns.some(column => column.length !== count))
                     throw new Error(`Packet "${this.tag}" autoTranspose columns have different lengths`);
-                return Array.from({ length: count }, (_, row) => Object.fromEntries(this.fields!.map((field, col) => [field, columns[col][row]])));
+                return Array.from({ length: count }, (_, row) => this.construct(Object.fromEntries(this.fields!.map((field, col) => [field, columns[col][row]]))));
             }
             return this.autoFlatten ? UnFlattenData(decoded) : decoded;
         }
@@ -257,9 +265,9 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             if (values.length % width !== 0)
                 throw new Error(`Packet "${this.tag}" flat value count ${values.length} is not divisible by schema length ${width}`);
             return Array.from({ length: values.length / width }, (_, row) =>
-                Object.fromEntries(this.fields!.map((field, col) => [field, values[row * width + col]])));
+                this.construct(Object.fromEntries(this.fields!.map((field, col) => [field, values[row * width + col]]))));
         }
-        if (this.fields) return Object.fromEntries(this.fields.map((field, index) => [field, values[index]]));
+        if (this.fields) return this.construct(Object.fromEntries(this.fields.map((field, index) => [field, values[index]])));
         return decoded;
     }
 
@@ -280,7 +288,8 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
                     if(!this.customValidator(socket!, useableData)) return "Didn't pass custom validator";
                 }
             }
-            return [useableData, this.fields ? false : !this.dontSpread];
+            const delivered = this.isParent ? { variant: "", payload: useableData } : useableData;
+            return [delivered, this.isParent || this.fields ? false : !this.dontSpread];
         } catch (err) {
             console.error("There was an error processing the packet! This is probably my fault... report at https://github.com/liwybloc/sonic-ws", err);
             return "Error: " + err;
@@ -294,6 +303,8 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             quantized: this.quantized,
             min: this.valueMin,
             max: this.valueMax,
+            group: this.parent !== undefined ? { parent: this.parent, variant: this.variant ?? "", isParent: this.isParent } : undefined,
+            constructor: this.constructorName,
         }));
 
         // shared values for both
@@ -350,7 +361,10 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         offset = metadataOffset;
         const metadata = JSON.parse(new TextDecoder().decode(data.slice(offset, offset += metadataLength))) as {
             schema?: string[]; quantized?: { scale: number; trackError?: boolean }; min?: number; max?: number;
+            group?: { parent: string; variant: string; isParent: boolean };
+            constructor?: string;
         };
+        const constructorName = Object.prototype.hasOwnProperty.call(metadata, "constructor") ? metadata.constructor : undefined;
 
         // read batching, up 1
         const dataBatching: number = data[offset++];
@@ -403,7 +417,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             const finalTypes: ArguableType[] = types.map(x => x == PacketType.ENUMS ? enums[index++] : x); // convert enums to their enum packages
 
             // make schema
-            const schema = new PacketSchema<readonly PacketType[]>(true, finalTypes, async, dataMins, dataMaxes, -1, dontSpread, autoFlatten, false, dataBatching, -1, gzipCompression, metadata.schema);
+            const schema = new PacketSchema<readonly PacketType[]>(true, finalTypes, async, dataMins, dataMaxes, -1, dontSpread, autoFlatten, false, dataBatching, -1, gzipCompression, metadata.schema, undefined, undefined, undefined, metadata.group, constructorName);
             return [
                 new Packet(tag, schema, null, false, client),
                 // +1 to go next
@@ -430,7 +444,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     
         // make schema
         const schema = new PacketSchema<PacketType>(false, finalType, async, dataMin, dataMax, -1, dontSpread, autoFlatten, rereference, dataBatching, -1, gzipCompression,
-            metadata.schema, metadata.quantized, metadata.min, metadata.max);
+            metadata.schema, metadata.quantized, metadata.min, metadata.max, metadata.group, constructorName);
         
         return [
             new Packet(tag, schema, null, false, client),
@@ -478,10 +492,13 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
     public quantized?: { scale: number; trackError?: boolean };
     public valueMin?: number;
     public valueMax?: number;
+    public group?: { parent: string; variant: string; isParent: boolean };
+    public constructorName?: string;
 
     constructor(object: boolean, type: ImpactType<T, ArguableType>, async: boolean, dataMin: ImpactType<T, number>, dataMax: ImpactType<T, number>, rateLimit: number,
                 dontSpread: boolean, autoFlatten: boolean, rereference: boolean, dataBatching: number, maxBatchSize: number, gzipCompression: boolean,
-                fields?: readonly string[], quantized?: { scale: number; trackError?: boolean }, valueMin?: number, valueMax?: number) {
+                fields?: readonly string[], quantized?: { scale: number; trackError?: boolean }, valueMin?: number, valueMax?: number,
+                group?: { parent: string; variant: string; isParent: boolean }, constructorName?: string) {
         // todo add rereference to objects
         this.object = object;
         this.async = async;
@@ -498,6 +515,8 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
         this.quantized = quantized ? { ...quantized } : undefined;
         this.valueMin = valueMin;
         this.valueMax = valueMax;
+        this.group = group ? { ...group } : undefined;
+        this.constructorName = constructorName;
 
         this.type = (object ? (type as ArguableType[]).map(t => convertType(t, this.enumData)) : convertType((type as ArguableType), this.enumData)) as ImpactType<T, PacketType>;
     }

@@ -17,5 +17,7 @@ export { SonicWSServer } from './ws/server/SonicWSServer';
 export { PacketType } from './ws/packets/PacketType';
 export { BasicMiddleware, ConnectionMiddleware, ServerMiddleware, BCInfo } from './ws/PacketProcessor';
 export { CreatePacket, CreateObjPacket, CreateEnumPacket, CreatePacketGroup, FlattenData, UnFlattenData } from './ws/util/packets/PacketUtils';
+export { RegisterPacketConstructor, UnregisterPacketConstructor } from './ws/util/packets/ConstructorRegistry';
+export type { PacketConstructor } from './ws/util/packets/ConstructorRegistry';
 export { DefineEnum, WrapEnum } from './ws/util/enums/EnumHandler';
 export { initializeWasmCore } from './native/wrapper';

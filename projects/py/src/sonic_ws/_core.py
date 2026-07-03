@@ -20,6 +20,7 @@ def _load():
         pathlib.Path(__file__).parents[3]
         / "core"
         / "target"
+        / "python-wasm"
         / "wasm32-unknown-unknown"
         / "release"
         / "sonic_ws_core.wasm",

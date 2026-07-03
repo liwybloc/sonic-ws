@@ -34,6 +34,10 @@ from .packets import (
     unflatten_data,
     FlattenData,
     UnFlattenData,
+    register_packet_constructor,
+    unregister_packet_constructor,
+    RegisterPacketConstructor,
+    UnregisterPacketConstructor,
 )
 from .connection import (
     Connection,
