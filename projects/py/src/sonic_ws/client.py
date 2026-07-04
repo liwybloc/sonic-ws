@@ -17,10 +17,23 @@ from .connection import Connection, PacketHolder, dispatch_packet
 from .codec import inflate
 from .packets import Packet, read_varint, flatten_data, unflatten_data
 from .enums import wrap_enum, dewrap_enum
-from .control import REQUEST, RESPONSE, REPLAY, RESUME, RESUMED, decode_control, encode_request, encode_response, encode_resume
+from .control import (
+    REQUEST,
+    RESPONSE,
+    REPLAY,
+    RESUME,
+    RESUMED,
+    decode_control,
+    encode_request,
+    encode_response,
+    encode_resume,
+)
 from .version import VERSION
 
+
 class SonicWS(Connection):
+    """Provides an asynchronous Python client for the SonicWS protocol."""
+
     def __init__(self, socket, *, url=None, connect_options=None, reconnect=None):
         super().__init__(socket)
         self.client_packets = PacketHolder()
@@ -32,13 +45,19 @@ class SonicWS(Connection):
         self._responders = {}
         self._url = url
         self._connect_options = connect_options or {}
-        reconnect = reconnect if isinstance(reconnect, dict) else {"enabled": bool(reconnect)}
+        reconnect = (
+            reconnect if isinstance(reconnect, dict) else {"enabled": bool(reconnect)}
+        )
         self._reconnect = {
             "enabled": reconnect.get("enabled", False),
             "attempts": reconnect.get("attempts", math.inf),
-            "min_delay": reconnect.get("minDelayMs", reconnect.get("min_delay_ms", 500)) / 1000,
-            "max_delay": reconnect.get("maxDelayMs", reconnect.get("max_delay_ms", 10_000)) / 1000,
-            "jitter": reconnect.get("jitter", .25),
+            "min_delay": reconnect.get("minDelayMs", reconnect.get("min_delay_ms", 500))
+            / 1000,
+            "max_delay": reconnect.get(
+                "maxDelayMs", reconnect.get("max_delay_ms", 10_000)
+            )
+            / 1000,
+            "jitter": reconnect.get("jitter", 0.25),
         }
         self._intentional_close = False
         self._connected_once = False
@@ -50,10 +69,17 @@ class SonicWS(Connection):
         self._pending_resume_session = None
 
     @classmethod
-    async def connect(cls, url, reconnect=None, ready_timeout=10.0, ready_timeout_ms=None, **kwargs):
+    async def connect(
+        cls, url, reconnect=None, ready_timeout=10.0, ready_timeout_ms=None, **kwargs
+    ):
         if ready_timeout_ms is not None:
             ready_timeout = ready_timeout_ms / 1000
-        self = cls(await connect(url, **kwargs), url=url, connect_options=kwargs, reconnect=reconnect)
+        self = cls(
+            await connect(url, **kwargs),
+            url=url,
+            connect_options=kwargs,
+            reconnect=reconnect,
+        )
         self._reader = asyncio.create_task(self._run())
         try:
             await asyncio.wait_for(asyncio.shield(self._ready), ready_timeout)
@@ -73,7 +99,11 @@ class SonicWS(Connection):
                     break
             code = getattr(self.socket, "close_code", 1006) or 1006
             reason = getattr(self.socket, "close_reason", "") or ""
-            if self._intentional_close or code == 1000 or not self._reconnect["enabled"]:
+            if (
+                self._intentional_close
+                or code == 1000
+                or not self._reconnect["enabled"]
+            ):
                 break
             await self._emit("__close__", [code, reason])
             await self._middleware("onStatusChange", 3)
@@ -83,10 +113,20 @@ class SonicWS(Connection):
                     await self._emit("__reconnect_failed__", None, False)
                     break
                 self._reconnect_attempt += 1
-                base = min(self._reconnect["max_delay"], self._reconnect["min_delay"] * (2 ** (self._reconnect_attempt - 1)))
+                base = min(
+                    self._reconnect["max_delay"],
+                    self._reconnect["min_delay"] * (2 ** (self._reconnect_attempt - 1)),
+                )
                 spread = base * self._reconnect["jitter"]
                 delay = max(0, base - spread + random.random() * spread * 2)
-                await self._emit("__reconnecting__", {"attempt": self._reconnect_attempt, "delayMs": round(delay * 1000)}, False)
+                await self._emit(
+                    "__reconnecting__",
+                    {
+                        "attempt": self._reconnect_attempt,
+                        "delayMs": round(delay * 1000),
+                    },
+                    False,
+                )
                 await asyncio.sleep(delay)
                 try:
                     self.socket = await connect(self._url, **self._connect_options)
@@ -103,7 +143,9 @@ class SonicWS(Connection):
         for packet in self.client_packets.packets:
             packet.quantization_errors.pop(0, None)
         if not self._ready.done():
-            self._ready.set_exception(ConnectionError("connection closed before the SonicWS handshake"))
+            self._ready.set_exception(
+                ConnectionError("connection closed before the SonicWS handshake")
+            )
         await self._shutdown(
             getattr(self.socket, "close_code", 1000) or 1000,
             getattr(self.socket, "close_reason", "") or "",
@@ -132,7 +174,9 @@ class SonicWS(Connection):
             if self._reconnect_pending:
                 if previous_session:
                     self._pending_resume_session = previous_session
-                    await self.raw_send(encode_resume(previous_session, self.last_replay_sequence))
+                    await self.raw_send(
+                        encode_resume(previous_session, self.last_replay_sequence)
+                    )
                 self._reconnect_pending = False
                 self._reconnect_attempt = 0
                 self.last_disconnect_error = None
@@ -162,7 +206,7 @@ class SonicWS(Connection):
                     else:
                         await operation
                 except Exception as error:
-                    raise ValueError(f'{tag}: {error}') from error
+                    raise ValueError(f"{tag}: {error}") from error
         except Exception as error:
             raise error
 
@@ -213,7 +257,9 @@ class SonicWS(Connection):
         self._next_request_id = 1 if identifier >= 0x7FFFFFFF else identifier + 1
         future = asyncio.get_running_loop().create_future()
         self._pending_requests[identifier] = future
-        await self.raw_send(encode_request(identifier, self.client_packets.code(tag), payload))
+        await self.raw_send(
+            encode_request(identifier, self.client_packets.code(tag), payload)
+        )
         try:
             return await asyncio.wait_for(future, timeout)
         except asyncio.TimeoutError as error:
@@ -235,7 +281,11 @@ class SonicWS(Connection):
             if sequence <= self.last_replay_sequence:
                 return
             self.last_replay_sequence = sequence
-            if not payload or payload[0] == 0 or payload[0] > len(self.server_packets.packets):
+            if (
+                not payload
+                or payload[0] == 0
+                or payload[0] > len(self.server_packets.packets)
+            ):
                 raise ValueError("invalid replayed packet")
             tag = self.server_packets.tag(payload[0])
             await dispatch_packet(self, self.server_packets.packet(tag), payload[1:])
@@ -247,7 +297,9 @@ class SonicWS(Connection):
             self._pending_resume_session = None
             if not recovered:
                 self.last_replay_sequence = 0
-            await self._emit("__recovered__", {"recovered": recovered, "replayed": replayed}, False)
+            await self._emit(
+                "__recovered__", {"recovered": recovered, "replayed": replayed}, False
+            )
             return
         if message[0] == RESUME:
             raise ValueError("a client cannot receive a recovery request")
@@ -268,7 +320,13 @@ class SonicWS(Connection):
                 raise ValueError(f'No responder registered for packet "{tag}"')
             packet = self.server_packets.packet(tag)
             value = packet.decode(payload)
-            args = value if isinstance(value, list) and not packet.dont_spread and not packet.schema else [value]
+            args = (
+                value
+                if isinstance(value, list)
+                and not packet.dont_spread
+                and not packet.schema
+                else [value]
+            )
             if packet.validator:
                 valid = packet.validator(None, *args)
                 if asyncio.iscoroutine(valid):
@@ -288,6 +346,7 @@ class SonicWS(Connection):
             return True
         except Exception:
             import logging
+
             logging.getLogger(__name__).exception('Failed to send packet "%s"', tag)
             return False
 
@@ -325,9 +384,7 @@ class SonicWS(Connection):
         self._intentional_close = True
         await super().close(code, reason)
 
-    WrapEnum = staticmethod(
-        wrap_enum
-    )
+    WrapEnum = staticmethod(wrap_enum)
     DeWrapEnum = staticmethod(dewrap_enum)
     FlattenData = staticmethod(flatten_data)
     UnFlattenData = staticmethod(unflatten_data)

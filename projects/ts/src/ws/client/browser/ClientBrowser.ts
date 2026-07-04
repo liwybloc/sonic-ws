@@ -17,7 +17,7 @@ import { FlattenData, UnFlattenData } from "../../util/packets/PacketUtils";
 import { ReconnectOptions, SonicWSCore } from "../core/ClientCore";
 import { initializeWasmCore } from "../../../native/wrapper";
 
-// Defines SonicWS class in the browser and gives delegation of functions
+// defines the SonicWS browser class and delegates transport-specific functions
 // types are here so you can do /** @type */
 
 export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
@@ -28,13 +28,32 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
     }
 
     /** Initializes WASM, connects, and resolves after schema negotiation. */
-    static async connect(url: string, options: { protocols?: string | string[]; antiTamper?: boolean; reconnect?: ReconnectOptions; readyTimeoutMs?: number } = {}): Promise<SonicWS> {
+    static async connect(
+        url: string,
+        options: {
+            protocols?: string | string[];
+            antiTamper?: boolean;
+            reconnect?: ReconnectOptions;
+            readyTimeoutMs?: number;
+        } = {},
+    ): Promise<SonicWS> {
         await SonicWS.initialize();
-        const client = new SonicWS(url, options.protocols, options.antiTamper ?? false, options.reconnect, options.readyTimeoutMs);
+
+        const client = new SonicWS(
+            url,
+            options.protocols,
+            options.antiTamper ?? false,
+            options.reconnect,
+            options.readyTimeoutMs,
+        );
+
         await new Promise<void>((resolve, reject) => {
             client.on_ready(resolve);
-            client.on_close((event: CloseEvent) => reject(new Error(`SonicWS connection closed before ready (${event.code})`)));
+            client.on_close((event: CloseEvent) => {
+                reject(new Error(`SonicWS connection closed before ready (${event.code})`));
+            });
         });
+
         return client;
     }
 
@@ -46,18 +65,34 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
      * @param options The websocket options
      * @param antiTamper Attempts to prevent crude tampering with the socket. Defaults to false.
      */
-    constructor(url: string, protocols?: string | string[], antiTamper: boolean = false, reconnect?: ReconnectOptions, readyTimeoutMs: number = 10_000) {
+    constructor(
+        url: string,
+        protocols?: string | string[],
+        antiTamper: boolean = false,
+        reconnect?: ReconnectOptions,
+        readyTimeoutMs: number = 10_000,
+    ) {
         const ws = new WebSocket(url, protocols);
-        super(ws, async (val: MessageEvent) => new Uint8Array(await (val.data as Blob).arrayBuffer()), ws.addEventListener.bind(ws), ws.removeEventListener.bind(ws));
+        super(
+            ws,
+            async (event: MessageEvent) => new Uint8Array(await (event.data as Blob).arrayBuffer()),
+            ws.addEventListener.bind(ws),
+            ws.removeEventListener.bind(ws),
+        );
         this.configureHandshakeTimeout(readyTimeoutMs);
 
         if (reconnect?.enabled) {
-            if (antiTamper) throw new Error("Reconnect and antiTamper cannot currently be enabled together");
+            if (antiTamper) {
+                throw new Error("Reconnect and antiTamper cannot currently be enabled together");
+            }
+
             this.configureReconnect(() => {
                 const socket = new WebSocket(url, protocols);
+
                 return {
                     socket,
-                    bufferHandler: async (value: MessageEvent) => new Uint8Array(await (value.data as Blob).arrayBuffer()),
+                    bufferHandler: async (event: MessageEvent) =>
+                        new Uint8Array(await (event.data as Blob).arrayBuffer()),
                     on: socket.addEventListener.bind(socket),
                     off: socket.removeEventListener.bind(socket),
                 };
@@ -65,21 +100,24 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
         }
 
         if (antiTamper) {
-            const thiz = this;
-            const ogWSSend = ws.send.bind(ws);
-            const ogTSSend = this.send.bind(this);
+            const client = this;
+            const originalWebSocketSend = ws.send.bind(ws);
+            const originalSonicSend = this.send.bind(this);
             let lastSend: number;
+
             this.send = async (tag: string, ...values: any[]) => {
-                lastSend = thiz.clientPackets.getKey(tag);
-                return await ogTSSend(tag, ...values);
+                lastSend = client.clientPackets.getKey(tag);
+                await originalSonicSend(tag, ...values);
             };
-            ws.send = (v) => {
-                if (!(v instanceof Uint8Array) || lastSend != v[0]) {
-                    thiz.antiTamperCall();
-                    thiz.close();
+
+            ws.send = data => {
+                if (!(data instanceof Uint8Array) || lastSend !== data[0]) {
+                    client.antiTamperCall();
+                    client.close();
                     return;
                 }
-                return ogWSSend(v);
+
+                return originalWebSocketSend(data);
             };
         }
     }
@@ -88,7 +126,7 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
      * If antiTamper is on, this will call when the tamper flag is violated. It will also automatically close the socket for you
      * @param callback 
      */
-    on_tamper(callback: () => void) {
+    on_tamper(callback: () => void): void {
         this.antiTamperCall = callback;
     }
 
@@ -98,11 +136,11 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
      * @param value The value to send
      * @returns A transmittable enum value
      */
-    WrapEnum(tag: string, value: string) {
+    WrapEnum(tag: string, value: string): number {
         return WrapEnum(tag, value);
     }
 
-    DeWrapEnum(tag: string, value: number) {
+    DeWrapEnum(tag: string, value: number): unknown {
         return DeWrapEnum(tag, value);
     }
 
@@ -129,8 +167,11 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
     /**
      * Creates a debug menu that shows information about the connection and packets.
      */
-    OpenDebug() {
-        if(this.debugClient != null) throw new Error("Debug client has already been opened!");
+    OpenDebug(): void {
+        if (this.debugClient != null) {
+            throw new Error("A debug client is already open");
+        }
+
         this.debugClient = new DebugClient(this);
     }
 

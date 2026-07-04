@@ -1,10 +1,12 @@
 {
   "name": "sonic-ws",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Ultra-lightweight, high-performance, and bandwidth efficient websocket library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "bin": { "sonicws": "bin/sonicws.mjs" },
+  "bin": {
+    "sonicws": "bin/sonicws.mjs"
+  },
   "files": [
     "dist/**/*",
     "bin/sonicws.mjs",
@@ -15,20 +17,20 @@
   ],
   "scripts": {
     "webpack": "webpack --mode production",
-    
+
     "build_wasm_browser": "wasm-pack build --release --target bundler --out-dir ../ts/src/native/wasm/pkg --out-name sonic_ws_core ../core --features wasm --no-default-features",
     "build_wasm_node": "wasm-pack build --release --target nodejs --out-dir ../ts/src/native/wasm/node --out-name sonic_ws_core ../core --features wasm --no-default-features",
     "build_wasm": "npm run build_wasm_browser && npm run build_wasm_node",
     "build_web": "npm run build_wasm_browser && tsc --moduleResolution nodenext --module nodenext --outDir ./dist src/ws/client/browser/ClientBrowser.ts && cpy \"src/native/wasm/pkg/*\" dist/native/wasm/pkg --flat && rimraf ./dist/native/wasm/pkg/.gitignore && npm run webpack && node package-files.mjs",
     "build_node": "npm run build_wasm_node && rimraf ./dist && tsc -d && cpy \"src/native/wasm/node/*\" dist/native/wasm/node --flat && rimraf ./dist/native/wasm/node/.gitignore",
     "build": "npm run build_node && npm run build_web && rimraf ./dist/native/wasm/pkg ./dist/ws/client/browser && rimraf ./dist/ws/debug/DebugClient.d.ts && rimraf ./dist/ws/debug/DebugClient.js && node minify.mjs && node package-files.mjs",
-    
+
     "test_web": "npm run build && node tests/test_web.mjs",
     "test_node": "npm run build_node && node tests/test_node.mjs",
     "test_conformance": "npm run build_node && node tests/test_conformance.mjs",
     "benchmark": "npm run build_node && node ../../benchmarks/run.mjs && node ../../benchmarks/transport.mjs",
     "prepack": "npm run build",
-    
+
     "stage_package": "node package-files.mjs",
     "publish:assets": "rimraf ../../release/SonicWS_bundle.js ../../release/SonicWS_core.wasm && cp ../../bundled/bundle.js ../../release/bundle.js && cp ../../bundled/bundle.wasm ../../release/bundle.wasm"
   },

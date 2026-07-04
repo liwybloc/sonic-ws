@@ -181,3 +181,9 @@ projects/ts/package-lock.json
 
 # strix
 strix_runs
+
+# benchmarks
+benchmarks/node_modules/
+
+# examples
+examples/3d-world/node_modules

@@ -32,7 +32,6 @@ from sonic_ws import (
     WrapEnum,
 )
 
-
 PORT = 8963
 HOST = "127.0.0.1"
 
@@ -360,7 +359,9 @@ def assert_compatible(actual: Any, expected: Any, tag: str) -> None:
         )
 
 
-def register_expectations(name: str, endpoint: Any, prefix: str) -> list[asyncio.Future[None]]:
+def register_expectations(
+    name: str, endpoint: Any, prefix: str
+) -> list[asyncio.Future[None]]:
     loop = asyncio.get_running_loop()
     futures: list[asyncio.Future[None]] = []
 

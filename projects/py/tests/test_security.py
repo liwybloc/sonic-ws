@@ -13,12 +13,21 @@ class SecurityTests(unittest.TestCase):
     def test_replay_buffer_is_bounded(self):
         server = SonicWSServer(recovery={"max_packets": 3})
         session_id = "test-session"
-        server.sessions[session_id] = {"state": {}, "rooms": set(), "sequence": 0, "frames": [], "expires": float("inf")}
+        server.sessions[session_id] = {
+            "state": {},
+            "rooms": set(),
+            "sequence": 0,
+            "frames": [],
+            "expires": float("inf"),
+        }
         connection = type("Connection", (), {"session_id": session_id})()
         for value in range(10):
             server.replay_frame(connection, bytes([1, value]))
         self.assertEqual(len(server.sessions[session_id]["frames"]), 3)
-        self.assertEqual([sequence for sequence, _ in server.sessions[session_id]["frames"]], [8, 9, 10])
+        self.assertEqual(
+            [sequence for sequence, _ in server.sessions[session_id]["frames"]],
+            [8, 9, 10],
+        )
 
 
 if __name__ == "__main__":

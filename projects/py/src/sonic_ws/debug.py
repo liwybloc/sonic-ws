@@ -20,7 +20,6 @@ from websockets.datastructures import Headers
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Response
 
-
 _HTML = b"""<!doctype html><meta charset=utf-8><title>SonicWS Debug</title>
 <style>body{font:14px system-ui;background:#101319;color:#e8ebf2;margin:20px}input,button{background:#202633;color:inherit;border:1px solid #394255;padding:6px}#log{white-space:pre-wrap;font-family:monospace}.recv{color:#ff8585}.send{color:#78e89b}</style>
 <h1>SonicWS Debug</h1><input id=p type=password placeholder=password><button id=c>Connect</button><div id=s></div><div id=log></div>
@@ -48,10 +47,17 @@ class DebugServer:
     async def start(self):
         async def process_request(_connection, request):
             if request.path in ("/", "/index.html"):
-                return Response(200, "OK", Headers({
-                    "Content-Type": "text/html; charset=utf-8",
-                    "Content-Length": str(len(_HTML)),
-                }), _HTML)
+                return Response(
+                    200,
+                    "OK",
+                    Headers(
+                        {
+                            "Content-Type": "text/html; charset=utf-8",
+                            "Content-Length": str(len(_HTML)),
+                        }
+                    ),
+                    _HTML,
+                )
             return None
 
         self._server = await serve(
@@ -77,29 +83,47 @@ class DebugServer:
         try:
             raw = await asyncio.wait_for(socket.recv(), 10)
             request = json.loads(raw)
-            if request.get("type") != "auth" or request.get("password", "") != self.password:
+            if (
+                request.get("type") != "auth"
+                or request.get("password", "") != self.password
+            ):
                 await socket.close(4007, "invalid password")
                 return
             self.clients.add(socket)
-            await socket.send(json.dumps({
-                "type": "snapshot",
-                "uptime": time.time() - self.started_at,
-                "connections": [self._connection_data(c) for c in self.host.connections],
-            }))
+            await socket.send(
+                json.dumps(
+                    {
+                        "type": "snapshot",
+                        "uptime": time.time() - self.started_at,
+                        "connections": [
+                            self._connection_data(c) for c in self.host.connections
+                        ],
+                    }
+                )
+            )
             async for raw in socket:
                 command = json.loads(raw)
                 if command.get("type") == "close":
                     connection = self.host.get_socket(int(command["id"]))
                     if connection:
                         await connection.close(4008, "closed by debug dashboard")
-        except (ConnectionClosed, asyncio.TimeoutError, ValueError, json.JSONDecodeError):
+        except (
+            ConnectionClosed,
+            asyncio.TimeoutError,
+            ValueError,
+            json.JSONDecodeError,
+        ):
             pass
         finally:
             self.clients.discard(socket)
 
     @staticmethod
     def _connection_data(connection):
-        return {"id": connection.id, "name": connection.get_name(), "tags": sorted(connection.tags)}
+        return {
+            "id": connection.id,
+            "name": connection.get_name(),
+            "tags": sorted(connection.tags),
+        }
 
     async def _publish(self, event):
         if not self.clients:
@@ -124,10 +148,24 @@ class DebugServer:
         self._schedule({"type": "connection", **self._connection_data(connection)})
 
     def onClientDisconnect(self, connection, code, reason):
-        self._schedule({"type": "disconnection", "id": connection.id, "code": code, "reason": str(reason)})
+        self._schedule(
+            {
+                "type": "disconnection",
+                "id": connection.id,
+                "code": code,
+                "reason": str(reason),
+            }
+        )
 
     def onPacketBroadcast_pre(self, tag, info, *values):
-        self._schedule({"type": "broadcast", "tag": tag, "recipients": [c.id for c in info.recipients], "values": values})
+        self._schedule(
+            {
+                "type": "broadcast",
+                "tag": tag,
+                "recipients": [c.id for c in info.recipients],
+                "values": values,
+            }
+        )
 
 
 class _ConnectionDebug:
@@ -136,10 +174,28 @@ class _ConnectionDebug:
         self.connection = connection
 
     def onReceive_post(self, tag, values):
-        self.dashboard._schedule({"type": "packet", "direction": "recv", "id": self.connection.id, "tag": tag, "values": values})
+        self.dashboard._schedule(
+            {
+                "type": "packet",
+                "direction": "recv",
+                "id": self.connection.id,
+                "tag": tag,
+                "values": values,
+            }
+        )
 
     def onSend_pre(self, tag, values, *_times):
-        self.dashboard._schedule({"type": "packet", "direction": "send", "id": self.connection.id, "tag": tag, "values": values})
+        self.dashboard._schedule(
+            {
+                "type": "packet",
+                "direction": "send",
+                "id": self.connection.id,
+                "tag": tag,
+                "values": values,
+            }
+        )
 
     def onNameChange(self, name):
-        self.dashboard._schedule({"type": "name", "id": self.connection.id, "name": name})
+        self.dashboard._schedule(
+            {"type": "name", "id": self.connection.id, "name": name}
+        )

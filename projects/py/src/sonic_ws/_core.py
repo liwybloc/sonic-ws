@@ -70,7 +70,9 @@ def _call(op, kind, data=b"", arg=0):
         result_pointer = packed & 0xFFFFFFFF
         result_length = packed >> 32
         try:
-            return bytes(_memory.read(_store, result_pointer, result_pointer + result_length))
+            return bytes(
+                _memory.read(_store, result_pointer, result_pointer + result_length)
+            )
         finally:
             if result_pointer:
                 _free(_store, result_pointer, result_length)
@@ -200,7 +202,9 @@ def validate_encoded(
     with _lock:
         pointer = _input(raw)
         try:
-            valid = _validate(_store, int(k), pointer, len(raw), minimum, maximum, compressed)
+            valid = _validate(
+                _store, int(k), pointer, len(raw), minimum, maximum, compressed
+            )
         finally:
             if pointer:
                 _free(_store, pointer, len(raw))

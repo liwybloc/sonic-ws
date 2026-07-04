@@ -23,14 +23,31 @@ export interface SonicNativeCore {
     frameObject(sectors: Uint8Array[]): Uint8Array;
     unframeObject(data: Uint8Array, fieldCount: number): Uint8Array[];
     encodeBatch(payloads: Uint8Array[], compress: boolean): Uint8Array;
-    decodeBatch(data: Uint8Array, compressed: boolean, maxBatchSize: number, maxOutputSize?: number): Uint8Array[];
+    decodeBatch(
+        data: Uint8Array,
+        compressed: boolean,
+        maxBatchSize: number,
+        maxOutputSize?: number,
+    ): Uint8Array[];
     deflateRaw(data: Uint8Array): Uint8Array;
     inflateRaw(data: Uint8Array, maxOutputSize?: number): Uint8Array;
-    validateEncoded(kind: number, data: Uint8Array, min: number, max: number,
-        compressed: boolean, batched: boolean, maxBatchSize?: number): void;
+    validateEncoded(
+        kind: number,
+        data: Uint8Array,
+        min: number,
+        max: number,
+        compressed: boolean,
+        batched: boolean,
+        maxBatchSize?: number,
+    ): void;
     validateEnum(data: Uint8Array, enumSize: number, min: number, max: number): void;
-    validateObject(data: Uint8Array, kinds: number[], minimums: number[],
-        maximums: number[], enumSizes: number[]): void;
+    validateObject(
+        data: Uint8Array,
+        kinds: number[],
+        minimums: number[],
+        maximums: number[],
+        enumSizes: number[],
+    ): void;
 }
 
 export interface NativeObjectSchema {
@@ -44,7 +61,10 @@ let loadedCore: SonicNativeCore | undefined;
 let wasmInitialization: Promise<SonicNativeCore> | undefined;
 
 function buffer(data: Uint8Array): Uint8Array {
-    if (typeof Buffer !== "undefined") return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+    if (typeof Buffer !== "undefined") {
+        return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+    }
+
     return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
 }
 
@@ -54,15 +74,33 @@ function values<T>(input: T | readonly T[]): T[] {
 
 function assertNativeCore(value: Partial<SonicNativeCore>): asserts value is SonicNativeCore {
     const required: (keyof SonicNativeCore)[] = [
-        "encodeSigned", "decodeSigned", "encodeUnsigned", "decodeUnsigned",
-        "encodeFloats", "decodeFloats", "encodeStrings", "decodeStrings",
-        "encodeBooleans", "decodeBooleans", "decodeRaw",
-        "encodeHex", "decodeHex", "frameObject", "unframeObject",
-        "encodeBatch", "decodeBatch", "deflateRaw", "inflateRaw",
-        "validateEncoded", "validateEnum", "validateObject",
+        "encodeSigned",
+        "decodeSigned",
+        "encodeUnsigned",
+        "decodeUnsigned",
+        "encodeFloats",
+        "decodeFloats",
+        "encodeStrings",
+        "decodeStrings",
+        "encodeBooleans",
+        "decodeBooleans",
+        "decodeRaw",
+        "encodeHex",
+        "decodeHex",
+        "frameObject",
+        "unframeObject",
+        "encodeBatch",
+        "decodeBatch",
+        "deflateRaw",
+        "inflateRaw",
+        "validateEncoded",
+        "validateEnum",
+        "validateObject",
     ];
     const missing = required.filter(name => typeof value[name] !== "function");
-    if (missing.length > 0) throw new Error(`Invalid SonicWS codec module; missing: ${missing.join(", ")}`);
+    if (missing.length > 0) {
+        throw new Error(`Invalid SonicWS codec module; missing: ${missing.join(", ")}`);
+    }
 }
 
 /** Injects a codec implementation, primarily for tests. */
@@ -89,16 +127,20 @@ async function isWasm(response: Response): Promise<boolean> {
 
 async function fetchCdnWasm(fetcher: typeof fetch): Promise<Response> {
     const versionResponse = await fetcher(CDN_VERSION, { cache: "no-store" });
-    if (!versionResponse.ok)
+    if (!versionResponse.ok) {
         throw new Error(`Unable to verify SonicWS CDN protocol version (${versionResponse.status})`);
+    }
 
     const remoteVersion = Number((await versionResponse.text()).trim());
-    if (!Number.isInteger(remoteVersion) || remoteVersion !== VERSION)
+    if (!Number.isInteger(remoteVersion) || remoteVersion !== VERSION) {
         throw new Error(`SonicWS CDN protocol mismatch: expected ${VERSION}, received ${String(remoteVersion)}`);
+    }
 
     const wasmResponse = await fetcher(CDN_WASM);
-    if (!await isWasm(wasmResponse))
+    if (!await isWasm(wasmResponse)) {
         throw new Error("SonicWS CDN returned an invalid WASM module");
+    }
+
     return wasmResponse;
 }
 
@@ -106,15 +148,17 @@ async function initializeBrowserWasm(): Promise<SonicNativeCore> {
     const originalFetch = window.fetch.bind(window);
     window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = fetchUrl(input);
-        if (url === CDN_WASM || !new URL(url, window.location.href).pathname.endsWith("/bundle.wasm"))
+        if (url === CDN_WASM || !new URL(url, window.location.href).pathname.endsWith("/bundle.wasm")) {
             return originalFetch(input, init);
+        }
 
         try {
             const local = await originalFetch(input, init);
             if (await isWasm(local)) return local;
         } catch {
-            // A missing local file is handled by the version-checked CDN fallback.
+            // a missing local file is handled by the version-checked CDN fallback
         }
+
         return fetchCdnWasm(originalFetch);
     }) as typeof fetch;
 
@@ -146,15 +190,18 @@ export function initializeWasmCore(): Promise<SonicNativeCore> {
 /** Loads the packaged Node-target WASM codec synchronously. */
 export function loadNativeCore(): SonicNativeCore {
     if (loadedCore) return loadedCore;
-    if (typeof window !== "undefined")
+    if (typeof window !== "undefined") {
         throw new Error("SonicWS codec is not initialized; await initializeWasmCore() in browsers.");
+    }
+
     try {
         const wasm = (eval("require") as NodeRequire)("./wasm/node/sonic_ws_core.js") as Partial<SonicNativeCore>;
         assertNativeCore(wasm);
         loadedCore = wasm;
         return wasm;
     } catch (error) {
-        throw new Error(`Unable to load the packaged SonicWS Node WASM codec: ${error instanceof Error ? error.message : String(error)}`);
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Unable to load the packaged SonicWS Node WASM codec: ${message}`);
     }
 }
 
@@ -177,10 +224,12 @@ function encodeIntegerVarints(input: number | number[], signed: boolean): Uint8A
     let offset = 0;
     for (let index = 0; index < source.length; index++) {
         const original = source[index];
-        if (!Number.isInteger(original) || !Number.isFinite(original))
+        if (!Number.isInteger(original) || !Number.isFinite(original)) {
             throw new TypeError(`${signed ? "VARINT" : "UVARINT"} requires integer values`);
-        if (!signed && (original < 0 || original > 0xffffffff))
+        }
+        if (!signed && (original < 0 || original > 0xffffffff)) {
             throw new RangeError("UVARINT value must be between 0 and 4294967295");
+        }
 
         const integer = signed
             ? Math.max(-0x80000000, Math.min(0x7fffffff, original))
@@ -195,8 +244,8 @@ function encodeIntegerVarints(input: number | number[], signed: boolean): Uint8A
             output[offset++] = byte;
         } while (value !== 0);
     }
-    // slice intentionally returns an exact-sized backing store. This avoids
-    // retaining a five-byte-per-value scratch allocation through queued sends.
+
+    // slice returns an exact backing store and avoids retaining scratch capacity
     return output.slice(0, offset);
 }
 
@@ -208,13 +257,16 @@ export function encodeNative(
 ): Uint8Array {
     switch (type) {
         case PacketType.NONE:
-            if (input != null && (!Array.isArray(input) || input.length !== 0))
+            if (input != null && (!Array.isArray(input) || input.length !== 0)) {
                 throw new TypeError("NONE only accepts null, undefined, or an empty array");
+            }
             return new Uint8Array(0);
         case PacketType.RAW:
         case PacketType.JSON:
-            if (!(input instanceof Uint8Array) && !Array.isArray(input))
-                throw new TypeError(`${type === PacketType.JSON ? "JSON wire data" : "RAW"} requires a Uint8Array or number array`);
+            if (!(input instanceof Uint8Array) && !Array.isArray(input)) {
+                const label = type === PacketType.JSON ? "JSON wire data" : "RAW";
+                throw new TypeError(`${label} requires a Uint8Array or number array`);
+            }
             return input instanceof Uint8Array ? buffer(input) : Uint8Array.from(input as number[]);
         case PacketType.BYTES:
         case PacketType.SHORTS:
@@ -237,12 +289,18 @@ export function encodeNative(
             return core.encodeBooleans(values(input as boolean | boolean[]));
         case PacketType.HEX: {
             const hex = Array.isArray(input) ? input[0] : input;
-            if (typeof hex !== "string") throw new TypeError("HEX requires one string");
+            if (typeof hex !== "string") {
+                throw new TypeError("HEX requires one string");
+            }
             return core.encodeHex(hex);
         }
         case PacketType.ENUMS:
-            if (!enumData) throw new Error("ENUMS requires an EnumPackage");
-            return Uint8Array.from(values(input as EnumValue | EnumValue[]).map(value => enumIndex(enumData, value)));
+            if (!enumData) {
+                throw new Error("ENUMS requires an EnumPackage");
+            }
+            return Uint8Array.from(
+                values(input as EnumValue | EnumValue[]).map(value => enumIndex(enumData, value)),
+            );
         default:
             throw new Error(`Unknown packet type: ${type}`);
     }
@@ -258,27 +316,40 @@ export function decodeNative(
     const input = buffer(data);
     switch (type) {
         case PacketType.NONE:
-            if (data.byteLength !== 0) throw new Error("NONE packet contains data");
+            if (data.byteLength !== 0) {
+                throw new Error("NONE packet contains data");
+            }
             return undefined;
         case PacketType.RAW:
-        case PacketType.JSON: return core.decodeRaw(input);
+        case PacketType.JSON:
+            return core.decodeRaw(input);
         case PacketType.BYTES:
         case PacketType.SHORTS:
         case PacketType.VARINT:
-        case PacketType.DELTAS: return core.decodeSigned(type, input);
+        case PacketType.DELTAS:
+            return core.decodeSigned(type, input);
         case PacketType.UBYTES:
         case PacketType.USHORTS:
-        case PacketType.UVARINT: return core.decodeUnsigned(type, input);
+        case PacketType.UVARINT:
+            return core.decodeUnsigned(type, input);
         case PacketType.FLOATS:
-        case PacketType.DOUBLES: return core.decodeFloats(type, input);
+        case PacketType.DOUBLES:
+            return core.decodeFloats(type, input);
         case PacketType.STRINGS_ASCII:
-        case PacketType.STRINGS_UTF16: return core.decodeStrings(type, input);
-        case PacketType.BOOLEANS: return core.decodeBooleans(input, dataMax);
-        case PacketType.HEX: return core.decodeHex(input);
+        case PacketType.STRINGS_UTF16:
+            return core.decodeStrings(type, input);
+        case PacketType.BOOLEANS:
+            return core.decodeBooleans(input, dataMax);
+        case PacketType.HEX:
+            return core.decodeHex(input);
         case PacketType.ENUMS:
-            if (!enumData) throw new Error("ENUMS requires an EnumPackage");
+            if (!enumData) {
+                throw new Error("ENUMS requires an EnumPackage");
+            }
             return [...data].map(index => {
-                if (index >= enumData.values.length) throw new Error(`Enum index ${index} is out of range`);
+                if (index >= enumData.values.length) {
+                    throw new Error(`Enum index ${index} is out of range`);
+                }
                 return enumData.values[index];
             });
         default:
@@ -295,12 +366,23 @@ export function validateNative(
     core = loadNativeCore(),
 ): void {
     if (type === PacketType.ENUMS) {
-        if (!options.enumData) throw new Error("ENUMS requires an EnumPackage");
+        if (!options.enumData) {
+            throw new Error("ENUMS requires an EnumPackage");
+        }
+
         core.validateEnum(buffer(data), options.enumData.values.length, dataMin, dataMax);
         return;
     }
-    core.validateEncoded(type, buffer(data), dataMin, dataMax,
-        options.compressed ?? false, options.batched ?? false, options.maxBatchSize);
+
+    core.validateEncoded(
+        type,
+        buffer(data),
+        dataMin,
+        dataMax,
+        options.compressed ?? false,
+        options.batched ?? false,
+        options.maxBatchSize,
+    );
 }
 
 export function encodeNativeObject(
@@ -308,10 +390,18 @@ export function encodeNativeObject(
     fields: readonly unknown[],
     core = loadNativeCore(),
 ): Uint8Array {
-    if (fields.length !== schema.types.length) throw new Error("Object field count does not match schema");
+    if (fields.length !== schema.types.length) {
+        throw new Error("Object field count does not match schema");
+    }
+
     let enumIndex = 0;
     const sectors = schema.types.map((type, index) => encodeNative(
-        type, fields[index], type === PacketType.ENUMS ? schema.enumData?.[enumIndex++] : undefined, core));
+        type,
+        fields[index],
+        type === PacketType.ENUMS ? schema.enumData?.[enumIndex++] : undefined,
+        core,
+    ));
+
     return core.frameObject(sectors);
 }
 
@@ -322,9 +412,16 @@ export function decodeNativeObject(
 ): unknown[] {
     const sectors = core.unframeObject(buffer(data), schema.types.length);
     let enumIndex = 0;
-    return sectors.map((sector, index) => decodeNative(schema.types[index], sector,
-        schema.dataMaxes[index], schema.types[index] === PacketType.ENUMS
-            ? schema.enumData?.[enumIndex++] : undefined, core));
+
+    return sectors.map((sector, index) => decodeNative(
+        schema.types[index],
+        sector,
+        schema.dataMaxes[index],
+        schema.types[index] === PacketType.ENUMS
+            ? schema.enumData?.[enumIndex++]
+            : undefined,
+        core,
+    ));
 }
 
 export function validateNativeObject(
@@ -332,8 +429,13 @@ export function validateNativeObject(
     data: Uint8Array,
     core = loadNativeCore(),
 ): void {
-    core.validateObject(buffer(data), [...schema.types], [...schema.dataMins], [...schema.dataMaxes],
-        (schema.enumData ?? []).map(pkg => pkg.values.length));
+    core.validateObject(
+        buffer(data),
+        [...schema.types],
+        [...schema.dataMins],
+        [...schema.dataMaxes],
+        (schema.enumData ?? []).map(enumPackage => enumPackage.values.length),
+    );
 }
 
 export function encodeNativeBatch(
@@ -346,10 +448,16 @@ export function encodeNativeBatch(
         for (const payload of payloads) {
             let length = payload.byteLength;
             size += length + 1;
-            while (length >= 128) { size++; length = Math.floor(length / 128); }
+
+            while (length >= 128) {
+                size++;
+                length = Math.floor(length / 128);
+            }
         }
+
         const output = new Uint8Array(size);
         let offset = 0;
+
         for (const payload of payloads) {
             let length = payload.byteLength;
             do {
@@ -358,11 +466,14 @@ export function encodeNativeBatch(
                 if (length !== 0) byte |= 0x80;
                 output[offset++] = byte;
             } while (length !== 0);
+
             output.set(payload, offset);
             offset += payload.byteLength;
         }
+
         return output;
     }
+
     return core.encodeBatch(payloads.map(buffer), compressed);
 }
 

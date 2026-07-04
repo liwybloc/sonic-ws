@@ -23,11 +23,11 @@ import { PacketConstructor, RegisterPacketConstructor } from "./ConstructorRegis
 export type ProcessedPacket = [code: number, data: Uint8Array, packet: Packet<any>];
 
 /**
- * Processes and verifies values into a sendable format
- * @param packets Packet holder
- * @param tag The tag of the packet
- * @param values The values
- * @returns The indexed code, the data, and the packet schema
+ * Processes and verifies values into a sendable format.
+ * @param packets packet holder
+ * @param tag packet tag
+ * @param values application values
+ * @returns indexed code, encoded data, and packet schema
  * @internal
  */
 export async function processPacket(
@@ -38,42 +38,62 @@ export async function processPacket(
     id: number,
     force: boolean = false,
 ): Promise<ProcessedPacket> {
-
     const code = packets.getKey(tag);
     const packet = packets.getPacket(tag);
 
     return handleQueue(sendQueue, packets, id, tag, values, force, async () => {
         if (packet.rereference) {
-            if (id === -1) throw new Error("Cannot send a re-referenced packet from the server-wide sender!");
+            if (id === -1) {
+                throw new Error("Cannot send a re-referenced packet from the server-wide sender");
+            }
+
             const serialized = hashValue(values);
             if (packet.lastSent[id] === serialized) {
                 return [code, EMPTY_UINT8, packet];
             }
+
             packet.lastSent[id] = serialized;
         }
+
         values = packet.prepareSend(values, id);
 
         if (packet.autoFlatten && packet.object && !packet.fields) {
             values = FlattenData(values[0]);
         } else {
-            if (values.length > packet.maxSize) throw new Error(`Packet "${tag}" only allows ${packet.maxSize} values!`);
-            if (values.length < packet.minSize) throw new Error(`Packet "${tag}" requires at least ${packet.minSize} values!`);
+            if (values.length > packet.maxSize) {
+                throw new Error(`Packet "${tag}" only allows ${packet.maxSize} values`);
+            }
+            if (values.length < packet.minSize) {
+                throw new Error(`Packet "${tag}" requires at least ${packet.minSize} values`);
+            }
         }
 
-        if (!packet.object) {
-            if (packet.type !== PacketType.JSON) {
-                const found = values.find(v => typeof v === 'object' && v != null);
-                if (found) console.warn(`Passing an array will result in undefined behavior (${JSON.stringify(found)}). Spread the array with ...arr`);
+        if (!packet.object && packet.type !== PacketType.JSON) {
+            const nestedValue = values.find(value => typeof value === "object" && value != null);
+            if (nestedValue) {
+                console.warn(
+                    `Passing a nested value may produce undefined behavior (${JSON.stringify(nestedValue)}). `
+                    + "Spread arrays into positional packet arguments",
+                );
             }
-        } else {
-            values = values.map(x => !Array.isArray(x) ? [x] : x);
+        } else if (packet.object) {
+            values = values.map(value => Array.isArray(value) ? value : [value]);
 
             if (!packet.autoFlatten) {
                 const dataMins = packet.dataMin as number[];
                 const dataMaxes = packet.dataMax as number[];
-                for (let i = 0; i < dataMins.length; i++) {
-                    if (values[i].length < dataMins[i]) throw new Error(`Section ${i + 1} of packet "${tag}" requires at least ${dataMins[i]} values!`);
-                    if (values[i].length > dataMaxes[i]) throw new Error(`Section ${i + 1} of packet "${tag}" only allows ${dataMaxes[i]} values!`);
+
+                for (let index = 0; index < dataMins.length; index++) {
+                    if (values[index].length < dataMins[index]) {
+                        throw new Error(
+                            `Section ${index + 1} of packet "${tag}" requires at least ${dataMins[index]} values`,
+                        );
+                    }
+                    if (values[index].length > dataMaxes[index]) {
+                        throw new Error(
+                            `Section ${index + 1} of packet "${tag}" only allows ${dataMaxes[index]} values`,
+                        );
+                    }
                 }
             }
         }
@@ -120,72 +140,78 @@ async function handleQueue(
 
 
 /**
- * Calls the listener for a packet with error callback
- * @param listened The listened data
- * @param listeners The listeners to run
- * @param errorCB The callback if something goes wrong
+ * Calls packet listeners and reports listener failures.
+ * @param listened processed packet data
+ * @param listeners listeners to run
+ * @param errorCB callback used when processing fails
  * @internal
  */
 export async function listenPacket(
     listened: string | [any[], boolean],
     listeners: ((...values: any) => void | Promise<void>)[],
-    errorCB: (data: string) => void
+    errorCB: (data: string) => void,
 ): Promise<void> {
-    if (typeof listened === 'string') return errorCB(listened);
+    if (typeof listened === "string") {
+        errorCB(listened);
+        return;
+    }
 
     const [processed, flatten] = listened;
 
     try {
         if (flatten && Array.isArray(processed)) {
-            for (const l of listeners) {
-                await l(...processed);
+            for (const listener of listeners) {
+                await listener(...processed);
             }
         } else {
-            for (const l of listeners) {
-                await l(processed);
+            for (const listener of listeners) {
+                await listener(processed);
             }
         }
-    } catch (err) {
-        console.error(err);
-        errorCB(err as string);
+    } catch (error) {
+        console.error(error);
+        errorCB(String(error));
     }
 }
 
 /**
- * Determines if a type is a invalid packet type
- * @param type A possible type
+ * Checks whether a value is a supported packet type.
+ * @param type possible packet type
  * @internal
  */
-function isInvalidType(type: any): boolean {
-    return !(typeof type == 'number' && type in PacketType) && !(type instanceof EnumPackage);
+function isInvalidType(type: unknown): boolean {
+    return !(typeof type === "number" && type in PacketType) && !(type instanceof EnumPackage);
 }
 
 const MAX_DATA_MAX = 2048383;
 
-/** Clamps data max between 0 and MAX_DATA_MAX @internal */
-function clampDataMax(dataMax: number) {
-    if(dataMax < 0) {
-        console.warn(`Having a data maximum below 0 does not do anything!`);
+/** Clamps data max between zero and the protocol limit. @internal */
+function clampDataMax(dataMax: number): number {
+    if (dataMax < 0) {
+        console.warn("A data maximum below zero is treated as zero");
         return 0;
     }
-    // dfkjgsdkfgjk
-    if(dataMax > MAX_DATA_MAX) {
-        console.warn(`Only ${MAX_DATA_MAX} values can be sent on a type! Uhh make an issue if you want to send more.`);
+
+    if (dataMax > MAX_DATA_MAX) {
+        console.warn(`A packet type can contain at most ${MAX_DATA_MAX} values`);
         return MAX_DATA_MAX;
     }
+
     return dataMax;
 }
-/** Clamps data min between 0 and datamax @internal */
-function clampDataMin(dataMin: number, dataMax: number) {
-    if(dataMin < 0) {
-        console.warn(`Having a data minimum below 0 does not do anything!`);
+
+/** Clamps data min between zero and data max. @internal */
+function clampDataMin(dataMin: number, dataMax: number): number {
+    if (dataMin < 0) {
+        console.warn("A data minimum below zero is treated as zero");
         return 0;
     }
-    // also catches >MAX_DATA_MAX
-    if(dataMin > dataMax) {
-        console.warn(`Data minimum can not be higher than the data maximum!`);
+
+    if (dataMin > dataMax) {
+        console.warn("A data minimum above the data maximum is clamped to the maximum");
         return dataMax;
     }
+
     return dataMin;
 }
 
@@ -223,7 +249,10 @@ export type SharedPacketSettings = {
      * Each batched packet is counted towards the rate limit.
      */
     dataBatching?: number;
-    /** If data batching is on, this will limit the amount of packets that can be batched into one (only effects the client). Defaults to 10. 0 for unlimited. */
+    /**
+     * Limits packets in one batch on the receiving client.
+     * Defaults to 10. Zero disables the limit.
+     */
     maxBatchSize?: number;
 
     /** The amount of times this packet can be sent every second, or 0 for infinite. */
@@ -239,7 +268,10 @@ export type SharedPacketSettings = {
     /** A validation function that is called whenever data is received. Return true for success, return false to kick socket. */
     validator?: ValidatorFunction;
 
-    /** If this is true, other packets will be processed even if this one isn't finished; it'll still prevent it from calling twice before this finishes though. Defaults to false. */
+    /**
+     * Allows other packet types to run while this packet is processing.
+     * Repeated calls for this packet remain serialized.
+     */
     async?: boolean;
 
     /** If this is true, the packet will be Gzip compressed. Defaults to false on all types but JSON. */
@@ -256,7 +288,10 @@ export type SinglePacketSettings = SharedPacketSettings & {
     dataMax?: number;
     /** The minimum amount of values that can be sent through this packet; defaults to the max */
     dataMin?: number;
-    /** If this is true, it will save the last received of this value, and if no data is sent, it'll re-use the previous value. This is not compatible with dataMin: 0. Defaults to false. */
+    /**
+     * Reuses the previous value when an empty payload arrives.
+     * This is incompatible with a zero data minimum.
+     */
     rereference?: boolean;
     /** Field names used to map positional values to and from an object. */
     schema?: readonly string[];
@@ -268,7 +303,10 @@ export type SinglePacketSettings = SharedPacketSettings & {
     min?: number;
     /** Inclusive application-level numeric maximum. */
     max?: number;
-    /** Local class constructed from decoded schema fields. The class name is exchanged; peers must register their own matching class. */
+    /**
+     * Constructs decoded schema fields with a local class.
+     * Peers exchange the class name and register their own matching class.
+     */
     constructor?: Function;
 };
 
@@ -276,11 +314,11 @@ export type SinglePacketSettings = SharedPacketSettings & {
 export type MultiPacketSettings = SharedPacketSettings & {
     /** The data types of the packet */
     readonly types: readonly ArguableType[];
-    /** The maximum amount of values that can be sent through each type of packet; defaults to 1 for each. Non-array will fill all for that amount */
+    /** Sets the maximum value count per field. A scalar applies to every field. */
     dataMaxes?: number[] | number;
-    /** The minimum amount of values that can be sent through each type of packet; defaults to the max for each Non-array will fill all for that amount */
+    /** Sets the minimum value count per field. A scalar applies to every field. */
     dataMins?: number[] | number;
-    /** Will automatically run FlattenData() and UnFlattenData() on values; this will optimize [[x,y,z],[x,y,z]...] for wire transfer */
+    /** Transposes repeated rows into columns before encoding. */
     autoFlatten?: boolean;
     /** Field names for records transposed into object-packet columns. */
     schema?: readonly string[];
@@ -311,45 +349,99 @@ export type EnumPacketSettings = SharedPacketSettings & {
 /**
  * Creates a structure for a simple single-typed packet.
  * This packet can be sent and received with the specified tag, type, and data cap.
- * @param settings The settings object containing `tag`, `type`, `dataMax`, `dataMin`, `noDataRange`, `dontSpread`, `validator`, `dataBatching`, and/or `maxBatchSize`.
+ * @param settings Packet type, limits, mapping, validation, and batching settings.
  * @returns The constructed packet structure data.
  * @throws {Error} If the `type` is invalid.
  */
 export function CreatePacket<T extends ArguableType>(
-    settings: SinglePacketSettings & { type?: T; _group?: GroupMetadata }
+    settings: SinglePacketSettings & { type?: T; _group?: GroupMetadata },
 ): Packet<ConvertType<T>> {
-    const repeatedDefaultRange = settings.autoFlatten === true && settings.dataMax === undefined && settings.dataMin === undefined;
-    const packetConstructor = Object.prototype.hasOwnProperty.call(settings, "constructor") ? settings.constructor as PacketConstructor : undefined;
-    let { tag, type = PacketType.NONE, dataMax = 1, dataMin, noDataRange = false, dontSpread = false,
-          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false,
-          gzipCompression = type == PacketType.JSON, rereference = false, schema: fields, autoFlatten = false,
-          quantized, min, max } = settings;
+    const repeatedDefaultRange = settings.autoFlatten === true
+        && settings.dataMax === undefined
+        && settings.dataMin === undefined;
+    const packetConstructor = Object.prototype.hasOwnProperty.call(settings, "constructor")
+        ? settings.constructor as PacketConstructor
+        : undefined;
 
-    if(!tag) throw new Error("Tag not selected!");
+    let {
+        tag,
+        type = PacketType.NONE,
+        dataMax = 1,
+        dataMin,
+        noDataRange = false,
+        dontSpread = false,
+        validator = null,
+        dataBatching = 0,
+        maxBatchSize = 10,
+        rateLimit = 0,
+        enabled = true,
+        async = false,
+        gzipCompression = type === PacketType.JSON,
+        rereference = false,
+        schema: fields,
+        autoFlatten = false,
+        quantized,
+        min,
+        max,
+    } = settings;
 
-    if(noDataRange || repeatedDefaultRange) {
+    if (!tag) throw new Error("Packet tag is required");
+
+    if (noDataRange || repeatedDefaultRange) {
         dataMin = rereference ? 1 : 0;
         dataMax = MAX_DATA_MAX;
-    } else if(dataMin == undefined) dataMin = type == PacketType.NONE ? 0 : dataMax;
+    } else if (dataMin === undefined) {
+        dataMin = type === PacketType.NONE ? 0 : dataMax;
+    }
 
-    if(rereference && dataMin == 0) throw new Error("Rereference cannot be true if the dataMin is 0");
-    if (settings.replay && dataBatching) throw new Error(`Packet "${tag}" cannot combine replay with batching`);
+    if (rereference && dataMin === 0) {
+        throw new Error("Rereference requires a data minimum above zero");
+    }
+    if (settings.replay && dataBatching) {
+        throw new Error(`Packet "${tag}" cannot combine replay with batching`);
+    }
 
     if (isInvalidType(type)) {
         throw new Error(`Invalid packet type: ${type}`);
     }
 
     validateFields(fields, tag);
-    if (packetConstructor && !fields) throw new Error(`Packet "${tag}" constructor requires schema`);
-    if (packetConstructor) RegisterPacketConstructor(packetConstructor);
-    if (autoFlatten && (!fields || fields.length === 0)) throw new Error(`Packet "${tag}" autoFlatten requires schema`);
-    if (fields && !autoFlatten && dataMin === dataMax && fields.length !== dataMax)
+    if (packetConstructor && !fields) {
+        throw new Error(`Packet "${tag}" constructor requires schema`);
+    }
+    if (packetConstructor) {
+        RegisterPacketConstructor(packetConstructor);
+    }
+    if (autoFlatten && (!fields || fields.length === 0)) {
+        throw new Error(`Packet "${tag}" autoFlatten requires schema`);
+    }
+    if (fields && !autoFlatten && dataMin === dataMax && fields.length !== dataMax) {
         throw new Error(`Packet "${tag}" schema length must match its fixed value count (${dataMax})`);
+    }
+
     validateNumericOptions(type, quantized, min, max, tag);
 
-    const schema = new PacketSchema<PacketType>(false, type, async, clampDataMin(dataMin, dataMax), clampDataMax(dataMax), clampRateLimit(rateLimit),
-                    dontSpread, autoFlatten, rereference, dataBatching, maxBatchSize, gzipCompression,
-                    fields, quantized, min, max, settings._group, packetConstructor?.name, settings.replay ?? false);
+    const schema = new PacketSchema<PacketType>(
+        false,
+        type,
+        async,
+        clampDataMin(dataMin, dataMax),
+        clampDataMax(dataMax),
+        clampRateLimit(rateLimit),
+        dontSpread,
+        autoFlatten,
+        rereference,
+        dataBatching,
+        maxBatchSize,
+        gzipCompression,
+        fields,
+        quantized,
+        min,
+        max,
+        settings._group,
+        packetConstructor?.name,
+        settings.replay ?? false,
+    );
 
     return new Packet<ConvertType<T>>(tag, schema, validator, enabled, false);
 }
@@ -357,50 +449,102 @@ export function CreatePacket<T extends ArguableType>(
 /**
  * Creates a structure for an object (multi-typed) packet.
  * This packet allows multiple types and their associated data caps.
- * @param settings The settings object containing `tag`, `types`, `dataMaxes`, `dataMins`, `noDataRange`, `dontSpread`, `autoFlatten`, `largePacket`, `validator`, `dataBatching`, and/or `maxBatchSize`.
+ * @param settings Field types, limits, transposition, validation, and batching settings.
  * @returns The constructed packet structure data.
  * @throws {Error} If any type in `types` is invalid.
  */
-export function CreateObjPacket<T extends readonly ArguableType[], V extends readonly PacketType[] = {[K in keyof T]: ConvertType<T[K]>}>(
-    settings: MultiPacketSettings & { readonly types: T }
+export function CreateObjPacket<
+    T extends readonly ArguableType[],
+    V extends readonly PacketType[] = { [K in keyof T]: ConvertType<T[K]> },
+>(
+    settings: MultiPacketSettings & { readonly types: T },
 ): Packet<V> {
-    const packetConstructor = Object.prototype.hasOwnProperty.call(settings, "constructor") ? settings.constructor as PacketConstructor : undefined;
-    let { tag, types = [], dataMaxes, dataMins, noDataRange = false, dontSpread = false, autoFlatten = false, autoTranspose,
-          schema: fields,
-          validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false,
-          gzipCompression = types && (types as ArguableType[]).includes(PacketType.JSON) } = settings;
+    const packetConstructor = Object.prototype.hasOwnProperty.call(settings, "constructor")
+        ? settings.constructor as PacketConstructor
+        : undefined;
 
-    if(!tag) throw new Error("Tag not selected!");
-    if(!types || types.length == 0) throw new Error("Types is set to 0 length");
+    let {
+        tag,
+        types = [],
+        dataMaxes,
+        dataMins,
+        noDataRange = false,
+        dontSpread = false,
+        autoFlatten = false,
+        autoTranspose,
+        schema: fields,
+        validator = null,
+        dataBatching = 0,
+        maxBatchSize = 10,
+        rateLimit = 0,
+        enabled = true,
+        async = false,
+        gzipCompression = types && (types as ArguableType[]).includes(PacketType.JSON),
+    } = settings;
+
+    if (!tag) throw new Error("Packet tag is required");
+    if (!types || types.length === 0) throw new Error(`Packet "${tag}" requires at least one type`);
     if (settings.replay && dataBatching) throw new Error(`Packet "${tag}" cannot combine replay with batching`);
     validateFields(fields, tag);
     if (packetConstructor && !fields) throw new Error(`Packet "${tag}" constructor requires schema`);
-    if (packetConstructor) RegisterPacketConstructor(packetConstructor);
+    if (packetConstructor) {
+        RegisterPacketConstructor(packetConstructor);
+    }
     if (fields && fields.length !== types.length) throw new Error(`Packet "${tag}" schema length must match types length`);
     if (autoTranspose !== undefined && autoFlatten && autoTranspose !== autoFlatten)
         throw new Error(`Packet "${tag}" has conflicting autoFlatten and autoTranspose options`);
     const transpose = autoTranspose ?? autoFlatten;
 
-    for(const type of types) {
+    for (const type of types) {
         if (!isInvalidType(type)) continue;
         throw new Error(`Invalid packet type in "${tag}" packet: ${type}`);
     }
 
-    if(noDataRange) {
-        dataMaxes = Array.from({ length: types.length }).map(() => MAX_DATA_MAX);
-        dataMins = Array.from({ length: types.length }).map(() => 0);
+    if (noDataRange) {
+        dataMaxes = Array.from({ length: types.length }, () => MAX_DATA_MAX);
+        dataMins = Array.from({ length: types.length }, () => 0);
     } else {
-        if(dataMaxes == undefined) dataMaxes = Array.from({ length: types.length }).map(() => 1);
-        else if (!Array.isArray(dataMaxes)) dataMaxes = Array.from({ length: types.length }).map(() => dataMaxes as number);
+        if (dataMaxes === undefined) {
+            dataMaxes = Array.from({ length: types.length }, () => 1);
+        } else if (!Array.isArray(dataMaxes)) {
+            dataMaxes = Array.from({ length: types.length }, () => dataMaxes as number);
+        }
         
-        if(dataMins == undefined) dataMins = Array.from({ length: types.length }).map((_, i) => (dataMaxes as number[])[i]);
-        else if (!Array.isArray(dataMins)) dataMins = Array.from({ length: types.length }).map(() => dataMins as number);
+        if (dataMins === undefined) {
+            const maximums = dataMaxes as number[];
+            dataMins = Array.from({ length: types.length }, (_, index) => maximums[index]);
+        } else if (!Array.isArray(dataMins)) {
+            dataMins = Array.from({ length: types.length }, () => dataMins as number);
+        }
     }
 
-    const clampedDataMaxes = dataMaxes.map(clampDataMax);
-    const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
+    const normalizedDataMaxes = dataMaxes as number[];
+    const normalizedDataMins = dataMins as number[];
+    const clampedDataMaxes = normalizedDataMaxes.map(clampDataMax);
+    const clampedDataMins = normalizedDataMins.map((minimum, index) =>
+        types[index] === PacketType.NONE ? 0 : clampDataMin(minimum, clampedDataMaxes[index]));
 
-    const schema = new PacketSchema<readonly PacketType[]>(true, types as any, async, clampedDataMins, clampedDataMaxes, clampRateLimit(rateLimit), dontSpread, transpose, false, dataBatching, maxBatchSize, gzipCompression, fields, undefined, undefined, undefined, undefined, packetConstructor?.name, settings.replay ?? false);
+    const schema = new PacketSchema<readonly PacketType[]>(
+        true,
+        types as any,
+        async,
+        clampedDataMins,
+        clampedDataMaxes,
+        clampRateLimit(rateLimit),
+        dontSpread,
+        transpose,
+        false,
+        dataBatching,
+        maxBatchSize,
+        gzipCompression,
+        fields,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        packetConstructor?.name,
+        settings.replay ?? false,
+    );
 
     return new Packet<V>(tag, schema, validator, enabled, false);
 }
@@ -417,9 +561,15 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
  * directly represents the parent/empty variant (`variant: ""`).
  */
 export function CreatePacketGroup(settings: PacketGroupSettings): Packet<any>[] {
-    if (!settings.tag || settings.tag.includes("$")) throw new Error("Packet group tag is required and cannot contain '$'");
+    if (!settings.tag || settings.tag.includes("$")) {
+        throw new Error("Packet group tag is required and cannot contain '$'");
+    }
+
     const entries = Object.entries(settings.variants);
-    if (!entries.length) throw new Error(`Packet group "${settings.tag}" requires at least one variant`);
+    if (!entries.length) {
+        throw new Error(`Packet group "${settings.tag}" requires at least one variant`);
+    }
+
     const parent = CreatePacket({
         tag: settings.tag,
         type: PacketType.NONE,
@@ -427,46 +577,87 @@ export function CreatePacketGroup(settings: PacketGroupSettings): Packet<any>[] 
         dataMax: 0,
         _group: { parent: settings.tag, variant: "", isParent: true },
     });
+
     const children = entries.map(([variant, definition]) => {
-        if (!variant || variant.includes("$")) throw new Error("Packet variant names cannot be empty or contain '$'");
+        if (!variant || variant.includes("$")) {
+            throw new Error("Packet variant names cannot be empty or contain '$'");
+        }
+
         return CreatePacket({
             ...definition,
             tag: `${settings.tag}.${variant}`,
             _group: { parent: settings.tag, variant, isParent: false },
         } as SinglePacketSettings & { _group: GroupMetadata });
     });
+
     return [parent, ...children];
 }
 
 function validateFields(fields: readonly string[] | undefined, tag: string): void {
     if (!fields) return;
-    if (!fields.length || fields.some(field => typeof field !== "string" || !field))
+
+    if (!fields.length || fields.some(field => typeof field !== "string" || !field)) {
         throw new Error(`Packet "${tag}" schema must contain non-empty field names`);
-    if (new Set(fields).size !== fields.length) throw new Error(`Packet "${tag}" schema fields must be unique`);
+    }
+    if (new Set(fields).size !== fields.length) {
+        throw new Error(`Packet "${tag}" schema fields must be unique`);
+    }
 }
 
-const NUMERIC_TYPES = new Set<any>([PacketType.BYTES, PacketType.UBYTES, PacketType.SHORTS, PacketType.USHORTS,
-    PacketType.VARINT, PacketType.UVARINT, PacketType.DELTAS, PacketType.FLOATS, PacketType.DOUBLES]);
-function validateNumericOptions(type: ArguableType, quantized: { scale: number } | undefined, min: number | undefined, max: number | undefined, tag: string): void {
-    if (min !== undefined && max !== undefined && min > max) throw new Error(`Packet "${tag}" min cannot exceed max`);
-    if ((quantized || min !== undefined || max !== undefined) && !NUMERIC_TYPES.has(type))
+const NUMERIC_TYPES = new Set<ArguableType>([
+    PacketType.BYTES,
+    PacketType.UBYTES,
+    PacketType.SHORTS,
+    PacketType.USHORTS,
+    PacketType.VARINT,
+    PacketType.UVARINT,
+    PacketType.DELTAS,
+    PacketType.FLOATS,
+    PacketType.DOUBLES,
+]);
+
+function validateNumericOptions(
+    type: ArguableType,
+    quantized: { scale: number } | undefined,
+    min: number | undefined,
+    max: number | undefined,
+    tag: string,
+): void {
+    if (min !== undefined && max !== undefined && min > max) {
+        throw new Error(`Packet "${tag}" min cannot exceed max`);
+    }
+    if ((quantized || min !== undefined || max !== undefined) && !NUMERIC_TYPES.has(type)) {
         throw new Error(`Packet "${tag}" numeric options require a numeric packet type`);
-    if (quantized && (!Number.isFinite(quantized.scale) || quantized.scale <= 0))
+    }
+    if (quantized && (!Number.isFinite(quantized.scale) || quantized.scale <= 0)) {
         throw new Error(`Packet "${tag}" quantization scale must be positive and finite`);
+    }
 }
 
 /**
  * Creates and defines an enum packet. This can be used to create an enum-based packet
  * with a specific tag and possible values.
- * @param settings The settings object containing `tag`, `enumTag`, `values`, `dataMax`, `dataMin`, `noDataRange`, `dontSpread`, `validator`, `dataBatching`, and/or `maxBatchSize`.
+ * @param settings Enum package, limits, validation, and batching settings.
  * @returns The constructed packet structure data.
  */
 export function CreateEnumPacket(settings: EnumPacketSettings): Packet<PacketType.ENUMS> {
-    const { tag, enumData, dataMax = 1, dataMin = 0, noDataRange = false, dontSpread = false,
-            validator = null, dataBatching = 0, maxBatchSize = 10, rateLimit = 0, enabled = true, async = false } = settings;
+    const {
+        tag,
+        enumData,
+        dataMax = 1,
+        dataMin = 0,
+        noDataRange = false,
+        dontSpread = false,
+        validator = null,
+        dataBatching = 0,
+        maxBatchSize = 10,
+        rateLimit = 0,
+        enabled = true,
+        async = false,
+    } = settings;
 
     return CreatePacket({
-        tag: tag,
+        tag,
         type: enumData,
         dataMax,
         dataMin,
@@ -487,11 +678,13 @@ export function CreateEnumPacket(settings: EnumPacketSettings): Packet<PacketTyp
  * @param array A 2-depth array of multi-valued
  */
 export function FlattenData(arr: any[][]): any[][] {
-    if(arr == null) return [];
-    const setup = arr[0];
-    if(setup == null) return [];
-    if(!Array.isArray(setup)) throw new Error(`Cannot flatten array: ${arr}`);
-    return setup.map((_, i) => arr.map(row => row[i])) ?? [];
+    if (arr == null) return [];
+
+    const firstRow = arr[0];
+    if (firstRow == null) return [];
+    if (!Array.isArray(firstRow)) throw new Error(`Cannot flatten array: ${arr}`);
+
+    return firstRow.map((_, index) => arr.map(row => row[index]));
 }
 
 /**
@@ -500,5 +693,5 @@ export function FlattenData(arr: any[][]): any[][] {
  * @param array A flattened array
  */
 export function UnFlattenData(arr: any[][]): any[][] {
-    return arr[0]?.map((_, i) => arr.map(col => col[i])) ?? [];
+    return arr[0]?.map((_, index) => arr.map(column => column[index])) ?? [];
 }

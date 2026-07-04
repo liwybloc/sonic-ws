@@ -15,7 +15,7 @@ use crate::{Error, PacketDef, PacketType, Result, SchemaLimit, SchemaType};
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
 use std::io::{Read, Write};
 
-// The legacy schema calls this "gzip", but SonicWS uses a raw DEFLATE stream
+// the legacy schema calls this "gzip" but SonicWS uses a raw DEFLATE stream
 // without a gzip container or header.
 pub const MAX_DECOMPRESSED_SIZE: usize = 16 * 1024 * 1024;
 
@@ -63,9 +63,7 @@ fn encoded_size_limit(kind: PacketType, values: u64) -> Option<u64> {
         PacketType::Floats => values.checked_mul(4),
         PacketType::Doubles => values.checked_mul(8),
         PacketType::Booleans => values.checked_add(7).map(|value| value / 8),
-        PacketType::StringsAscii
-        | PacketType::StringsUtf16
-        | PacketType::Reserved16 => None,
+        PacketType::StringsAscii | PacketType::StringsUtf16 | PacketType::Reserved16 => None,
     }
 }
 

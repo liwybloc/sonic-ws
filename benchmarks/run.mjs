@@ -1,9 +1,6 @@
 import { performance } from "node:perf_hooks";
-import { deflateRawSync } from "node:zlib";
 import { writeFile, mkdir } from "node:fs/promises";
-import {
-    CreatePacket, PacketType,
-} from "../projects/ts/dist/index.js";
+import { CreatePacket, PacketType } from "../projects/ts/dist/index.js";
 import { encodeNativeBatch, loadNativeCore } from "../projects/ts/dist/native/wrapper.js";
 import { toPacketBuffer } from "../projects/ts/dist/ws/util/BufferUtil.js";
 
@@ -14,12 +11,24 @@ const nativeCore = loadNativeCore();
 const scenarios = [
     {
         name: "movement.move",
-        packet: CreatePacket({ tag: "movement.move", type: PacketType.VARINT, schema: ["dx", "dy", "dz"], dataMax: 3, quantized: { scale: 1000, trackError: false } }),
+        packet: CreatePacket({
+            tag: "movement.move",
+            type: PacketType.VARINT,
+            schema: ["dx", "dy", "dz"],
+            dataMax: 3,
+            quantized: { scale: 1000, trackError: false },
+        }),
         value: { dx: .125, dy: 0, dz: -.25 },
     },
     {
         name: "movement.look",
-        packet: CreatePacket({ tag: "movement.look", type: PacketType.VARINT, schema: ["dPitch", "dYaw"], dataMax: 2, quantized: { scale: 1000, trackError: false } }),
+        packet: CreatePacket({
+            tag: "movement.look",
+            type: PacketType.VARINT,
+            schema: ["dPitch", "dYaw"],
+            dataMax: 2,
+            quantized: { scale: 1000, trackError: false },
+        }),
         value: { dPitch: .01, dYaw: -.03 },
     },
     {
@@ -29,8 +38,22 @@ const scenarios = [
     },
     {
         name: "entitySnapshot.100",
-        packet: CreatePacket({ tag: "entitySnapshot", type: PacketType.VARINT, schema: ["id", "type", "x", "y", "z", "pitch", "yaw"], autoFlatten: true, quantized: { scale: 1000, trackError: false } }),
-        value: Array.from({ length: 100 }, (_, id) => ({ id, type: 0, x: id * .25, y: 1.7, z: id * -.5, pitch: 0, yaw: id * .01 })),
+        packet: CreatePacket({
+            tag: "entitySnapshot",
+            type: PacketType.VARINT,
+            schema: ["id", "type", "x", "y", "z", "pitch", "yaw"],
+            autoFlatten: true,
+            quantized: { scale: 1000, trackError: false },
+        }),
+        value: Array.from({ length: 100 }, (_, id) => ({
+            id,
+            type: 0,
+            x: id * .25,
+            y: 1.7,
+            z: id * -.5,
+            pitch: 0,
+            yaw: id * .01,
+        })),
     },
 ];
 
@@ -38,12 +61,21 @@ function sonicFrame(packet, value) {
     const values = packet.autoFlatten || packet.fields ? [value] : [value];
     const prepared = packet.prepareSend(values, 0);
     const payload = prepared.length ? packet.processSend(prepared) : new Uint8Array();
-    if (payload instanceof Promise) throw new Error("Benchmark requires a synchronous codec path");
+    if (payload instanceof Promise) {
+        throw new Error("Benchmark requires a synchronous codec path");
+    }
+
     return toPacketBuffer(1, payload);
 }
 
-function jsonFrame(name, value) {
-    return encoder.encode(JSON.stringify({ event: name, data: value }));
+function jsonFrame(_name, value) {
+    return encoder.encode(JSON.stringify(value));
+}
+
+// socket.IO EVENT packets use Engine.IO message type 4 and Socket.IO event type 2
+// this measures `42["event",value]` before WebSocket frame and TLS overhead
+function socketIoFrame(name, value) {
+    return encoder.encode(`42${JSON.stringify([name, value])}`);
 }
 
 function varint(value) {
@@ -64,9 +96,15 @@ function percentile(sorted, value) {
 function finishMeasurement(label, samples, elapsedMs, cpu, heapBefore, mode) {
     samples.sort((a, b) => a - b);
     return {
-        label, mode, iterations,
+        label,
+        mode,
+        iterations,
         operationsPerSecond: iterations / (elapsedMs / 1000),
-        latencyMicroseconds: { p50: percentile(samples, .50), p95: percentile(samples, .95), p99: percentile(samples, .99) },
+        latencyMicroseconds: {
+            p50: percentile(samples, .50),
+            p95: percentile(samples, .95),
+            p99: percentile(samples, .99),
+        },
         cpuMilliseconds: (cpu.user + cpu.system) / 1000,
         heapDeltaBytes: process.memoryUsage().heapUsed - heapBefore,
     };
@@ -79,6 +117,7 @@ function measureSync(label, operation) {
     const cpuBefore = process.cpuUsage();
     const samples = [];
     const started = performance.now();
+
     for (let index = 0; index < iterations; index++) {
         const sampleStart = performance.now();
         operation();
@@ -86,6 +125,7 @@ function measureSync(label, operation) {
     }
     const elapsedMs = performance.now() - started;
     const cpu = process.cpuUsage(cpuBefore);
+
     return finishMeasurement(label, samples, elapsedMs, cpu, heapBefore, "sync");
 }
 
@@ -94,20 +134,28 @@ const performanceResults = [
     measureSync("harness: no-op baseline", () => undefined),
     measureSync("harness: empty Uint8Array allocation", () => new Uint8Array(0)),
 ];
+
 for (const scenario of scenarios) {
     const sonic = sonicFrame(scenario.packet, scenario.value);
     const json = jsonFrame(scenario.name, scenario.value);
+    const socketIo = socketIoFrame(scenario.name, scenario.value);
     const payload = sonic.subarray(1);
-    const compressed = Buffer.concat([Buffer.from([sonic[0]]), deflateRawSync(payload)]);
-    const batch = Buffer.concat([Buffer.from([sonic[0]]), ...Array.from({ length: 10 }, () => Buffer.concat([varint(payload.length), payload]))]);
+    const batchSectors = Array.from(
+        { length: 10 },
+        () => Buffer.concat([varint(payload.length), payload]),
+    );
+    const batch = Buffer.concat([Buffer.from([sonic[0]]), ...batchSectors]);
+
     rows.push({
         scenario: scenario.name,
         jsonBytes: json.length,
+        socketIoBytes: socketIo.length,
         sonicBytes: sonic.length,
-        sonicDeflateBytes: compressed.length,
         sonicBatchTenBytes: batch.length,
-        reductionPercent: 100 * (1 - sonic.length / json.length),
+        reductionVsJsonPercent: 100 * (1 - sonic.length / json.length),
+        reductionVsSocketIoPercent: 100 * (1 - sonic.length / socketIo.length),
     });
+
     const input = [scenario.value];
     const prepared = scenario.packet.prepareSend(input, 0);
     const positional = scenario.packet.fields && !scenario.packet.autoFlatten
@@ -125,22 +173,65 @@ for (const scenario of scenarios) {
         : undefined;
     const encodedPayloads = Array.from({ length: 10 }, () => payload);
 
-    performanceResults.push(measureSync(`${scenario.name}: prepare object`, () => scenario.packet.prepareSend(input, 0)));
-    if (mappingOnlyPacket)
-        performanceResults.push(measureSync(`${scenario.name}: schema mapping only`, () => mappingOnlyPacket.prepareSend(input, 0)));
-    if (positional) performanceResults.push(measureSync(`${scenario.name}: prepare positional`, () => scenario.packet.prepareSend(positional, 0)));
-    performanceResults.push(measureSync(`${scenario.name}: process prepared (codec)`, () => scenario.packet.processSend(prepared)));
-    if (scenario.packet.type === PacketType.VARINT)
-        performanceResults.push(measureSync(`${scenario.name}: WASM VARINT reference`, () => nativeCore.encodeSigned(PacketType.VARINT, prepared)));
-    performanceResults.push(measureSync(`${scenario.name}: full SonicWS`, () => sonicFrame(scenario.packet, scenario.value)));
-    performanceResults.push(measureSync(`${scenario.name}: frame allocation + payload copy`, () => toPacketBuffer(1, payload)));
-    performanceResults.push(measureSync(`${scenario.name}: JSON.stringify`, () => JSON.stringify({ event: scenario.name, data: scenario.value })));
-    performanceResults.push(measureSync(`${scenario.name}: JSON stringify + byteLength`, () => Buffer.byteLength(JSON.stringify({ event: scenario.name, data: scenario.value }))));
-    performanceResults.push(measureSync(`${scenario.name}: batch framing only (10)`, () => encodeNativeBatch(encodedPayloads, false)));
-    performanceResults.push(measureSync(`${scenario.name}: WASM batch framing reference (10)`, () => nativeCore.encodeBatch(encodedPayloads, false)));
+    performanceResults.push(measureSync(
+        `${scenario.name}: prepare object`,
+        () => scenario.packet.prepareSend(input, 0),
+    ));
+    if (mappingOnlyPacket) {
+        performanceResults.push(measureSync(
+            `${scenario.name}: schema mapping only`,
+            () => mappingOnlyPacket.prepareSend(input, 0),
+        ));
+    }
+    if (positional) {
+        performanceResults.push(measureSync(
+            `${scenario.name}: prepare positional`,
+            () => scenario.packet.prepareSend(positional, 0),
+        ));
+    }
+    performanceResults.push(measureSync(
+        `${scenario.name}: process prepared (codec)`,
+        () => scenario.packet.processSend(prepared),
+    ));
+    if (scenario.packet.type === PacketType.VARINT) {
+        performanceResults.push(measureSync(
+            `${scenario.name}: WASM VARINT reference`,
+            () => nativeCore.encodeSigned(PacketType.VARINT, prepared),
+        ));
+    }
+    performanceResults.push(measureSync(
+        `${scenario.name}: full SonicWS`,
+        () => sonicFrame(scenario.packet, scenario.value),
+    ));
+    performanceResults.push(measureSync(
+        `${scenario.name}: frame allocation + payload copy`,
+        () => toPacketBuffer(1, payload),
+    ));
+    performanceResults.push(measureSync(
+        `${scenario.name}: JSON.stringify payload`,
+        () => JSON.stringify(scenario.value),
+    ));
+    performanceResults.push(measureSync(
+        `${scenario.name}: JSON payload stringify + byteLength`,
+        () => Buffer.byteLength(JSON.stringify(scenario.value)),
+    ));
+    performanceResults.push(measureSync(
+        `${scenario.name}: Socket.IO EVENT serialize + byteLength`,
+        () => socketIoFrame(scenario.name, scenario.value).byteLength,
+    ));
+    performanceResults.push(measureSync(
+        `${scenario.name}: batch framing only (10)`,
+        () => encodeNativeBatch(encodedPayloads, false),
+    ));
+    performanceResults.push(measureSync(
+        `${scenario.name}: WASM batch framing reference (10)`,
+        () => nativeCore.encodeBatch(encodedPayloads, false),
+    ));
     performanceResults.push(measureSync(`${scenario.name}: encode + batch (10)`, () => {
         const encoded = [];
-        for (let index = 0; index < 10; index++) encoded.push(scenario.packet.processSend(prepared));
+        for (let index = 0; index < 10; index++) {
+            encoded.push(scenario.packet.processSend(prepared));
+        }
         return encodeNativeBatch(encoded, false);
     }));
 }
@@ -150,27 +241,48 @@ const report = {
     node: process.version,
     platform: `${process.platform}/${process.arch}`,
     iterations,
-    note: "Stage-separated codec benchmark; sync and async measurements are intentionally identified. WebSocket framing and network latency are excluded.",
+    note: "Stage-separated synchronous codec benchmark. WebSocket framing and network latency are excluded.",
     sizes: rows,
     performance: performanceResults,
 };
 
 await mkdir(new URL("./results/", import.meta.url), { recursive: true });
 await writeFile(new URL("./results/latest.json", import.meta.url), JSON.stringify(report, null, 2));
+
+function sizeMarkdownRow(row) {
+    return `| ${row.scenario} | ${row.jsonBytes} | ${row.socketIoBytes} | ${row.sonicBytes} | `
+        + `${row.sonicBatchTenBytes} | ${row.reductionVsJsonPercent.toFixed(1)}% | `
+        + `${row.reductionVsSocketIoPercent.toFixed(1)}% |`;
+}
+
+function performanceMarkdownRow(result) {
+    return `| ${result.label} | ${result.mode} | `
+        + `${Math.round(result.operationsPerSecond).toLocaleString()} | `
+        + `${result.latencyMicroseconds.p50.toFixed(2)} | `
+        + `${result.latencyMicroseconds.p95.toFixed(2)} | `
+        + `${result.latencyMicroseconds.p99.toFixed(2)} | `
+        + `${result.heapDeltaBytes.toLocaleString()} |`;
+}
+
 const markdown = [
     "# SonicWS reproducible benchmark",
     "",
     `Generated ${report.generatedAt} on ${report.node} (${report.platform}); ${iterations.toLocaleString()} iterations per encoder.`,
     "",
-    "| Scenario | JSON bytes | SonicWS bytes | Raw-DEFLATE bytes | Batch of 10 bytes | Reduction vs JSON |",
-    "|---|---:|---:|---:|---:|---:|",
-    ...rows.map(row => `| ${row.scenario} | ${row.jsonBytes} | ${row.sonicBytes} | ${row.sonicDeflateBytes} | ${row.sonicBatchTenBytes} | ${row.reductionPercent.toFixed(1)}% |`),
+    "Sizes below are application payload bytes before WebSocket framing or TLS. "
+        + "The Socket.IO column is the UTF-8 size of its `42[\"event\",value]` EVENT packet.",
+    "",
+    "| Scenario | Raw ws/uWS JSON payload bytes | Socket.IO EVENT bytes | SonicWS bytes "
+        + "| Batch of 10 bytes | Reduction vs JSON | Reduction vs Socket.IO |",
+    "|---|---:|---:|---:|---:|---:|---:|",
+    ...rows.map(sizeMarkdownRow),
     "",
     "| Stage | Mode | ops/s | p50 µs | p95 µs | p99 µs | heap delta |",
     "|---|---|---:|---:|---:|---:|---:|",
-    ...performanceResults.map(result => `| ${result.label} | ${result.mode} | ${Math.round(result.operationsPerSecond).toLocaleString()} | ${result.latencyMicroseconds.p50.toFixed(2)} | ${result.latencyMicroseconds.p95.toFixed(2)} | ${result.latencyMicroseconds.p99.toFixed(2)} | ${result.heapDeltaBytes.toLocaleString()} |`),
+    ...performanceResults.map(performanceMarkdownRow),
     "",
-    "This is a codec benchmark, not a claim about end-to-end Socket.IO or uWebSockets.js throughput. Install and run their dedicated adapters before publishing cross-library numbers.",
+    "This is a codec benchmark, not a claim about end-to-end Socket.IO or uWebSockets.js throughput. "
+        + "Run the transport harness before publishing cross-library numbers.",
     "",
 ];
 await writeFile(new URL("./results/latest.md", import.meta.url), markdown.join("\n"));

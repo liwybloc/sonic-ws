@@ -11,7 +11,7 @@
  * License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
  */
 
-// TODO: uhm make the packet manifest better encoded lmfao
+// packet metadata stays JSON for forward-compatible schema extensions
 
 import { DefineEnum } from "../util/enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../util/enums/EnumType";
@@ -20,7 +20,16 @@ import { compressBools, convertVarInt, decompressBools, readVarInt } from "../ut
 import { ArguableType, UnFlattenData } from "../util/packets/PacketUtils";
 import { PacketType } from "./PacketType";
 import { processCharCodes, as8String } from "../util/StringUtil";
-import { decodeNative, decodeNativeObject, deflateNative, encodeNative, encodeNativeObject, inflateNative, validateNative, validateNativeObject } from "../../native/wrapper";
+import {
+    decodeNative,
+    decodeNativeObject,
+    deflateNative,
+    encodeNative,
+    encodeNativeObject,
+    inflateNative,
+    validateNative,
+    validateNativeObject,
+} from "../../native/wrapper";
 import { compressJSON, decompressJSON } from "../util/packets/JSONUtil";
 import { resolvePacketConstructor } from "../util/packets/ConstructorRegistry";
 
@@ -181,29 +190,62 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
                 else validateNative(this.type, decoded, this.dataMin, this.dataMax, { enumData });
                 return [decoded, true];
             };
-        } else throw'';
+        } else {
+            throw new Error(`Packet "${tag}" has an unsupported schema shape`);
+        }
 
         this.customValidator = customValidator;
     }
 
     private static compileRecordValues(fields: readonly string[]): (record: Record<string, any>) => any[] {
-        // Fixed-width schemas are common enough that avoiding Array.map's callback
-        // machinery is measurable. Bracket access keeps this CSP-safe (no eval/new Function).
+        // fixed-width schemas are common enough that avoiding callback machinery is measurable
+        // bracket access keeps this CSP-safe without eval or new Function
         switch (fields.length) {
-            case 0: return () => [];
-            case 1: { const [a] = fields; return record => [record[a]]; }
-            case 2: { const [a, b] = fields; return record => [record[a], record[b]]; }
-            case 3: { const [a, b, c] = fields; return record => [record[a], record[b], record[c]]; }
-            case 4: { const [a, b, c, d] = fields; return record => [record[a], record[b], record[c], record[d]]; }
-            case 5: { const [a, b, c, d, e] = fields; return record => [record[a], record[b], record[c], record[d], record[e]]; }
-            case 6: { const [a, b, c, d, e, f] = fields; return record => [record[a], record[b], record[c], record[d], record[e], record[f]]; }
-            case 7: { const [a, b, c, d, e, f, g] = fields; return record => [record[a], record[b], record[c], record[d], record[e], record[f], record[g]]; }
-            case 8: { const [a, b, c, d, e, f, g, h] = fields; return record => [record[a], record[b], record[c], record[d], record[e], record[f], record[g], record[h]]; }
-            default: return record => {
-                const output = new Array(fields.length);
-                for (let index = 0; index < fields.length; index++) output[index] = record[fields[index]];
-                return output;
-            };
+            case 0:
+                return () => [];
+            case 1: {
+                const [a] = fields;
+                return record => [record[a]];
+            }
+            case 2: {
+                const [a, b] = fields;
+                return record => [record[a], record[b]];
+            }
+            case 3: {
+                const [a, b, c] = fields;
+                return record => [record[a], record[b], record[c]];
+            }
+            case 4: {
+                const [a, b, c, d] = fields;
+                return record => [record[a], record[b], record[c], record[d]];
+            }
+            case 5: {
+                const [a, b, c, d, e] = fields;
+                return record => [record[a], record[b], record[c], record[d], record[e]];
+            }
+            case 6: {
+                const [a, b, c, d, e, f] = fields;
+                return record => [record[a], record[b], record[c], record[d], record[e], record[f]];
+            }
+            case 7: {
+                const [a, b, c, d, e, f, g] = fields;
+                return record => [record[a], record[b], record[c], record[d], record[e], record[f], record[g]];
+            }
+            case 8: {
+                const [a, b, c, d, e, f, g, h] = fields;
+                return record => [
+                    record[a], record[b], record[c], record[d],
+                    record[e], record[f], record[g], record[h],
+                ];
+            }
+            default:
+                return record => {
+                    const output = new Array(fields.length);
+                    for (let index = 0; index < fields.length; index++) {
+                        output[index] = record[fields[index]];
+                    }
+                    return output;
+                };
         }
     }
 
@@ -303,51 +345,68 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
                 const count = columns[0]?.length ?? 0;
                 if (columns.some(column => column.length !== count))
                     throw new Error(`Packet "${this.tag}" autoTranspose columns have different lengths`);
-                return Array.from({ length: count }, (_, row) => this.construct(Object.fromEntries(this.fields!.map((field, col) => [field, columns[col][row]]))));
+                return Array.from({ length: count }, (_, row) => {
+                    const entries = this.fields!.map((field, column) => [field, columns[column][row]]);
+                    return this.construct(Object.fromEntries(entries));
+                });
             }
             return this.autoFlatten ? UnFlattenData(decoded) : decoded;
         }
 
         let values = Array.isArray(decoded) ? decoded : [decoded];
-        if (this.quantized || this.valueMin !== undefined || this.valueMax !== undefined) values = this.logical(values, "receive");
+        if (this.quantized || this.valueMin !== undefined || this.valueMax !== undefined) {
+            values = this.logical(values, "receive");
+        }
+
         if (this.autoFlatten) {
             const width = this.fields!.length;
-            if (values.length % width !== 0)
+            if (values.length % width !== 0) {
                 throw new Error(`Packet "${this.tag}" flat value count ${values.length} is not divisible by schema length ${width}`);
+            }
+
             return Array.from({ length: values.length / width }, (_, row) =>
                 this.construct(Object.fromEntries(this.fields!.map((field, col) => [field, values[row * width + col]]))));
         }
-        if (this.fields) return this.construct(Object.fromEntries(this.fields.map((field, index) => [field, values[index]])));
+
+        if (this.fields) {
+            const entries = this.fields.map((field, index) => [field, values[index]]);
+            return this.construct(Object.fromEntries(entries));
+        }
+
         return decoded;
     }
 
     public async listen(value: Uint8Array, socket: SonicWSConnection | null): Promise<[processed: any, flatten: boolean] | string> {
         try {
             const [dcData, validationResult] = await this.validate(value);
-            // holy shit i used === to fix another bug
-            if(!this.client && validationResult === false) return "Invalid packet";
+            // strict comparison matters because validation metadata may be non-boolean
+            if (!this.client && validationResult === false) return "Invalid packet";
 
             const processed = this.processReceive(dcData, validationResult);
             
-            const useableData = this.finishReceive(processed);
+            const usableData = this.finishReceive(processed);
 
-            if(this.customValidator != null) {
-                if(!this.dontSpread && !this.fields) {
-                    if(!this.customValidator(socket!, ...useableData)) return "Didn't pass custom validator";
+            if (this.customValidator != null) {
+                if (!this.dontSpread && !this.fields) {
+                    if (!this.customValidator(socket!, ...usableData)) return "Didn't pass custom validator";
                 } else {
-                    if(!this.customValidator(socket!, useableData)) return "Didn't pass custom validator";
+                    if (!this.customValidator(socket!, usableData)) return "Didn't pass custom validator";
                 }
             }
-            const delivered = this.isParent ? { variant: "", payload: useableData } : useableData;
+
+            const delivered = this.isParent ? { variant: "", payload: usableData } : usableData;
             return [delivered, this.isParent || this.fields ? false : !this.dontSpread];
-        } catch (err) {
-            console.error("There was an error processing the packet! This is probably my fault... report at https://github.com/liwybloc/sonic-ws", err);
-            return "Error: " + err;
+        } catch (error) {
+            console.error(
+                "SonicWS failed to process a packet. Report reproducible codec failures at https://github.com/liwybloc/sonic-ws",
+                error,
+            );
+            return `Error: ${String(error)}`;
         }
     }
 
+    /** Serializes this packet definition for schema negotiation. */
     public serialize(): number[] {
-
         const metadata = new TextEncoder().encode(JSON.stringify({
             schema: this.fields,
             quantized: this.quantized,
@@ -358,171 +417,198 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             replay: this.replay || undefined,
         }));
 
-        // shared values for both
+        // shared fields precede the shape-specific range and type data
         const sharedData: number[] = [
-            this.tag.length, ...processCharCodes(this.tag),
+            this.tag.length,
+            ...processCharCodes(this.tag),
             compressBools([this.dontSpread, this.async, this.object, this.autoFlatten, this.gzipCompression, this.rereference]),
-            ...convertVarInt(metadata.length), ...metadata,
+            ...convertVarInt(metadata.length),
+            ...metadata,
             this.dataBatching,
-            this.enumData.length, ...this.enumData.map(x => x.serialize()).flat(),
+            this.enumData.length,
+            ...this.enumData.flatMap(enumPackage => enumPackage.serialize()),
         ];
 
-        // single-value packet (not an object schema)
         if (!this.object) {
             return [
-                ...sharedData,                             // shared
-                ...convertVarInt(this.dataMax as number),  // the data max
-                ...convertVarInt(this.dataMin as number),  // the data min
-                this.type as PacketType,                   // type
+                ...sharedData,
+                ...convertVarInt(this.dataMax as number),
+                ...convertVarInt(this.dataMin as number),
+                this.type as PacketType,
             ];
         }
 
-        // object packet
         return [
             ...sharedData,
-            this.maxSize,                                            // size
-            ...(this.dataMax as number[]).map(convertVarInt).flat(), // all data maxes, serialized
-            ...(this.dataMin as number[]).map(convertVarInt).flat(), // all data mins, serialized
-            ...(this.type as PacketType[]),                          // all types
+            this.maxSize,
+            ...(this.dataMax as number[]).flatMap(convertVarInt),
+            ...(this.dataMin as number[]).flatMap(convertVarInt),
+            ...(this.type as PacketType[]),
         ];
     }
 
     private static readVarInts(data: Uint8Array, offset: number, size: number): [res: number[], offset: number] {
-        const res: number[] = [];
-        for(let i=0;i<size;i++) {
-            const [off, varint] = readVarInt(data, offset);
-            offset = off;
-            res.push(varint);
+        const values: number[] = [];
+
+        for (let index = 0; index < size; index++) {
+            const [nextOffset, value] = readVarInt(data, offset);
+            offset = nextOffset;
+            values.push(value);
         }
-        return [res, offset];
+
+        return [values, offset];
     }
 
     public static deserialize(data: Uint8Array, offset: number, client: boolean): [packet: Packet<any>, offset: number] {
         const beginningOffset = offset;
 
-        // read length, go up 1
-        const tagLength: number = data[offset++];
-        // read tag as it's up 1, and add offset
-        const tag: string = as8String(data.slice(offset, offset += tagLength));
+        const tagLength = data[offset++];
+        const tag = as8String(data.slice(offset, offset += tagLength));
 
-        // then read dontSpread and async
         const [dontSpread, async, isObject, autoFlatten, gzipCompression, rereference] = decompressBools(data[offset++]);
 
         const [metadataOffset, metadataLength] = readVarInt(data, offset);
         offset = metadataOffset;
-        const metadata = JSON.parse(new TextDecoder().decode(data.slice(offset, offset += metadataLength))) as {
-            schema?: string[]; quantized?: { scale: number; trackError?: boolean }; min?: number; max?: number;
+
+        const metadataBytes = data.slice(offset, offset += metadataLength);
+        const metadata = JSON.parse(new TextDecoder().decode(metadataBytes)) as {
+            schema?: string[];
+            quantized?: { scale: number; trackError?: boolean };
+            min?: number;
+            max?: number;
             group?: { parent: string; variant: string; isParent: boolean };
-            constructor?: string; replay?: boolean;
+            constructor?: string;
+            replay?: boolean;
         };
+
         const fields = Array.isArray(metadata.schema) ? metadata.schema : undefined;
-        const quantized = metadata.quantized && typeof metadata.quantized.scale === "number" ? metadata.quantized : undefined;
+        const quantized = metadata.quantized && typeof metadata.quantized.scale === "number"
+            ? metadata.quantized
+            : undefined;
         const valueMin = typeof metadata.min === "number" ? metadata.min : undefined;
         const valueMax = typeof metadata.max === "number" ? metadata.max : undefined;
         const group = metadata.group && typeof metadata.group.parent === "string" ? metadata.group : undefined;
         const constructorName = typeof metadata.constructor === "string" ? metadata.constructor : undefined;
 
-        // read batching, up 1
-        const dataBatching: number = data[offset++];
-
-        // read enum length, up 1
+        const dataBatching = data[offset++];
         const enumLength = data[offset++];
         const enums: EnumPackage[] = [];
 
-        for (let i = 0; i < enumLength; i++) {
-            // read tag length, go up 1
+        for (let enumIndex = 0; enumIndex < enumLength; enumIndex++) {
             const enumTagLength = data[offset++];
-            // up 1 so read offset -> offset += tag length, to add tag length and skip over it
             const enumTag = as8String(data.slice(offset, offset += enumTagLength));
-            // read amount of values
             const valueCount = data[offset++];
             const values = [];
-            for (let j = 0; j < valueCount; j++) {
-                // read the length of the value, go up 1
+
+            for (let valueIndex = 0; valueIndex < valueCount; valueIndex++) {
                 const valueLength = data[offset++];
-                // then read the type of value, up 1
                 const valueType = data[offset++];
-                // now can just read the values, increase offset for later use
                 const value = as8String(data.slice(offset, offset += valueLength));
-                // process it
                 values.push(TYPE_CONVERSION_MAP[valueType](value));
             }
-            // define the enum with the values
+
             enums.push(DefineEnum(enumTag, values));
         }
 
-        // objects
         if (isObject) {
-            
-            // read size
-            const size: number = data[offset++];
+            const size = data[offset++];
 
-            // read var ints for the datamaxes
-            const [dataMaxes, o1] = this.readVarInts(data, offset, size)
-            offset = o1;
-            
-            // read var ints for the datamins
-            const [dataMins, o2] = this.readVarInts(data, offset, size);
-            offset = o2;
+            const [dataMaxes, maxOffset] = this.readVarInts(data, offset, size);
+            offset = maxOffset;
 
-            // get types, skip past size since there'll be size of these
-            const types: PacketType[]  = Array.from(data.slice(offset, offset += size));
+            const [dataMins, minOffset] = this.readVarInts(data, offset, size);
+            offset = minOffset;
 
-            // convert any enums into their indexed form for best bandwidth
-            let index = 0;
-            const finalTypes: ArguableType[] = types.map(x => x == PacketType.ENUMS ? enums[index++] : x); // convert enums to their enum packages
+            const types = Array.from(data.slice(offset, offset += size)) as PacketType[];
+            let enumIndex = 0;
+            const finalTypes: ArguableType[] = types.map(type =>
+                type === PacketType.ENUMS ? enums[enumIndex++] : type);
 
-            // make schema
-            const schema = new PacketSchema<readonly PacketType[]>(true, finalTypes, async, dataMins, dataMaxes, -1, dontSpread, autoFlatten, false, dataBatching, -1, gzipCompression, fields, undefined, undefined, undefined, group, constructorName, metadata.replay === true);
+            const schema = new PacketSchema<readonly PacketType[]>(
+                true,
+                finalTypes,
+                async,
+                dataMins,
+                dataMaxes,
+                -1,
+                dontSpread,
+                autoFlatten,
+                false,
+                dataBatching,
+                -1,
+                gzipCompression,
+                fields,
+                undefined,
+                undefined,
+                undefined,
+                group,
+                constructorName,
+                metadata.replay === true,
+            );
+
             return [
                 new Packet(tag, schema, null, false, client),
-                // +1 to go next
-                (offset - beginningOffset),
+                offset - beginningOffset,
             ];
         }
 
-        // single packet
+        const [maxOffset, dataMax] = readVarInt(data, offset);
+        offset = maxOffset;
 
-        // read varint for datamax
-        const [o1, dataMax] = readVarInt(data, offset);
-        offset = o1;
+        const [minOffset, dataMin] = readVarInt(data, offset);
+        offset = minOffset;
 
-        // read varint for datamin
-        const [o2, dataMin] = readVarInt(data, offset);
-        offset = o2;
+        const type = data[offset++] as PacketType;
+        const finalType = type === PacketType.ENUMS ? enums[0] : type;
 
-        // read type
-        const type: PacketType = data[offset++] as PacketType;
-
-        // do enum stuff
-        const finalType = type == PacketType.ENUMS ? enums[0] : type; // convert enum to enum package
-
-    
-        // make schema
-        const schema = new PacketSchema<PacketType>(false, finalType, async, dataMin, dataMax, -1, dontSpread, autoFlatten, rereference, dataBatching, -1, gzipCompression,
-            fields, quantized, valueMin, valueMax, group, constructorName, metadata.replay === true);
+        const schema = new PacketSchema<PacketType>(
+            false,
+            finalType,
+            async,
+            dataMin,
+            dataMax,
+            -1,
+            dontSpread,
+            autoFlatten,
+            rereference,
+            dataBatching,
+            -1,
+            gzipCompression,
+            fields,
+            quantized,
+            valueMin,
+            valueMax,
+            group,
+            constructorName,
+            metadata.replay === true,
+        );
         
         return [
             new Packet(tag, schema, null, false, client),
-            (offset - beginningOffset),
+            offset - beginningOffset,
         ];
     }
     
     public static deserializeAll(data: Uint8Array, client: boolean): Packet<any>[] {
-        const arr: Packet<any>[] = [];
+        const packets: Packet<any>[] = [];
 
         let offset = 0;
-        while(offset < data.length) {
-            const [packet, len] = this.deserialize(data, offset, client);
-            arr.push(packet);
-            offset += len;
+        while (offset < data.length) {
+            const [packet, length] = this.deserialize(data, offset, client);
+            packets.push(packet);
+            offset += length;
         }
 
-        return arr;
+        return packets;
     }
 }
 
-const convertType = (type: ArguableType, ed: EnumPackage[]): PacketType => (type instanceof EnumPackage ? (ed.push(type), PacketType.ENUMS) : type);
+function convertType(type: ArguableType, enumData: EnumPackage[]): PacketType {
+    if (!(type instanceof EnumPackage)) return type;
+
+    enumData.push(type);
+    return PacketType.ENUMS;
+}
 
 export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
     public type: ImpactType<T, PacketType>;
@@ -552,11 +638,27 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
     public constructorName?: string;
     public replay: boolean;
 
-    constructor(object: boolean, type: ImpactType<T, ArguableType>, async: boolean, dataMin: ImpactType<T, number>, dataMax: ImpactType<T, number>, rateLimit: number,
-                dontSpread: boolean, autoFlatten: boolean, rereference: boolean, dataBatching: number, maxBatchSize: number, gzipCompression: boolean,
-                fields?: readonly string[], quantized?: { scale: number; trackError?: boolean }, valueMin?: number, valueMax?: number,
-                group?: { parent: string; variant: string; isParent: boolean }, constructorName?: string, replay: boolean = false) {
-        // todo add rereference to objects
+    constructor(
+        object: boolean,
+        type: ImpactType<T, ArguableType>,
+        async: boolean,
+        dataMin: ImpactType<T, number>,
+        dataMax: ImpactType<T, number>,
+        rateLimit: number,
+        dontSpread: boolean,
+        autoFlatten: boolean,
+        rereference: boolean,
+        dataBatching: number,
+        maxBatchSize: number,
+        gzipCompression: boolean,
+        fields?: readonly string[],
+        quantized?: { scale: number; trackError?: boolean },
+        valueMin?: number,
+        valueMax?: number,
+        group?: { parent: string; variant: string; isParent: boolean },
+        constructorName?: string,
+        replay: boolean = false,
+    ) {
         this.object = object;
         this.async = async;
         this.dataMin = dataMin;
@@ -576,11 +678,14 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
         this.constructorName = constructorName;
         this.replay = replay;
 
-        this.type = (object ? (type as ArguableType[]).map(t => convertType(t, this.enumData)) : convertType((type as ArguableType), this.enumData)) as ImpactType<T, PacketType>;
+        this.type = (
+            object
+                ? (type as ArguableType[]).map(value => convertType(value, this.enumData))
+                : convertType(type as ArguableType, this.enumData)
+        ) as ImpactType<T, PacketType>;
     }
 
     testObject(packet: Packet<PacketType | readonly PacketType[]>): packet is Packet<PacketType[]> {
         return this.object;
     }
-    
 }

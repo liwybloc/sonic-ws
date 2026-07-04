@@ -35,4 +35,3 @@ class BCInfo(dict):
     """Broadcast metadata with both mapping and attribute access."""
 
     __getattr__ = dict.__getitem__
-

@@ -71,7 +71,11 @@ class PacketHolder:
         assert_packet_schema(self.packets)
         self.by_tag = {p.tag: p for p in self.packets}
         self.tags = [p.tag for p in self.packets]
-        self.variants = {f"{p.parent}.{p.variant}": p.tag for p in self.packets if p.parent and p.variant}
+        self.variants = {
+            f"{p.parent}.{p.variant}": p.tag
+            for p in self.packets
+            if p.parent and p.variant
+        }
         self.parents = {p.parent for p in self.packets if p.parent}
         if len(self.packets) > 254:
             raise ValueError("SonicWS supports at most 254 packets per direction")
@@ -187,7 +191,9 @@ class Connection:
 
     async def raw_send(self, data):
         if self.get_buffered_amount() >= self._close_at_bytes:
-            await self.close(CloseCodes.BACKPRESSURE, "outbound buffer exceeded the configured limit")
+            await self.close(
+                CloseCodes.BACKPRESSURE, "outbound buffer exceeded the configured limit"
+            )
             raise RuntimeError("SonicWS outbound backpressure limit exceeded")
         raw = bytes(data)
         await self.socket.send(raw)
@@ -199,7 +205,11 @@ class Connection:
         return int(getter()) if getter else 0
 
     def set_backpressure_limits(self, *, volatile_at_bytes=None, close_at_bytes=None):
-        volatile = self._volatile_at_bytes if volatile_at_bytes is None else int(volatile_at_bytes)
+        volatile = (
+            self._volatile_at_bytes
+            if volatile_at_bytes is None
+            else int(volatile_at_bytes)
+        )
         close = self._close_at_bytes if close_at_bytes is None else int(close_at_bytes)
         if volatile < 0 or close <= 0 or volatile > close:
             raise ValueError("invalid SonicWS backpressure limits")
@@ -318,10 +328,16 @@ async def dispatch_packet(connection, packet, payload, socket_for_validator=None
             if cache_key not in packet.last_received:
                 raise ValueError("no previous value to rereference")
             values = packet.last_received[cache_key]
-            await connection._emit(packet.tag, values, bool(not packet.dont_spread and not packet.schema))
+            await connection._emit(
+                packet.tag, values, bool(not packet.dont_spread and not packet.schema)
+            )
             if packet.parent and packet.variant:
-                await connection._emit(f"{packet.parent}.{packet.variant}", values, False)
-                await connection._emit(packet.parent, {"variant": packet.variant, "payload": values}, False)
+                await connection._emit(
+                    f"{packet.parent}.{packet.variant}", values, False
+                )
+                await connection._emit(
+                    packet.parent, {"variant": packet.variant, "payload": values}, False
+                )
             return
         payloads = (
             decode_batch(payload, packet.gzip_compression, packet.max_batch_size)
@@ -337,13 +353,21 @@ async def dispatch_packet(connection, packet, payload, socket_for_validator=None
             if packet.validator:
                 args = (
                     values
-                    if isinstance(values, list) and not packet.dont_spread and not packet.schema
+                    if isinstance(values, list)
+                    and not packet.dont_spread
+                    and not packet.schema
                     else [values]
                 )
                 if not await _call(packet.validator, socket_for_validator, *args):
                     raise ValueError("custom packet validation failed")
-            await connection._emit(packet.tag, values, bool(not packet.dont_spread and not packet.schema))
+            await connection._emit(
+                packet.tag, values, bool(not packet.dont_spread and not packet.schema)
+            )
             if packet.parent and packet.variant:
-                await connection._emit(f"{packet.parent}.{packet.variant}", values, False)
-                await connection._emit(packet.parent, {"variant": packet.variant, "payload": values}, False)
+                await connection._emit(
+                    f"{packet.parent}.{packet.variant}", values, False
+                )
+                await connection._emit(
+                    packet.parent, {"variant": packet.variant, "payload": values}, False
+                )
             await connection._middleware("onReceive_post", packet.tag, values)

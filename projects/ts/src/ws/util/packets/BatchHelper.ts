@@ -20,32 +20,35 @@ import { decodeNativeBatch, encodeNativeBatch } from "../../../native/wrapper";
 
 /** @internal */
 export class BatchHelper {
-
     private batchInfo: Record<number, [number, boolean]> = {};
     private batchTimeouts: Record<number, number> = {};
     private batchedData: Record<number, Uint8Array[]> = {};
 
     private conn!: IConnection<any>;
 
-    public registerSendPackets(packetHolder: PacketHolder, conn: IConnection<any>) {
-        this.conn = conn;
+    public registerSendPackets(packetHolder: PacketHolder, connection: IConnection<any>): void {
+        this.conn = connection;
+
         packetHolder.getTags().forEach(tag => {
             const packet = packetHolder.getPacket(tag);
-            if(packet.dataBatching == 0) return;
+            if (packet.dataBatching === 0) return;
+
             const code = packetHolder.getKey(tag);
             this.initiateBatch(code, packet.dataBatching, packet.gzipCompression);
         });
     }
 
-    private initiateBatch(code: number, time: number, compressed: boolean) {
+    private initiateBatch(code: number, time: number, compressed: boolean): void {
         this.batchedData[code] = [];
         this.batchInfo[code] = [time, compressed];
     }
 
-    private startBatch(code: number) {
+    private startBatch(code: number): void {
         const [time, compressed] = this.batchInfo[code];
+
         this.batchTimeouts[code] = this.conn.setInterval(() => {
-            if(this.batchedData[code].length == 0) return;
+            if (this.batchedData[code].length === 0) return;
+
             const data = encodeNativeBatch(this.batchedData[code], compressed);
             this.conn.raw_send(toPacketBuffer(code, data));
             this.batchedData[code] = [];
@@ -53,31 +56,35 @@ export class BatchHelper {
         }, time) as unknown as number;
     }
 
-    public batchPacket(code: number, data: Uint8Array) {
+    public batchPacket(code: number, data: Uint8Array): void {
         this.batchedData[code].push(data);
 
-        if(!this.batchTimeouts[code]) this.startBatch(code);
+        if (!this.batchTimeouts[code]) this.startBatch(code);
     }
 
-    public static async unravelBatch(packet: Packet<any>, _data: Uint8Array, socket: SonicWSConnection | null): Promise<[any, boolean][] | string> {
+    public static async unravelBatch(
+        packet: Packet<any>,
+        data: Uint8Array,
+        socket: SonicWSConnection | null,
+    ): Promise<[any, boolean][] | string> {
         let sectors: Uint8Array[];
         try {
-            sectors = decodeNativeBatch(_data, packet.gzipCompression, packet.maxBatchSize);
+            sectors = decodeNativeBatch(data, packet.gzipCompression, packet.maxBatchSize);
         } catch (error) {
-            return "Invalid batch: " + error;
+            return `Invalid batch: ${String(error)}`;
         }
+
         const result: [any, boolean][] = [];
-        for(const sector of sectors) {
-            // call the packets listeners
-            const listen = await packet.listen(sector, socket);
+        for (const sector of sectors) {
+            const listened = await packet.listen(sector, socket);
 
-            // if invalid, return that
-            if(typeof listen == 'string') return "Batched packet: " + listen;
+            if (typeof listened === "string") {
+                return `Batched packet: ${listened}`;
+            }
 
-            // store result
-            result.push(listen);
+            result.push(listened);
         }
+
         return result;
     }
-    
 }

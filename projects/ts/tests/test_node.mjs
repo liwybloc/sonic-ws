@@ -247,6 +247,33 @@ try {
     await connection.sendVariant("server_movement", "move", { dx: 5, dy: 6, dz: 7 });
 
     await withTimeout(Promise.all([...clientReceives, ...serverReceives, serverParent, clientParent, childReceive]), 10_000, "packet roundtrips");
+
+    let rejectNextClientRaw = true;
+    connection.addMiddleware({
+        onReceive_pre(tag) {
+            if (tag !== "client_raw" || !rejectNextClientRaw) return false;
+            rejectNextClientRaw = false;
+            return true;
+        },
+    });
+    const serverUnlocked = new Promise(resolve => connection.on("client_raw", resolve));
+    await client.send("client_raw", 1, 1, 1, 1);
+    await client.send("client_raw", 2, 2, 2, 2);
+    await withTimeout(serverUnlocked, 2_000, "server middleware rejection lock release");
+
+    let rejectNextServerRaw = true;
+    client.addMiddleware({
+        onReceive_pre(tag) {
+            if (tag !== "server_raw" || !rejectNextServerRaw) return false;
+            rejectNextServerRaw = false;
+            return true;
+        },
+    });
+    const clientUnlocked = new Promise(resolve => client.on("server_raw", resolve));
+    await connection.send("server_raw", 1, 1, 1, 1);
+    await connection.send("server_raw", 2, 2, 2, 2);
+    await withTimeout(clientUnlocked, 2_000, "client middleware rejection lock release");
+
     const roomReceive = new Promise(resolve => client.on("server_schema", value => {
         if (value.dx === 11) resolve();
     }));

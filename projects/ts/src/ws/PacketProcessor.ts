@@ -24,7 +24,9 @@ export interface BasicMiddleware {
     init?(conn: IMiddlewareHolder<BasicMiddleware>): void;
 }
 
-export type FuncKeys<T> = { [K in keyof T]: NonNullable<T[K]> extends (...args: any[]) => any ? K : never }[keyof T];
+export type FuncKeys<T> = {
+    [K in keyof T]: NonNullable<T[K]> extends (...args: any[]) => any ? K : never
+}[keyof T];
 
 export interface IMiddlewareHolder<T extends BasicMiddleware> {
     /**
@@ -42,25 +44,25 @@ export interface IMiddlewareHolder<T extends BasicMiddleware> {
         ...values: Parameters<NonNullable<Extract<T[K], (...args: any[]) => any>>>
     ): Promise<boolean>;
 }
-export class MiddlewareHolder<T extends BasicMiddleware> implements IMiddlewareHolder<T> {
 
+export class MiddlewareHolder<T extends BasicMiddleware> implements IMiddlewareHolder<T> {
     private middlewares: T[] = [];
 
     addMiddleware(middleware: T): void {
         this.middlewares.push(middleware);
 
-        const m: any = middleware;
+        const candidate = middleware as BasicMiddleware;
         try {
-            if (typeof m.init === 'function') m.init(this);
-        } catch (e) {
-            console.warn('Middleware init threw an error:', e);
+            candidate.init?.(this as IMiddlewareHolder<BasicMiddleware>);
+        } catch (error) {
+            console.warn("Middleware init threw an error", error);
         }
     }
 
     async callMiddleware<K extends FuncKeys<T> & keyof T>(
-            method: K,
-            ...values: Parameters<NonNullable<Extract<T[K], (...args: any[]) => any>>>
-        ): Promise<boolean> {
+        method: K,
+        ...values: Parameters<NonNullable<Extract<T[K], (...args: any[]) => any>>>
+    ): Promise<boolean> {
         let cancelled = false;
 
         for (const middleware of this.middlewares) {
@@ -71,8 +73,8 @@ export class MiddlewareHolder<T extends BasicMiddleware> implements IMiddlewareH
                 if (await (fn as (...args: any[]) => Promise<boolean> | boolean).call(middleware, ...values)) {
                     cancelled = true;
                 }
-            } catch (e) {
-                console.warn(`Middleware ${String(method)} threw an error:`, e);
+            } catch (error) {
+                console.warn(`Middleware ${String(method)} threw an error`, error);
             }
         }
 
@@ -130,19 +132,22 @@ export interface ConnectionMiddleware extends BasicMiddleware {
      */
     onNameChange?(name: string): boolean | void;
 
-};
+}
 
 /**
  * Different types of broadcast information
  */
-export type BCInfo = { recipients: SonicWSConnection[] } & ({ type: "all" } | { type: "tagged", tag: string } | { type: "filter", filter: (connection: SonicWSConnection) => boolean });
+export type BCInfo = { recipients: SonicWSConnection[] } & (
+    | { type: "all" }
+    | { type: "tagged"; tag: string }
+    | { type: "filter"; filter: (connection: SonicWSConnection) => boolean }
+);
 
 /**
  * Server-sided middleware, used in SonicWSServer for a more broad range of events
  * This does not include information for packets sent and received, as that is handled by ConnectionMiddleware
  */
 export interface ServerMiddleware extends BasicMiddleware {
-    
     /**
      * Called when a client connects
      * @param connection The connection instance
@@ -171,9 +176,7 @@ export interface ServerMiddleware extends BasicMiddleware {
      * @param values The packet values
      */
     onPacketBroadcast_post?(tag: string, info: BCInfo, data: Uint8Array, sendSize: number): boolean | void;
-
-
-};
+}
 
 export type ServerPQ = [tag: string, value: Uint8Array];
 export type ClientPQ = Uint8Array;

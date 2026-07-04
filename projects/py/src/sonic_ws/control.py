@@ -10,11 +10,21 @@ RESUMED = 5
 
 
 def encode_request(identifier, packet_key, payload):
-    return bytes([CONTROL_KEY, REQUEST]) + varint(identifier) + bytes([packet_key]) + bytes(payload)
+    return (
+        bytes([CONTROL_KEY, REQUEST])
+        + varint(identifier)
+        + bytes([packet_key])
+        + bytes(payload)
+    )
 
 
 def encode_response(identifier, ok, value):
-    return bytes([CONTROL_KEY, RESPONSE]) + varint(identifier) + bytes([bool(ok)]) + compress_json(value)
+    return (
+        bytes([CONTROL_KEY, RESPONSE])
+        + varint(identifier)
+        + bytes([bool(ok)])
+        + compress_json(value)
+    )
 
 
 def encode_replay(sequence, payload):
@@ -23,7 +33,12 @@ def encode_replay(sequence, payload):
 
 def encode_resume(session_id, last_sequence):
     session = session_id.encode()
-    return bytes([CONTROL_KEY, RESUME]) + varint(len(session)) + session + varint(last_sequence)
+    return (
+        bytes([CONTROL_KEY, RESUME])
+        + varint(len(session))
+        + session
+        + varint(last_sequence)
+    )
 
 
 def encode_resumed(recovered, replayed):

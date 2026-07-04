@@ -46,8 +46,14 @@ class FakeSocket:
 
 def test_schema_options():
     packet = create_packet(
-        tag="wide", type=PacketType.UVARINT, noDataRange=True, async_=True,
-        dataBatching=5, maxBatchSize=7, rateLimit=9, enabled=False,
+        tag="wide",
+        type=PacketType.UVARINT,
+        noDataRange=True,
+        async_=True,
+        dataBatching=5,
+        maxBatchSize=7,
+        rateLimit=9,
+        enabled=False,
     )
     assert packet.data_min == 0
     assert packet.data_max == 2_048_383
@@ -125,7 +131,9 @@ async def test_middleware_and_timers():
     assert raw_sends == [b"raw"]
 
     closed = []
-    connection.set_timeout(lambda was_closed=True: closed.append(was_closed), 10_000, True)
+    connection.set_timeout(
+        lambda was_closed=True: closed.append(was_closed), 10_000, True
+    )
     await connection._shutdown(1000, "test")
     assert closed == [True]
 
@@ -196,7 +204,9 @@ async def test_server_helpers_and_broadcast_middleware():
     await server.broadcast_tagged("red", "value", 7)
     assert len(first.sent) == 1 and second.sent == []
     assert calls[0] == "init" and calls[1][0] == "pre" and calls[2][0] == "post"
-    assert server.get_socket(2) is second and server.get_connected() is server.connections
+    assert (
+        server.get_socket(2) is second and server.get_connected() is server.connections
+    )
     await server.close_socket(2, 4008, "done")
     assert second.closed == (4008, "done")
 

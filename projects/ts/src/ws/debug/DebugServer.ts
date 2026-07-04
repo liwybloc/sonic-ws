@@ -482,7 +482,7 @@ export class DebugServer {
             }
         });
 
-        // TODO: i think this is fucked by async
+        // queued debug responses preserve order until authentication completes
         const storedPacketData: Record<number, any> = {};
         wss.on_connect(ws => {
             let authenticated = false;

@@ -28,10 +28,12 @@ class PacketLogger:
         self._emit("receive", tag, values, size)
 
     def _emit(self, direction, tag, values, size):
-        self.logger({
-            "direction": direction,
-            "tag": tag,
-            "values": values if self.include_values else None,
-            "bytes": size,
-            "timestamp": time.time(),
-        })
+        self.logger(
+            {
+                "direction": direction,
+                "tag": tag,
+                "values": values if self.include_values else None,
+                "bytes": size,
+                "timestamp": time.time(),
+            }
+        )

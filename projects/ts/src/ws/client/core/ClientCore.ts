@@ -39,8 +39,13 @@ type TransportBinding<T, K> = {
     off: Function;
 };
 
-export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint8Array<ArrayBufferLike>) => void; close: (c: number, d: string | undefined) => void; }, K>
-            extends Connection<T, K> {
+type ClientTransport = {
+    readyState: number;
+    send: (data: Uint8Array<ArrayBufferLike>) => void;
+    close: (code: number, reason: string | undefined) => void;
+};
+
+export abstract class SonicWSCore<T extends ClientTransport, K> extends Connection<T, K> {
 
     protected preListen: { [key: string]: Array<(data: any[]) => void> } | null;
     clientPackets: PacketHolder = new PacketHolder();
@@ -56,7 +61,13 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
     private asyncData: Record<number, AsyncPQ<ClientPQ>> = {};
     private asyncMap: Record<number, boolean> = {};
     private reconnectFactory?: () => TransportBinding<T, K>;
-    private reconnectOptions: Required<ReconnectOptions> = { enabled: false, attempts: Infinity, minDelayMs: 500, maxDelayMs: 10_000, jitter: .25 };
+    private reconnectOptions: Required<ReconnectOptions> = {
+        enabled: false,
+        attempts: Infinity,
+        minDelayMs: 500,
+        maxDelayMs: 10_000,
+        jitter: .25,
+    };
     private reconnectAttempt = 0;
     private reconnectTimer?: ReturnType<typeof setTimeout>;
     private intentionalClose = false;
@@ -65,7 +76,11 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
     private reconnectListeners: Array<() => void> = [];
     private reconnectFailedListeners: Array<() => void> = [];
     private nextRequestId = 1;
-    private pendingRequests = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+    private pendingRequests = new Map<number, {
+        resolve: (value: any) => void;
+        reject: (error: Error) => void;
+        timer: ReturnType<typeof setTimeout>;
+    }>();
     private responders = new Map<string, (...values: any[]) => any>();
     private sessionId?: string;
     private lastReplaySequence = 0;
@@ -91,15 +106,21 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
     }
 
     protected configureHandshakeTimeout(milliseconds: number): void {
-        if (!Number.isFinite(milliseconds) || milliseconds <= 0) throw new Error("Handshake timeout must be positive");
+        if (!Number.isFinite(milliseconds) || milliseconds <= 0) {
+            throw new Error("Handshake timeout must be positive");
+        }
+
         this.handshakeTimeoutMs = milliseconds;
         this.armHandshakeTimeout();
     }
 
     private armHandshakeTimeout(): void {
         if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
+
         this.handshakeTimer = setTimeout(() => {
-            if (!this.pastKeys) this.socket.close(CloseCodes.INVALID_DATA, "SonicWS schema handshake timed out");
+            if (!this.pastKeys) {
+                this.socket.close(CloseCodes.INVALID_DATA, "SonicWS schema handshake timed out");
+            }
         }, this.handshakeTimeoutMs);
     }
 
@@ -112,42 +133,58 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
             maxDelayMs: options.maxDelayMs ?? 10_000,
             jitter: options.jitter ?? .25,
         };
-        if (this.reconnectOptions.attempts < 0 || this.reconnectOptions.minDelayMs < 0 || this.reconnectOptions.maxDelayMs < this.reconnectOptions.minDelayMs)
+        if (
+            this.reconnectOptions.attempts < 0
+            || this.reconnectOptions.minDelayMs < 0
+            || this.reconnectOptions.maxDelayMs < this.reconnectOptions.minDelayMs
+        ) {
             throw new Error("Invalid reconnect timing options");
-        if (this.reconnectOptions.jitter < 0 || this.reconnectOptions.jitter > 1)
+        }
+        if (this.reconnectOptions.jitter < 0 || this.reconnectOptions.jitter > 1) {
             throw new Error("Reconnect jitter must be between 0 and 1");
+        }
     }
 
     private attachClientTransport(): void {
         this._on('message', this.serverKeyHandler);
         this._on('close', (...args: any[]) => {
-            for(const [id, callback, shouldCall] of Object.values(this._timers)) {
+            for (const [id, callback, shouldCall] of Object.values(this._timers)) {
                 this.clearTimeout(id);
-                if(shouldCall) callback(true);
+                if (shouldCall) callback(true);
             }
-            for(const packet of this.clientPackets.getPackets()) {
+
+            for (const packet of this.clientPackets.getPackets()) {
                 delete packet.lastSent[0];
                 packet.clearQuantizationState(0);
             }
-            for(const packet of this.serverPackets.getPackets()) {
+            for (const packet of this.serverPackets.getPackets()) {
                 delete packet.lastReceived[0];
             }
+
             const event = args[0];
             const code = typeof event === "number" ? event : event?.code;
-            if (!this.intentionalClose && code !== 1000) this.scheduleReconnect();
+            if (!this.intentionalClose && code !== 1000) {
+                this.scheduleReconnect();
+            }
         });
     }
 
     private scheduleReconnect(): void {
         if (!this.reconnectFactory || !this.reconnectOptions.enabled || this.reconnectTimer) return;
+
         if (this.reconnectAttempt >= this.reconnectOptions.attempts) {
             this.reconnectFailedListeners.forEach(listener => listener());
             return;
         }
+
         const attempt = ++this.reconnectAttempt;
-        const base = Math.min(this.reconnectOptions.maxDelayMs, this.reconnectOptions.minDelayMs * 2 ** (attempt - 1));
+        const base = Math.min(
+            this.reconnectOptions.maxDelayMs,
+            this.reconnectOptions.minDelayMs * 2 ** (attempt - 1),
+        );
         const spread = base * this.reconnectOptions.jitter;
         const delayMs = Math.max(0, Math.round(base - spread + Math.random() * spread * 2));
+
         this.reconnectingListeners.forEach(listener => listener({ attempt, delayMs }));
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = undefined;
@@ -178,53 +215,67 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
 
     private reading: boolean = false;
     private readQueue: K[] = [];
-    private async serverKeyHandler(event: K) {
-        if(this.reading) return this.readQueue.push(event);
+    private async serverKeyHandler(event: K): Promise<void> {
+        if (this.reading) {
+            this.readQueue.push(event);
+            return;
+        }
 
         this.reading = true;
-        const cdata: Uint8Array = await this.bufferHandler(event);
+        const compressedData = await this.bufferHandler(event);
 
-        if(cdata.length < 3 || as8String(cdata.slice(0, 3)) != SERVER_SUFFIX) {
+        if (compressedData.length < 3 || as8String(compressedData.slice(0, 3)) !== SERVER_SUFFIX) {
             this.close(1000);
-            throw new Error("The server requested is not a Sonic WS server.");
+            throw new Error("The requested server does not use the SonicWS protocol");
         }
 
-        const version = cdata[3];
-        if(version != VERSION) {
+        const version = compressedData[3];
+        if (version !== VERSION) {
             this.close(1000);
-            throw new Error(`Version mismatch: ${version > VERSION ? "client" : "server"} is outdated (server: ${version}, client: ${VERSION})`);              
+            throw new Error(
+                `Protocol mismatch: ${version > VERSION ? "client" : "server"} is outdated `
+                + `(server: ${version}, client: ${VERSION})`,
+            );
         }
 
-        const data = inflateNative(cdata.subarray(4, cdata.length));
+        const data = inflateNative(compressedData.subarray(4));
 
         const previousSession = this.sessionId;
-        const [ckOff,id] = readVarInt(data, 0);
+        const [clientKeyOffset, id] = readVarInt(data, 0);
         this.id = id;
-        const [sessionOffset, sessionLength] = readVarInt(data, ckOff);
+
+        const [sessionOffset, sessionLength] = readVarInt(data, clientKeyOffset);
         this.sessionId = new TextDecoder().decode(data.slice(sessionOffset, sessionOffset + sessionLength));
-        const [valuesOff,ckLength] = readVarInt(data, sessionOffset + sessionLength);
+        const [packetOffset, clientPacketLength] = readVarInt(data, sessionOffset + sessionLength);
         
-        const ckData = data.subarray(valuesOff, valuesOff + ckLength);
-        this.clientPackets.holdPackets(Packet.deserializeAll(ckData, true));
-        const skData = data.subarray(valuesOff + ckLength, data.length);
-        this.serverPackets.holdPackets(Packet.deserializeAll(skData, true));
+        const clientPacketData = data.subarray(packetOffset, packetOffset + clientPacketLength);
+        this.clientPackets.holdPackets(Packet.deserializeAll(clientPacketData, true));
+
+        const serverPacketData = data.subarray(packetOffset + clientPacketLength);
+        this.serverPackets.holdPackets(Packet.deserializeAll(serverPacketData, true));
 
         this.batcher.registerSendPackets(this.clientPackets, this);
 
-        for(const p of this.serverPackets.getPackets()) {
-            const key = this.serverPackets.getKey(p.tag);
-            this.asyncMap[key] = p.async;
-            if(p.async) {
+        for (const packet of this.serverPackets.getPackets()) {
+            const key = this.serverPackets.getKey(packet.tag);
+            this.asyncMap[key] = packet.async;
+
+            if (packet.async) {
                 this.asyncData[key] = [false, []];
             }
         }
 
-        Object.keys(this.preListen ?? {}).forEach(tag => this.preListen![tag].forEach(listener => {
-            // print the error to console without halting execution
-            if(!this.serverPackets.hasTag(tag)) return console.error(new Error(`The server does not send the packet with tag "${tag}"!`));
-            this.listen(tag, listener);
-        }));
-        this.preListen = null; // clear
+        for (const [tag, listeners] of Object.entries(this.preListen ?? {})) {
+            if (!this.serverPackets.hasTag(tag)) {
+                console.error(new Error(`The server does not define packet tag "${tag}"`));
+                continue;
+            }
+
+            for (const listener of listeners) {
+                this.listen(tag, listener);
+            }
+        }
+        this.preListen = null;
 
         this.pastKeys = true;
         if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
@@ -235,8 +286,8 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
         }
         this.connectedOnce = true;
 
-        this.readyListeners?.forEach(l => l());
-        this.readyListeners = null; // clear
+        this.readyListeners?.forEach(listener => listener());
+        this.readyListeners = null;
 
         this._off('message', this.serverKeyHandler);
         this._on('message', this.messageHandler);
@@ -246,70 +297,81 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
             this.raw_send(encodeResume(previousSession, this.lastReplaySequence));
         }
 
-        this.readQueue.forEach(e => this.messageHandler(e));
+        this.readQueue.forEach(queuedEvent => void this.messageHandler(queuedEvent));
         this.readQueue = [];
     }
 
-    private invalidPacket(listened: string) {
+    private invalidPacket(listened: string): never {
         console.error(listened);
-        throw new Error("An error occured with data from the server!! This is probably my fault.. make an issue at https://github.com/liwybloc/sonic-ws");
+        throw new Error(
+            "SonicWS rejected data from the server. Report reproducible codec failures at "
+            + "https://github.com/liwybloc/sonic-ws",
+        );
     }
 
     private listenLock: boolean = false;
     private packetQueue: PacketQueue<ClientPQ> = [];
     
-    public async listenPacket(data: string | [any[], boolean], tag: string, packetQueue: PacketQueue<ClientPQ>, isAsync: boolean, asyncData: AsyncPQ<ClientPQ>): Promise<void> {
+    private async deliverPacket(
+        data: string | [any[], boolean],
+        tag: string,
+        packetQueue: PacketQueue<ClientPQ>,
+        isAsync: boolean,
+        asyncData?: AsyncPQ<ClientPQ>,
+    ): Promise<void> {
         if (this.closed) {
-            await this.triggerNextPacket(packetQueue, isAsync, asyncData);
+            this.releasePacketLock(packetQueue, isAsync, asyncData);
             return;
         }
+
         const listeners = this.listeners[tag];
         const packet = this.serverPackets.getPacket(tag);
         const parentListeners = packet.parent ? this.listeners[packet.parent] : undefined;
+
         if (!listeners && !parentListeners) {
-            console.warn("Warn: No listener for packet " + tag);
-            await this.triggerNextPacket(packetQueue, isAsync, asyncData);
+            console.warn(`No listener is registered for packet "${tag}"`);
+            this.releasePacketLock(packetQueue, isAsync, asyncData);
             return;
         }
-        if (listeners) await listenPacket(data, listeners, this.invalidPacket);
-        if (typeof data !== "string" && packet.parent && packet.variant)
-            for (const listener of parentListeners ?? []) await listener({ variant: packet.variant, payload: data[0] });
-        await this.triggerNextPacket(packetQueue, isAsync, asyncData);
 
-        await this.callMiddleware('onReceive_post', tag, typeof data == 'string' ? [data] : data[0]);
+        if (listeners) await listenPacket(data, listeners, this.invalidPacket);
+
+        if (typeof data !== "string" && packet.parent && packet.variant) {
+            for (const listener of parentListeners ?? []) {
+                await listener({ variant: packet.variant, payload: data[0] });
+            }
+        }
+
+        await this.callMiddleware('onReceive_post', tag, typeof data === "string" ? [data] : data[0]);
+        this.releasePacketLock(packetQueue, isAsync, asyncData);
+    }
+
+    private releasePacketLock(
+        packetQueue: PacketQueue<ClientPQ>,
+        isAsync: boolean,
+        asyncData?: AsyncPQ<ClientPQ>,
+    ): void {
+        if (isAsync) {
+            asyncData![0] = false;
+        } else {
+            this.listenLock = false;
+        }
+
+        if (packetQueue.length > 0) {
+            void this.dataHandler(packetQueue.shift()!);
+        }
     }
 
     private isAsync(code: number): boolean {
         return this.asyncMap[code];
     }
-    
-    private async enqueuePacket(
-        data: string | [any[], boolean],
-        listeners: ((...args: any) => void | Promise<void>)[],
-        packetQueue: PacketQueue<ClientPQ>, isAsync: boolean, asyncData: AsyncPQ<ClientPQ>
-    ): Promise<void> {
-
-        await listenPacket(data, listeners, this.invalidPacket);
-
-        await this.triggerNextPacket(packetQueue, isAsync, asyncData);
-    }
-    
-    private async triggerNextPacket(
-        packetQueue: PacketQueue<ClientPQ>,
-        isAsync: boolean,
-        asyncData: AsyncPQ<ClientPQ>
-    ): Promise<void> {
-        if (isAsync) asyncData![0] = false;
-        else this.listenLock = false;
-
-        if (packetQueue!.length > 0) {
-            this.dataHandler(packetQueue!.shift()!);
-            return;
-        }
-    }
 
     private async dataHandler(data: Uint8Array): Promise<void> {
-        if (data[0] === 0) return this.handleControl(data);
+        if (data[0] === 0) {
+            await this.handleControl(data);
+            return;
+        }
+
         const key = data[0];
         const value = data.slice(1);
 
@@ -317,7 +379,7 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
 
         let locked: boolean;
         let packetQueue: PacketQueue<ClientPQ>;
-        let asyncData: AsyncPQ<ClientPQ>;
+        let asyncData: AsyncPQ<ClientPQ> | undefined;
 
         if (isAsync) {
             asyncData = this.asyncData[key]!;
@@ -333,30 +395,41 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
             return;
         }
 
-        if (isAsync) asyncData![0] = true;
-        else this.listenLock = true;
+        if (isAsync) {
+            asyncData![0] = true;
+        } else {
+            this.listenLock = true;
+        }
 
         const tag = this.serverPackets.getTag(key)!;
         const packet = this.serverPackets.getPacket(tag);
 
-        if(await this.callMiddleware('onReceive_pre', packet.tag, data, data.length)) return;
+        if (await this.callMiddleware('onReceive_pre', packet.tag, data, data.length)) {
+            this.releasePacketLock(packetQueue, isAsync, asyncData);
+            return;
+        }
 
-        if(packet.rereference && value.length == 0) {
-            if(packet.lastReceived[0] === undefined) return this.invalidPacket("No previous value to rereference");
-            this.listenPacket(packet.lastReceived[0] as any, tag, packetQueue, isAsync, asyncData!);
+        if (packet.rereference && value.length === 0) {
+            if (packet.lastReceived[0] === undefined) {
+                this.invalidPacket("No previous value to rereference");
+            }
+
+            void this.deliverPacket(packet.lastReceived[0] as any, tag, packetQueue, isAsync, asyncData);
             return;
         }
         
-        if(packet.dataBatching == 0) {
-            const res = packet.lastReceived[0] = await packet.listen(value, null);
-            this.listenPacket(res, tag, packetQueue, isAsync, asyncData!);
+        if (packet.dataBatching === 0) {
+            const result = packet.lastReceived[0] = await packet.listen(value, null);
+            void this.deliverPacket(result, tag, packetQueue, isAsync, asyncData);
             return;
         }
 
         const batchData = await BatchHelper.unravelBatch(packet, value, null);
-        if(typeof batchData == 'string') return this.invalidPacket(batchData);
+        if (typeof batchData === "string") {
+            this.invalidPacket(batchData);
+        }
 
-        batchData.forEach(data => this.listenPacket(data, tag, packetQueue, isAsync, asyncData!));
+        batchData.forEach(result => void this.deliverPacket(result, tag, packetQueue, isAsync, asyncData));
     }
 
     private async handleControl(data: Uint8Array): Promise<void> {
@@ -460,7 +533,7 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
 
     protected listen(tag: string, listener: (data: any[]) => void): void {
         if (!this.serverPackets.hasTag(tag)) {
-            console.log("Tag is not available on server: " + tag);
+            console.warn(`Packet tag "${tag}" is not available on the server`);
             return;
         }
 
@@ -476,12 +549,15 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
      * @param values The values to send
      */
     public async send(tag: string, ...values: any[]): Promise<void> {
-        if(await this.callMiddleware('onSend_pre', tag, values, Date.now(), performance.now())) return;
+        if (await this.callMiddleware('onSend_pre', tag, values, Date.now(), performance.now())) return;
 
         const [code, data, packet] = await processPacket(this.clientPackets, tag, values, this.sendQueue, 0);
 
-        if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
-        else this.batcher.batchPacket(code, data);
+        if (packet.dataBatching === 0) {
+            this.raw_send(toPacketBuffer(code, data));
+        } else {
+            this.batcher.batchPacket(code, data);
+        }
 
         await this.callMiddleware('onSend_post', tag, data, data.length);
     }
@@ -493,12 +569,21 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
     /** Sends a validated packet as an RPC request and waits for its response. */
     public async request(tag: string, ...valuesAndOptions: any[]): Promise<any> {
         const possibleOptions = valuesAndOptions.at(-1);
-        const options = valuesAndOptions.length > 1 && possibleOptions && typeof possibleOptions === "object" && !Array.isArray(possibleOptions)
+        const options = valuesAndOptions.length > 1
+            && possibleOptions
+            && typeof possibleOptions === "object"
+            && !Array.isArray(possibleOptions)
             && Object.keys(possibleOptions).every(key => key === "timeoutMs")
             ? valuesAndOptions.pop() as { timeoutMs?: number }
             : {};
         
-            const [packetKey, payload] = await processPacket(this.clientPackets, tag, valuesAndOptions, this.sendQueue, 0);
+        const [packetKey, payload] = await processPacket(
+            this.clientPackets,
+            tag,
+            valuesAndOptions,
+            this.sendQueue,
+            0,
+        );
         const id = this.nextRequestId++;
         if (this.nextRequestId > 0x7fffffff) this.nextRequestId = 1;
 
@@ -507,6 +592,7 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
                 this.pendingRequests.delete(id);
                 reject(new Error(`RPC request "${tag}" timed out`));
             }, options.timeoutMs ?? 5_000);
+
             this.pendingRequests.set(id, { resolve, reject, timer });
             this.raw_send(encodeControlRequest(id, packetKey, payload));
         });
@@ -519,8 +605,13 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
     }
 
     public async sendSafe(tag: string, ...values: any[]): Promise<boolean> {
-        try { await this.send(tag, ...values); return true; }
-        catch (error) { console.error(`Failed to send packet "${tag}"`, error); return false; }
+        try {
+            await this.send(tag, ...values);
+            return true;
+        } catch (error) {
+            console.error(`Failed to send packet "${tag}"`, error);
+            return false;
+        }
     }
 
     /** Drops this update before encoding when the transport is backpressured. */
@@ -530,15 +621,21 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
         return true;
     }
 
-    public sendReliable(tag: string, ...values: any[]): Promise<void> { return this.send(tag, ...values); }
+    /** Sends a packet without applying the volatile backpressure drop policy. */
+    public sendReliable(tag: string, ...values: any[]): Promise<void> {
+        return this.send(tag, ...values);
+    }
 
     /**
      * Listens for when the client connects
      * @param listener Callback on connection
      */
     public on_ready(listener: () => void): void {
-        if (this.pastKeys) listener();
-        else (this.readyListeners ??= []).push(listener);
+        if (this.pastKeys) {
+            listener();
+        } else {
+            (this.readyListeners ??= []).push(listener);
+        }
     } 
 
     /**
@@ -549,10 +646,25 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
         this._on("close", listener);
     }
 
-    public on_reconnecting(listener: (event: { attempt: number; delayMs: number }) => void): void { this.reconnectingListeners.push(listener); }
-    public on_reconnect(listener: () => void): void { this.reconnectListeners.push(listener); }
-    public on_reconnect_failed(listener: () => void): void { this.reconnectFailedListeners.push(listener); }
-    public on_recovered(listener: (event: { recovered: boolean; replayed: number }) => void): void { this.recoveredListeners.push(listener); }
+    /** Listens for reconnect attempts before a replacement transport opens. */
+    public on_reconnecting(listener: (event: { attempt: number; delayMs: number }) => void): void {
+        this.reconnectingListeners.push(listener);
+    }
+
+    /** Listens for successful reconnection and schema negotiation. */
+    public on_reconnect(listener: () => void): void {
+        this.reconnectListeners.push(listener);
+    }
+
+    /** Listens for reconnect exhaustion. */
+    public on_reconnect_failed(listener: () => void): void {
+        this.reconnectFailedListeners.push(listener);
+    }
+
+    /** Listens for the result of connection-state recovery. */
+    public on_recovered(listener: (event: { recovered: boolean; replayed: number }) => void): void {
+        this.recoveredListeners.push(listener);
+    }
 
     public override close(code: number = 1000, reason?: string | Buffer): void {
         this.intentionalClose = true;
@@ -568,10 +680,11 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
     public on(tag: string, listener: (value: any[]) => void): void {
         if (this.socket.readyState !== WebSocket.OPEN) {
             const pending = this.preListen ??= {};
-            if (!pending[tag]) pending[tag] = [];
+            pending[tag] ??= [];
             pending[tag].push(listener);
             return;
         }
+
         this.listen(tag, listener);
     }
 

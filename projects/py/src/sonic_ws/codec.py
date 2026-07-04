@@ -29,10 +29,7 @@ def encode_value(
             return bytes(value)
 
         case (
-            PacketType.BYTES
-            | PacketType.SHORTS
-            | PacketType.VARINT
-            | PacketType.DELTAS
+            PacketType.BYTES | PacketType.SHORTS | PacketType.VARINT | PacketType.DELTAS
         ):
             return bytes(_core.encode_signed(kind, values))
 
@@ -56,11 +53,13 @@ def encode_value(
                 raise ValueError("ENUMS requires an EnumPackage")
 
             return bytes(
-                item
-                if isinstance(item, int)
-                and not isinstance(item, bool)
-                and 0 <= item < len(enum.values)
-                else enum_index(enum.values, item)
+                (
+                    item
+                    if isinstance(item, int)
+                    and not isinstance(item, bool)
+                    and 0 <= item < len(enum.values)
+                    else enum_index(enum.values, item)
+                )
                 for item in values
             )
 
@@ -83,10 +82,7 @@ def decode_value(
             return bytes(_core.decode_raw(data))
 
         case (
-            PacketType.BYTES
-            | PacketType.SHORTS
-            | PacketType.VARINT
-            | PacketType.DELTAS
+            PacketType.BYTES | PacketType.SHORTS | PacketType.VARINT | PacketType.DELTAS
         ):
             return _core.decode_signed(kind, data)
 
@@ -113,6 +109,7 @@ def decode_value(
 
         case _:
             raise NotImplementedError(kind)
+
 
 def frame_object(sectors: Sequence[bytes]) -> bytes:
     return bytes(_core.frame_object(list(sectors)))

@@ -20,7 +20,18 @@ from .connection import Connection, PacketHolder, CloseCodes, dispatch_packet
 from .codec import deflate
 from .packets import varint, flatten_data
 from .middleware import BCInfo
-from .control import REQUEST, RESPONSE, REPLAY, RESUME, RESUMED, decode_control, encode_request, encode_response, encode_replay, encode_resumed
+from .control import (
+    REQUEST,
+    RESPONSE,
+    REPLAY,
+    RESUME,
+    RESUMED,
+    decode_control,
+    encode_request,
+    encode_response,
+    encode_replay,
+    encode_resumed,
+)
 from .version import VERSION
 
 MAX_USHORT = 65_535
@@ -35,6 +46,8 @@ def _rate_limit(value):
 
 
 class SonicWSConnection(Connection):
+    """Represents one accepted server-side SonicWS connection."""
+
     def __init__(self, socket, host, identifier, session_id, state):
         super().__init__(socket, identifier, f"Socket {identifier}")
         self.host = host
@@ -51,10 +64,14 @@ class SonicWSConnection(Connection):
     async def run(self):
         handshake_timer = None
         if not self.handshake_complete:
+
             async def expire_handshake():
                 await asyncio.sleep(self.host.handshake_timeout)
                 if not self.handshake_complete:
-                    await self.close(CloseCodes.INVALID_DATA, "application handshake timed out")
+                    await self.close(
+                        CloseCodes.INVALID_DATA, "application handshake timed out"
+                    )
+
             handshake_timer = asyncio.create_task(expire_handshake())
         try:
             async for message in self.socket:
@@ -103,7 +120,7 @@ class SonicWSConnection(Connection):
                 except Exception as error:
                     await self.close(
                         CloseCodes.INVALID_PACKET,
-                        f'{tag}: {error}',
+                        f"{tag}: {error}",
                     )
                     return
         except ConnectionClosed:
@@ -129,7 +146,13 @@ class SonicWSConnection(Connection):
 
     async def send(self, tag, *values):
         async with self._send_lock:
-            if await self._middleware("onSend_pre", tag, list(values), int(time.time() * 1000), time.perf_counter() * 1000):
+            if await self._middleware(
+                "onSend_pre",
+                tag,
+                list(values),
+                int(time.time() * 1000),
+                time.perf_counter() * 1000,
+            ):
                 return
             tag = self.host.server_packets.resolve(tag)
             packet = self.host.server_packets.packet(tag)
@@ -149,14 +172,18 @@ class SonicWSConnection(Connection):
     async def request(self, tag, *values, timeout=5.0):
         tag = self.host.server_packets.resolve(tag)
         packet = self.host.server_packets.packet(tag)
-        if not self._within_rate("server", self.host.server_rate_limit) or not self._within_rate("server:" + tag, packet.rate_limit):
+        if not self._within_rate(
+            "server", self.host.server_rate_limit
+        ) or not self._within_rate("server:" + tag, packet.rate_limit):
             raise ValueError(f'Packet "{tag}" exceeded its rate limit')
         payload = packet.encode(values, self.id)
         identifier = self._next_request_id
         self._next_request_id = 1 if identifier >= 0x7FFFFFFF else identifier + 1
         future = asyncio.get_running_loop().create_future()
         self._pending_requests[identifier] = future
-        await self.raw_send(encode_request(identifier, self.host.server_packets.code(tag), payload))
+        await self.raw_send(
+            encode_request(identifier, self.host.server_packets.code(tag), payload)
+        )
         try:
             return await asyncio.wait_for(future, timeout)
         except asyncio.TimeoutError as error:
@@ -180,7 +207,9 @@ class SonicWSConnection(Connection):
             await self.host.resume_session(self, message[1], message[2])
             return
         if not self.handshake_complete:
-            await self.close(CloseCodes.INVALID_DATA, "handshake required before control requests")
+            await self.close(
+                CloseCodes.INVALID_DATA, "handshake required before control requests"
+            )
             return
         if message[0] in (REPLAY, RESUMED):
             raise ValueError("a server cannot receive replay delivery frames")
@@ -198,10 +227,14 @@ class SonicWSConnection(Connection):
             tag = self.host.client_packets.tag(key)
             packet = self.host.client_packets.packet(tag)
             if not self.enabled[tag]:
-                await self.close(CloseCodes.DISABLED_PACKET, f'Packet "{tag}" is disabled')
+                await self.close(
+                    CloseCodes.DISABLED_PACKET, f'Packet "{tag}" is disabled'
+                )
                 return
             if not self._within_rate("client:" + tag, packet.rate_limit):
-                await self.close(CloseCodes.RATELIMIT, f'Packet "{tag}" exceeded its rate limit')
+                await self.close(
+                    CloseCodes.RATELIMIT, f'Packet "{tag}" exceeded its rate limit'
+                )
                 return
             if await self._middleware("onReceive_pre", tag, payload, len(payload)):
                 raise ValueError(f'Packet "{tag}" was rejected by middleware')
@@ -209,7 +242,13 @@ class SonicWSConnection(Connection):
             if handler is None:
                 raise ValueError(f'No responder registered for packet "{tag}"')
             value = packet.decode(payload)
-            args = value if isinstance(value, list) and not packet.dont_spread and not packet.schema else [value]
+            args = (
+                value
+                if isinstance(value, list)
+                and not packet.dont_spread
+                and not packet.schema
+                else [value]
+            )
             if packet.validator:
                 valid = packet.validator(self, *args)
                 if inspect.isawaitable(valid):
@@ -241,20 +280,26 @@ class SonicWSConnection(Connection):
         await self.send(tag, *values)
 
     async def send_processed(self, code, data, packet):
-        if not self._within_rate("server", self.host.server_rate_limit) or not self._within_rate("server:" + packet.tag, packet.rate_limit):
+        if not self._within_rate(
+            "server", self.host.server_rate_limit
+        ) or not self._within_rate("server:" + packet.tag, packet.rate_limit):
             return
         if packet.data_batching:
             await self._batch(code, packet, data)
         else:
             frame = bytes([code]) + data
-            await self.raw_send(self.host.replay_frame(self, frame) if packet.replay else frame)
+            await self.raw_send(
+                self.host.replay_frame(self, frame) if packet.replay else frame
+            )
 
     async def broadcast(self, tag, *values):
         await self.host.broadcast_filtered(tag, lambda c: c is not self, *values)
 
     async def broadcast_filtered(self, tag, predicate, *values):
         await self.host.broadcast_filtered(
-            tag, lambda connection: connection is not self and predicate(connection), *values
+            tag,
+            lambda connection: connection is not self and predicate(connection),
+            *values,
         )
 
     def join(self, room):
@@ -312,10 +357,14 @@ class SonicWSServer:
             host = options.pop("host", host)
             port = options.pop("port", port)
             kwargs = {**options, **kwargs}
-            self.on_send_error = settings.get("onSendError", settings.get("on_send_error"))
+            self.on_send_error = settings.get(
+                "onSendError", settings.get("on_send_error")
+            )
             self.adapter = settings.get("adapter", adapter)
             recovery = settings.get("recovery", recovery or {})
-            sonic_settings = settings.get("sonicServerSettings", settings.get("sonic_server_settings", {}))
+            sonic_settings = settings.get(
+                "sonicServerSettings", settings.get("sonic_server_settings", {})
+            )
         else:
             self.on_send_error = None
             self.adapter = adapter
@@ -327,7 +376,12 @@ class SonicWSServer:
         self.port = port
         kwargs.setdefault("max_size", 8 * 1024 * 1024)
         self.websocket_options = kwargs
-        self.handshake_timeout = sonic_settings.get("handshakeTimeoutMs", sonic_settings.get("handshake_timeout_ms", 10_000)) / 1000
+        self.handshake_timeout = (
+            sonic_settings.get(
+                "handshakeTimeoutMs", sonic_settings.get("handshake_timeout_ms", 10_000)
+            )
+            / 1000
+        )
         if self.handshake_timeout <= 0:
             raise ValueError("handshake timeout must be positive")
         self.connections = []
@@ -344,8 +398,15 @@ class SonicWSServer:
         self._middlewares = []
         self.debug_server = None
         self.server_id = str(uuid.uuid4())
-        self.recovery_max_disconnection = recovery.get("maxDisconnectionMs", recovery.get("max_disconnection_ms", 120_000)) / 1000
-        self.recovery_max_packets = int(recovery.get("maxPackets", recovery.get("max_packets", 1_000)))
+        self.recovery_max_disconnection = (
+            recovery.get(
+                "maxDisconnectionMs", recovery.get("max_disconnection_ms", 120_000)
+            )
+            / 1000
+        )
+        self.recovery_max_packets = int(
+            recovery.get("maxPackets", recovery.get("max_packets", 1_000))
+        )
         self.recovery_authorize = recovery.get("authorize")
         if self.recovery_max_disconnection < 0 or self.recovery_max_packets < 0:
             raise ValueError("recovery limits cannot be negative")
@@ -395,7 +456,9 @@ class SonicWSServer:
         return await self._middleware(name, *args)
 
     async def start(self):
-        await self._adapter_call("start", self.server_id, self._receive_adapter_broadcast)
+        await self._adapter_call(
+            "start", self.server_id, self._receive_adapter_broadcast
+        )
         self._server = await serve(
             self._accept,
             self.host,
@@ -417,9 +480,17 @@ class SonicWSServer:
             identifier = self._next_id
             self._next_id += 1
         session_id = str(uuid.uuid4())
-        session = {"state": {}, "rooms": set(), "sequence": 0, "frames": [], "expires": float("inf")}
+        session = {
+            "state": {},
+            "rooms": set(),
+            "sequence": 0,
+            "frames": [],
+            "expires": float("inf"),
+        }
         self.sessions[session_id] = session
-        connection = SonicWSConnection(socket, self, identifier, session_id, session["state"])
+        connection = SonicWSConnection(
+            socket, self, identifier, session_id, session["state"]
+        )
         self.connections.append(connection)
         self.connection_map[connection.id] = connection
         if await self._middleware("onClientConnect", connection):
@@ -455,7 +526,7 @@ class SonicWSServer:
             session["rooms"] = set(connection.tags)
             session["expires"] = time.monotonic() + self.recovery_max_disconnection
             asyncio.get_running_loop().call_later(
-                self.recovery_max_disconnection + .001,
+                self.recovery_max_disconnection + 0.001,
                 self._expire_session,
                 connection.session_id,
                 session,
@@ -480,7 +551,7 @@ class SonicWSServer:
         frame = encode_replay(session["sequence"], packet_frame)
         session["frames"].append((session["sequence"], frame))
         if len(session["frames"]) > self.recovery_max_packets:
-            del session["frames"][:-self.recovery_max_packets]
+            del session["frames"][: -self.recovery_max_packets]
         return frame
 
     async def resume_session(self, connection, session_id, last_sequence):
@@ -489,12 +560,18 @@ class SonicWSServer:
             await connection.raw_send(encode_resumed(False, 0))
             return
         if self.recovery_authorize:
-            authorized = self.recovery_authorize(session["state"], connection.state, connection)
+            authorized = self.recovery_authorize(
+                session["state"], connection.state, connection
+            )
             if inspect.isawaitable(authorized):
                 authorized = await authorized
         else:
-            previous_user = session["state"].get("userId", session["state"].get("user_id"))
-            current_user = connection.state.get("userId", connection.state.get("user_id"))
+            previous_user = session["state"].get(
+                "userId", session["state"].get("user_id")
+            )
+            current_user = connection.state.get(
+                "userId", connection.state.get("user_id")
+            )
             authorized = previous_user is None or previous_user == current_user
         if not authorized:
             await connection.raw_send(encode_resumed(False, 0))
@@ -506,7 +583,9 @@ class SonicWSServer:
         self.sessions[session_id] = session
         for room in session["rooms"]:
             self.join(connection, room)
-        frames = [frame for sequence, frame in session["frames"] if sequence > last_sequence]
+        frames = [
+            frame for sequence, frame in session["frames"] if sequence > last_sequence
+        ]
         for frame in frames:
             await connection.raw_send(frame)
         await connection.raw_send(encode_resumed(True, len(frames)))
@@ -549,30 +628,59 @@ class SonicWSServer:
         self.handshake_packet = packet
 
     async def broadcast(self, tag, *values):
-        await self._broadcast(tag, BCInfo(type="all", recipients=list(self.connections)), self.connections, values)
+        await self._broadcast(
+            tag,
+            BCInfo(type="all", recipients=list(self.connections)),
+            self.connections,
+            values,
+        )
 
     async def broadcast_filtered(self, tag, predicate, *values):
         recipients = [c for c in tuple(self.connections) if predicate(c)]
-        await self._broadcast(tag, BCInfo(type="filter", filter=predicate, recipients=recipients), recipients, values)
+        await self._broadcast(
+            tag,
+            BCInfo(type="filter", filter=predicate, recipients=recipients),
+            recipients,
+            values,
+        )
 
     async def broadcast_tagged(self, connection_tag, packet_tag, *values):
         recipients = [c for c in tuple(self.connections) if connection_tag in c.tags]
-        await self._broadcast(packet_tag, BCInfo(type="tagged", tag=connection_tag, recipients=recipients), recipients, values)
+        await self._broadcast(
+            packet_tag,
+            BCInfo(type="tagged", tag=connection_tag, recipients=recipients),
+            recipients,
+            values,
+        )
 
     async def broadcast_room(self, room, packet_tag, *values):
         await self.broadcast_tagged(room, packet_tag, *values)
-        await self._adapter_call("publish", {
-            "origin": self.server_id, "room": room, "packetTag": packet_tag, "values": list(values)
-        })
+        await self._adapter_call(
+            "publish",
+            {
+                "origin": self.server_id,
+                "room": room,
+                "packetTag": packet_tag,
+                "values": list(values),
+            },
+        )
 
     async def broadcast_room_except(self, connection, room, packet_tag, *values):
         await self.broadcast_filtered(
-            packet_tag, lambda item: item is not connection and room in item.tags, *values
+            packet_tag,
+            lambda item: item is not connection and room in item.tags,
+            *values,
         )
-        await self._adapter_call("publish", {
-            "origin": self.server_id, "room": room, "packetTag": packet_tag,
-            "values": list(values), "exceptConnectionId": connection.id,
-        })
+        await self._adapter_call(
+            "publish",
+            {
+                "origin": self.server_id,
+                "room": room,
+                "packetTag": packet_tag,
+                "values": list(values),
+                "exceptConnectionId": connection.id,
+            },
+        )
 
     async def _broadcast(self, tag, info, recipients, values):
         if await self._middleware("onPacketBroadcast_pre", tag, info, *values):
@@ -586,7 +694,12 @@ class SonicWSServer:
         if await self._middleware("onPacketBroadcast_post", tag, info, data, len(data)):
             return
         code = self.server_packets.code(tag)
-        await asyncio.gather(*(connection.send_processed(code, data, packet) for connection in recipients))
+        await asyncio.gather(
+            *(
+                connection.send_processed(code, data, packet)
+                for connection in recipients
+            )
+        )
 
     async def broadcast_safe(self, tag, *values):
         try:
@@ -603,7 +716,9 @@ class SonicWSServer:
         if self.on_send_error:
             self.on_send_error(error, context)
         else:
-            logger.exception('Failed to send packet "%s"', context["packetTag"], exc_info=error)
+            logger.exception(
+                'Failed to send packet "%s"', context["packetTag"], exc_info=error
+            )
 
     def enable_packet(self, tag):
         self.client_packets.packet(tag).default_enabled = True

@@ -31,51 +31,65 @@ import { randomUUID } from "node:crypto";
 import type { AdapterBroadcast, SonicWSAdapter } from "./Adapter";
 import { encodeReplay, encodeResumed } from "../util/packets/ControlProtocol";
 
-const normalizeRateLimit = (limit: number): number => {
-    if (!Number.isFinite(limit) || limit < 0)
-        throw new Error("Rate limit must be a non-negative finite number.");
+function normalizeRateLimit(limit: number): number {
+    if (!Number.isFinite(limit) || limit < 0) {
+        throw new Error("Rate limit must be a non-negative finite number");
+    }
+
     limit = Math.floor(limit);
     if (limit > MAX_USHORT) {
-        console.warn(`A rate limit above ${MAX_USHORT} is considered infinite.`);
+        console.warn(`A rate limit above ${MAX_USHORT} is considered infinite`);
         return 0;
     }
+
     return limit;
-};
+}
 
 export type SonicServerSettings = {
-    /** If it should check for updates; defaults to true. */
+    /** Checks for protocol updates when enabled. Defaults to true. */
     readonly checkForUpdates?: boolean;
     /** If the rereference should use a 64 bit hash which is less prone to collision (1% after ~600 million) or a 32 bit hash. Defaults to true. */
     readonly bit64Hash?: boolean;
-    /** Automatically serves the browser client at /SonicWS/bundle.js and /SonicWS/bundle.wasm. Defaults to true. */
+    /** Serves browser assets from `/SonicWS` when enabled. Defaults to true. */
     readonly serveBrowserClient?: boolean;
-    /** Time allowed for a required application handshake packet. Defaults to 10 seconds. */
+    /** Limits a required application handshake. Defaults to 10 seconds. */
     readonly handshakeTimeoutMs?: number;
-    /** WebSocket ping interval; 0 disables it. Defaults to 30 seconds. */
+    /** Controls the WebSocket ping interval. Zero disables it. */
     readonly heartbeatIntervalMs?: number;
-    /** Time to wait for pong before terminating. Defaults to 10 seconds. */
+    /** Limits how long the server waits for pong before terminating. */
     readonly heartbeatTimeoutMs?: number;
 };
 
 /**
- * Sonic WS Server Options
+ * Configures a SonicWS server.
  */
 export type SonicServerOptions = {
-    /** An array of packets the client can send and server can listen for; using CreatePacket(), CreateObjPacket(), and CreateEnumPacket() */
+    /** Declares packets accepted from clients. */
     readonly clientPackets?: PacketTypings,
-    /** An array of packets the server can send and client can listen for; using CreatePacket(), CreateObjPacket(), and CreateEnumPacket() */
+    /** Declares packets sent to clients. */
     readonly serverPackets?: PacketTypings,
-    /** Default WS Options */
+    /** Forwards options to the underlying `ws` server. */
     readonly websocketOptions?: WS.ServerOptions;
     readonly sonicServerSettings?: SonicServerSettings;
-    readonly onSendError?: (error: unknown, context: { packetTag: string; connection?: SonicWSConnection; operation?: "broadcast" }) => void;
+    readonly onSendError?: (
+        error: unknown,
+        context: {
+            packetTag: string;
+            connection?: SonicWSConnection;
+            operation?: "broadcast";
+        },
+    ) => void;
     /** Optional cross-process adapter used for room membership and room broadcasts. */
     readonly adapter?: SonicWSAdapter;
     /** Bounded replay storage used by reconnecting clients. */
     readonly recovery?: {
         maxDisconnectionMs?: number;
         maxPackets?: number;
-        authorize?: (previousState: Record<string, unknown>, currentState: Record<string, unknown>, connection: SonicWSConnection) => boolean | Promise<boolean>;
+        authorize?: (
+            previousState: Record<string, unknown>,
+            currentState: Record<string, unknown>,
+            connection: SonicWSConnection,
+        ) => boolean | Promise<boolean>;
     };
 }
 
@@ -135,23 +149,36 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
         this.recoveryMaxDisconnectionMs = settings.recovery?.maxDisconnectionMs ?? 120_000;
         this.recoveryMaxPackets = settings.recovery?.maxPackets ?? 1_000;
         this.recoveryAuthorize = settings.recovery?.authorize;
-        if (!Number.isFinite(this.recoveryMaxDisconnectionMs) || this.recoveryMaxDisconnectionMs < 0)
+        if (!Number.isFinite(this.recoveryMaxDisconnectionMs) || this.recoveryMaxDisconnectionMs < 0) {
             throw new Error("recovery.maxDisconnectionMs must be a non-negative finite number");
-        if (!Number.isInteger(this.recoveryMaxPackets) || this.recoveryMaxPackets < 0)
+        }
+        if (!Number.isInteger(this.recoveryMaxPackets) || this.recoveryMaxPackets < 0) {
             throw new Error("recovery.maxPackets must be a non-negative integer");
+        }
+
         const handshakeTimeout = settings.sonicServerSettings?.handshakeTimeoutMs ?? 10_000;
         const heartbeatInterval = settings.sonicServerSettings?.heartbeatIntervalMs ?? 30_000;
         const heartbeatTimeout = settings.sonicServerSettings?.heartbeatTimeoutMs ?? 10_000;
-        if (!Number.isFinite(handshakeTimeout) || handshakeTimeout <= 0)
+
+        if (!Number.isFinite(handshakeTimeout) || handshakeTimeout <= 0) {
             throw new Error("handshakeTimeoutMs must be positive");
-        if (!Number.isFinite(heartbeatInterval) || heartbeatInterval < 0 || !Number.isFinite(heartbeatTimeout) || heartbeatTimeout <= 0)
+        }
+        if (
+            !Number.isFinite(heartbeatInterval)
+            || heartbeatInterval < 0
+            || !Number.isFinite(heartbeatTimeout)
+            || heartbeatTimeout <= 0
+        ) {
             throw new Error("Invalid heartbeat timing options");
+        }
  
         this.wss = new WS.WebSocketServer({ maxPayload: 8 * 1024 * 1024, ...websocketOptions });
 
         if (settings.sonicServerSettings?.serveBrowserClient ?? true) {
             const httpServer = websocketOptions.server ?? (this.wss as unknown as { _server?: HTTPServer })._server;
-            if (httpServer) this.installBrowserAssetRoutes(httpServer);
+            if (httpServer) {
+                this.installBrowserAssetRoutes(httpServer);
+            }
         }
 
         this.clientPackets = new PacketHolder(clientPackets);
@@ -160,11 +187,15 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
         Promise.resolve(this.adapter?.start?.(this.serverId, message => this.receiveAdapterBroadcast(message)))
             .catch(error => this.handleSendError(error, { packetTag: "<adapter>", operation: "broadcast" }));
 
-        const s_clientPackets = this.clientPackets.serialize();
-        const s_serverPackets = this.serverPackets.serialize();
+        const serializedClientPackets = this.clientPackets.serialize();
+        const serializedServerPackets = this.serverPackets.serialize();
 
         const serverData = [...SERVER_SUFFIX_NUMS, VERSION];
-        const keyData: number[] = [...convertVarInt(s_clientPackets.length), ...s_clientPackets, ...s_serverPackets];
+        const keyData: number[] = [
+            ...convertVarInt(serializedClientPackets.length),
+            ...serializedClientPackets,
+            ...serializedServerPackets,
+        ];
 
         setHashFunc(settings.sonicServerSettings?.bit64Hash ?? true);
 
@@ -172,75 +203,124 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
             const heartbeatIntervalMs = settings.sonicServerSettings?.heartbeatIntervalMs ?? 30_000;
             const heartbeatTimeoutMs = settings.sonicServerSettings?.heartbeatTimeoutMs ?? 10_000;
             let heartbeatTimeout: ReturnType<typeof setTimeout> | undefined;
+
             const heartbeat = heartbeatIntervalMs > 0 ? setInterval(() => {
                 if (socket.readyState !== WS.WebSocket.OPEN) return;
+
                 socket.ping();
                 if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
+
                 heartbeatTimeout = setTimeout(() => socket.terminate(), heartbeatTimeoutMs);
                 heartbeatTimeout.unref?.();
             }, heartbeatIntervalMs) : undefined;
-            heartbeat?.unref?.();
-            socket.on("pong", () => { if (heartbeatTimeout) clearTimeout(heartbeatTimeout); heartbeatTimeout = undefined; });
-            const sessionId = randomUUID();
-            const session: RecoverySession = { state: {}, rooms: new Set(), sequence: 0, frames: [], expiresAt: Infinity };
-            this.sessions.set(sessionId, session);
-            const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket, this.clientRateLimit, this.serverRateLimit, sessionId, session.state, settings.sonicServerSettings?.handshakeTimeoutMs ?? 10_000, request);
 
-            if(await this.callMiddleware("onClientConnect", sonicConnection)) {
-                sonicConnection.close(CloseCodes.MIDDLEWARE, "Connection blocked by middleware.");
-                this.callMiddleware("onClientDisconnect", sonicConnection, CloseCodes.MIDDLEWARE, Buffer.from("Connection blocked by middleware."));
+            heartbeat?.unref?.();
+            socket.on("pong", () => {
+                if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
+                heartbeatTimeout = undefined;
+            });
+
+            const sessionId = randomUUID();
+            const session: RecoverySession = {
+                state: {},
+                rooms: new Set(),
+                sequence: 0,
+                frames: [],
+                expiresAt: Infinity,
+            };
+            this.sessions.set(sessionId, session);
+
+            const sonicConnection = new SonicWSConnection(
+                socket,
+                this,
+                this.generateSocketID(),
+                this.handshakePacket,
+                this.clientRateLimit,
+                this.serverRateLimit,
+                sessionId,
+                session.state,
+                settings.sonicServerSettings?.handshakeTimeoutMs ?? 10_000,
+                request,
+            );
+
+            if (await this.callMiddleware("onClientConnect", sonicConnection)) {
+                const reason = "Connection blocked by middleware";
+                sonicConnection.close(CloseCodes.MIDDLEWARE, reason);
+                this.callMiddleware(
+                    "onClientDisconnect",
+                    sonicConnection,
+                    CloseCodes.MIDDLEWARE,
+                    Buffer.from(reason),
+                );
                 this.availableIds.push(sonicConnection.id);
                 this.sessions.delete(sessionId);
                 return;
             }
 
-            // send tags to the client so it doesn't have to hard code them in
+            // send packet definitions so the client does not hard-code numeric keys
             const encodedSession = new TextEncoder().encode(sessionId);
-            const data = new Uint8Array([...convertVarInt(sonicConnection.id), ...convertVarInt(encodedSession.length), ...encodedSession, ...keyData]);
+            const data = new Uint8Array([
+                ...convertVarInt(sonicConnection.id),
+                ...convertVarInt(encodedSession.length),
+                ...encodedSession,
+                ...keyData,
+            ]);
             socket.send([...serverData, ...deflateNative(data)]);
 
             this.connections.push(sonicConnection);
             this.connectionMap[sonicConnection.id] = sonicConnection;
-            this.connectListeners.forEach(l => l(sonicConnection));
+            this.connectListeners.forEach(listener => listener(sonicConnection));
 
             socket.on('close', (code, reason) => {
                 if (heartbeat) clearInterval(heartbeat);
                 if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
+
                 const previousRooms = new Set(this.tags.get(sonicConnection) ?? []);
                 this.connections.splice(this.connections.indexOf(sonicConnection), 1);
                 delete this.connectionMap[sonicConnection.id];
                 this.availableIds.push(sonicConnection.id);
-                if(this.tags.has(sonicConnection)) {
-                    for(const tag of this.tags.get(sonicConnection)!) this.tagsInv.get(tag)?.delete(sonicConnection);
+
+                if (this.tags.has(sonicConnection)) {
+                    for (const tag of this.tags.get(sonicConnection)!) {
+                        this.tagsInv.get(tag)?.delete(sonicConnection);
+                    }
                     this.tags.delete(sonicConnection);
                 }
+
                 Promise.resolve(this.adapter?.disconnect(sonicConnection.id)).catch(error =>
                     this.handleSendError(error, { packetTag: "<adapter>", connection: sonicConnection }));
+
                 const recovery = this.sessions.get(sonicConnection.sessionId);
                 if (recovery) {
                     recovery.rooms = previousRooms;
                     recovery.expiresAt = Date.now() + this.recoveryMaxDisconnectionMs;
                     const expiryTimer = setTimeout(() => {
                         const current = this.sessions.get(sonicConnection.sessionId);
-                        if (current === recovery && current.expiresAt <= Date.now()) this.sessions.delete(sonicConnection.sessionId);
+                        if (current === recovery && current.expiresAt <= Date.now()) {
+                            this.sessions.delete(sonicConnection.sessionId);
+                        }
                     }, this.recoveryMaxDisconnectionMs + 1);
                     expiryTimer.unref?.();
                 }
+
                 this.callMiddleware("onClientDisconnect", sonicConnection, code, reason);
             });
         });
 
-        if(settings.sonicServerSettings?.checkForUpdates ?? true) {
+        if (settings.sonicServerSettings?.checkForUpdates ?? true) {
             fetch('https://raw.githubusercontent.com/liwybloc/sonic-ws/refs/heads/main/release/version')
-                .then((res: Response) => res.text())
-                .then((ver: string) => {
-                    if(parseInt(ver) > VERSION) {
-                        console.warn(`SonicWS is currently running outdated! (current: ${VERSION}, latest: ${ver}) Update with "npm update sonic-ws"`)
+                .then((response: Response) => response.text())
+                .then((version: string) => {
+                    if (parseInt(version) > VERSION) {
+                        console.warn(
+                            `SonicWS protocol ${VERSION} is outdated, latest is ${version}. `
+                            + 'Update with "npm update sonic-ws"',
+                        );
                     }
                 })
-                .catch((err: Error) => {
-                    console.error(err);
-                    console.warn(`Could not check SonicWS version.`);
+                .catch((error: Error) => {
+                    console.error(error);
+                    console.warn("Could not check the SonicWS protocol version");
                 });
         }
     }
@@ -279,7 +359,10 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
     }
 
     private generateSocketID(): number {
-        if(this.availableIds.length == 0) this.availableIds.push(this.lastId + 1);
+        if (this.availableIds.length === 0) {
+            this.availableIds.push(this.lastId + 1);
+        }
+
         this.lastId = this.availableIds.shift()!;
         return this.lastId;
     }
@@ -304,9 +387,14 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
      * 
      * @param packet The tag of the packet to require as a handshake
      */
-    public requireHandshake(packet: string) {
-        if(!this.clientPackets.hasTag(packet)) throw new Error(`The client does not send "${packet}" and so it cannot use it as a handshake!`);
-        if(this.clientPackets.getPacket(packet).dataBatching != 0) throw new Error(`The packet "${packet}" is a batched packet, and cannot be used as a handshake!`);
+    public requireHandshake(packet: string): void {
+        if (!this.clientPackets.hasTag(packet)) {
+            throw new Error(`The client does not define "${packet}" so it cannot be used as a handshake`);
+        }
+        if (this.clientPackets.getPacket(packet).dataBatching !== 0) {
+            throw new Error(`The batched packet "${packet}" cannot be used as a handshake`);
+        }
+
         this.handshakePacket = packet;
     }
 
@@ -314,7 +402,7 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
      * Sets the rate limit for all client-side packets
      * @param limit Amount of packets the sockets can send every second, or 0 for infinite
      */
-    public setClientRateLimit(limit: number) {
+    public setClientRateLimit(limit: number): void {
         this.clientRateLimit = normalizeRateLimit(limit);
     }
 
@@ -322,7 +410,7 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
      * Sets the rate limit for server-side packets per-socket
      * @param limit Amount of packets the server can send every second, or 0 for infinite
      */
-    public setServerRateLimit(limit: number) {
+    public setServerRateLimit(limit: number): void {
         this.serverRateLimit = normalizeRateLimit(limit);
     }
 
@@ -330,7 +418,7 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
      * Enables a packet for all current & new clients.
      * @param tag The tag of the packet
      */
-    public enablePacket(tag: string) {
+    public enablePacket(tag: string): void {
         this.clientPackets.getPacket(tag).defaultEnabled = true;
         this.connections.forEach(socket => socket.enablePacket(tag));
     }
@@ -339,7 +427,7 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
      * Disables a packet for all current & new clients.
      * @param tag The tag of the packet
      */
-    public disablePacket(tag: string) {
+    public disablePacket(tag: string): void {
         this.clientPackets.getPacket(tag).defaultEnabled = false;
         this.connections.forEach(socket => socket.disablePacket(tag));
     }
@@ -389,11 +477,15 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
     public replayFrame(connection: SonicWSConnection, packetFrame: Uint8Array): Uint8Array {
         const session = this.sessions.get(connection.sessionId);
         if (!session) return packetFrame;
+
         const sequence = ++session.sequence;
         const replay = encodeReplay(sequence, packetFrame);
         session.frames.push({ sequence, data: replay });
-        if (session.frames.length > this.recoveryMaxPackets)
+
+        if (session.frames.length > this.recoveryMaxPackets) {
             session.frames.splice(0, session.frames.length - this.recoveryMaxPackets);
+        }
+
         return replay;
     }
 
@@ -407,6 +499,7 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
         const authorized = this.recoveryAuthorize
             ? await this.recoveryAuthorize(session.state, connection.state, connection)
             : session.state.userId === undefined || session.state.userId === connection.state.userId;
+
         if (!authorized) {
             connection.raw_send(encodeResumed(false, 0));
             return;
@@ -416,11 +509,20 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
         connection.state = session.state;
         session.expiresAt = Infinity;
         this.sessions.set(sessionId, session);
-        for (const room of session.rooms) this.join(connection, room);
+
+        for (const room of session.rooms) {
+            this.join(connection, room);
+        }
+
         const frames = session.frames.filter(frame => frame.sequence > lastSequence);
-        for (const frame of frames) connection.raw_send(frame.data);
+        for (const frame of frames) {
+            connection.raw_send(frame.data);
+        }
+
         connection.raw_send(encodeResumed(true, frames.length));
-        for (const listener of this.recoveredListeners) await listener(connection, frames.length);
+        for (const listener of this.recoveredListeners) {
+            await listener(connection, frames.length);
+        }
     }
 
     private async broadcastInternal(
@@ -429,9 +531,8 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
             | { type: "all" }
             | { type: "tagged"; tag: string }
             | { type: "filter"; filter: (socket: SonicWSConnection) => boolean },
-        values: any[]
+        values: any[],
     ): Promise<void> {
-
         let recipients: SonicWSConnection[];
 
         if (target.type === "all") {
@@ -443,7 +544,7 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
             recipients = this.connections.filter(target.filter);
         }
 
-        if (await this.callMiddleware("onPacketBroadcast_pre", packetTag, {recipients, ...target}, values)) return;
+        if (await this.callMiddleware("onPacketBroadcast_pre", packetTag, { recipients, ...target }, values)) return;
 
         if (recipients.length === 0) return;
 
@@ -452,30 +553,48 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
             packetTag,
             values,
             this.serverwideSendQueue,
-            -1
+            -1,
         );
 
-        if (await this.callMiddleware("onPacketBroadcast_post", packetTag, {recipients, ...target}, data, data.length)) return;
-        recipients.forEach(conn => conn.send_processed(code, data, packet));
+        if (await this.callMiddleware(
+            "onPacketBroadcast_post",
+            packetTag,
+            { recipients, ...target },
+            data,
+            data.length,
+        )) return;
+
+        recipients.forEach(connection => connection.send_processed(code, data, packet));
     }
 
     public async broadcastTagged(tag: string, packetTag: string, ...values: any): Promise<void> {
         await this.broadcastInternal(packetTag, { type: "tagged", tag }, values);
     }
 
-    /** Sends a packet to every local and adapter-connected member of a room. */
+    /** Sends a packet to every local and adapter-connected room member. */
     public async broadcastRoom(room: string, packetTag: string, ...values: any[]): Promise<void> {
         await this.broadcastInternal(packetTag, { type: "tagged", tag: room }, values);
         await this.adapter?.publish({ origin: this.serverId, room, packetTag, values });
     }
 
     /** Sends a room packet except to one connection. */
-    public async broadcastRoomExcept(connection: SonicWSConnection, room: string, packetTag: string, ...values: any[]): Promise<void> {
+    public async broadcastRoomExcept(
+        connection: SonicWSConnection,
+        room: string,
+        packetTag: string,
+        ...values: any[]
+    ): Promise<void> {
         await this.broadcastInternal(packetTag, {
             type: "filter",
             filter: socket => socket !== connection && this.tags.get(socket)?.has(room) === true,
         }, values);
-        await this.adapter?.publish({ origin: this.serverId, room, packetTag, values, exceptConnectionId: connection.id });
+        await this.adapter?.publish({
+            origin: this.serverId,
+            room,
+            packetTag,
+            values,
+            exceptConnectionId: connection.id,
+        });
     }
 
     public async broadcastFiltered(
@@ -491,15 +610,23 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
     }
 
     public async broadcastSafe(tag: string, ...values: any[]): Promise<boolean> {
-        try { await this.broadcast(tag, ...values); return true; }
-        catch (error) { this.handleSendError(error, { packetTag: tag, operation: "broadcast" }); return false; }
+        try {
+            await this.broadcast(tag, ...values);
+            return true;
+        } catch (error) {
+            this.handleSendError(error, { packetTag: tag, operation: "broadcast" });
+            return false;
+        }
     }
 
     public broadcastVariant(parent: string, variant: string, ...values: any[]): Promise<void> {
         return this.broadcast(this.serverPackets.getVariantTag(parent, variant), ...values);
     }
 
-    public handleSendError(error: unknown, context: { packetTag: string; connection?: SonicWSConnection; operation?: "broadcast" }): void {
+    public handleSendError(
+        error: unknown,
+        context: { packetTag: string; connection?: SonicWSConnection; operation?: "broadcast" },
+    ): void {
         if (this.sendErrorHandler) this.sendErrorHandler(error, context);
         else console.error(`Failed to send packet "${context.packetTag}"`, error);
     }
@@ -533,17 +660,19 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
      * @param tag The tag to add
      * @param replace If it should replace a previous tag; defaults to true. If using false, you can add multiple tags.
      */
-    public tag(socket: SonicWSConnection, tag: string, replace: boolean = true) {
-        if(!this.tags.get(socket)) this.tags.set(socket, new Set());
-        if(!this.tagsInv.get(tag)) this.tagsInv.set(tag, new Set());
-        if(replace) {
-            this.tags.get(socket)!.forEach(v => {
-                this.tagsInv.get(v)?.delete(socket);
-                Promise.resolve(this.adapter?.leave(socket.id, v)).catch(error =>
+    public tag(socket: SonicWSConnection, tag: string, replace: boolean = true): void {
+        if (!this.tags.has(socket)) this.tags.set(socket, new Set());
+        if (!this.tagsInv.has(tag)) this.tagsInv.set(tag, new Set());
+
+        if (replace) {
+            this.tags.get(socket)!.forEach(existingTag => {
+                this.tagsInv.get(existingTag)?.delete(socket);
+                Promise.resolve(this.adapter?.leave(socket.id, existingTag)).catch(error =>
                     this.handleSendError(error, { packetTag: "<adapter>", connection: socket }));
             });
             this.tags.get(socket)!.clear();
         }
+
         this.tags.get(socket)!.add(tag);
         this.tagsInv.get(tag)!.add(socket);
         Promise.resolve(this.adapter?.join(socket.id, tag)).catch(error =>
@@ -577,8 +706,11 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
      * @param port Port of the server/http, defaults to 0 which finds an open port
      * @param password Toggles the requirement of a password to access the server. Defaults to empty, which doesn't ask for a password.
      */
-    public OpenDebug(data: {port?: number, password?: string} = {}) {
-        if (this.debugServer != null) throw new Error("Attempted to open a debug server when one has already been opened.");
+    public OpenDebug(data: { port?: number; password?: string } = {}): void {
+        if (this.debugServer != null) {
+            throw new Error("A debug server is already running");
+        }
+
         this.debugServer = new DebugServer(this, data);
     }
 

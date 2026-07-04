@@ -13,7 +13,7 @@
 
 import { splitArray } from "../BufferUtil";
 
-// JSON remains a TypeScript-only compatibility codec. These helpers are kept
+// json remains a TypeScript-only compatibility codec and these helpers are kept
 // private here so the shared compression utility only contains schema framing.
 const compressBools = (values: boolean[]) => values.reduce((byte, value, index) => byte | (Number(value) << (7 - index)), 0);
 const decompressBools = (byte: number) => Array.from({ length: 8 }, (_, index) => (byte & (1 << (7 - index))) !== 0);

@@ -91,11 +91,14 @@ export interface IConnection<T> extends IMiddlewareHolder<ConnectionMiddleware> 
 
 }
 
-export abstract class Connection<T extends {
-    readyState: number,
-    send: (u: Uint8Array) => void,
-    close: (c: number, d: string | undefined) => void,
-}, K> extends MiddlewareHolder<ConnectionMiddleware> implements IConnection<K> {
+export abstract class Connection<
+    T extends {
+        readyState: number;
+        send: (data: Uint8Array) => void;
+        close: (code: number, reason: string | undefined) => void;
+    },
+    K,
+> extends MiddlewareHolder<ConnectionMiddleware> implements IConnection<K> {
 
     protected listeners: Record<string, Array<(...data: any[]) => void>>;
     private rawSendListeners: Array<(data: Uint8Array) => void> = [];
@@ -133,9 +136,10 @@ export abstract class Connection<T extends {
         this._on("close", () => {
             this.callMiddleware('onStatusChange', WebSocket.CLOSED);
             this.closed = true;
-            for(const [id, callback, shouldCall] of Object.values(this._timers)) {
+
+            for (const [id, callback, shouldCall] of Object.values(this._timers)) {
                 this.clearTimeout(id);
-                if(shouldCall) callback(true);
+                if (shouldCall) callback(true);
             }
         });
 
@@ -148,10 +152,12 @@ export abstract class Connection<T extends {
         this._on = addListener;
         this._off = removeListener;
         this.closed = false;
+
         this._on("close", () => {
             this.callMiddleware('onStatusChange', WebSocket.CLOSED);
             this.closed = true;
         });
+
         this._on('open', () => this.callMiddleware('onStatusChange', WebSocket.OPEN));
     }
 
@@ -160,6 +166,7 @@ export abstract class Connection<T extends {
             call();
             this.clearTimeout(timeout);
         }, time) as unknown as number;
+
         this._timers[timeout] = [timeout, call, callOnClose];
         return timeout;
     }
@@ -184,8 +191,12 @@ export abstract class Connection<T extends {
             this.close(CloseCodes.BACKPRESSURE, "Outbound buffer exceeded the configured limit");
             throw new Error("SonicWS outbound backpressure limit exceeded");
         }
+
         this.socket.send(data);
-        for (const listener of this.rawSendListeners) listener(data);
+
+        for (const listener of this.rawSendListeners) {
+            listener(data);
+        }
     }
 
     /** Bytes currently queued by the underlying transport. */
@@ -198,13 +209,24 @@ export abstract class Connection<T extends {
     public setBackpressureLimits(options: { volatileAtBytes?: number; closeAtBytes?: number }): void {
         const volatile = options.volatileAtBytes ?? this.volatileAtBytes;
         const close = options.closeAtBytes ?? this.closeAtBytes;
-        if (!Number.isFinite(volatile) || !Number.isFinite(close) || volatile < 0 || close <= 0 || volatile > close)
+
+        if (
+            !Number.isFinite(volatile)
+            || !Number.isFinite(close)
+            || volatile < 0
+            || close <= 0
+            || volatile > close
+        ) {
             throw new Error("Invalid SonicWS backpressure limits");
+        }
+
         this.volatileAtBytes = volatile;
         this.closeAtBytes = close;
     }
 
-    protected canSendVolatile(): boolean { return this.getBufferedAmount() < this.volatileAtBytes; }
+    protected canSendVolatile(): boolean {
+        return this.getBufferedAmount() < this.volatileAtBytes;
+    }
 
     public raw_onmessage(listener: (data: K) => void): void {
         this._on("message", listener);
@@ -220,11 +242,11 @@ export abstract class Connection<T extends {
     }
 
     public isClosed(): boolean {
-        return this.closed || this.socket.readyState == WebSocket.CLOSED;
+        return this.closed || this.socket.readyState === WebSocket.CLOSED;
     }
 
     public async setName(name: string): Promise<void> {
-        if(await this.callMiddleware("onNameChange", name)) return;
+        if (await this.callMiddleware("onNameChange", name)) return;
         this.name = name;
     }
 

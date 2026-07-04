@@ -62,6 +62,9 @@ export enum PacketType {
     /** TypeScript-side JSONUtil codec carried as opaque RAW bytes through reserved wire type 16. */
     JSON = 16,
 
-    /** Hex bytes, e.g. 0xFFFFFF - the result will always be returned in lowercase. This can only hold 1 hex string, since it's the same as UBYTES but auto-parses. */
+    /**
+     * Hex bytes returned in lowercase.
+     * This carries one string and behaves like automatically parsed UBYTES.
+     */
     HEX = 17,
 }

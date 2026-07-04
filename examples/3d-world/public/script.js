@@ -1,5 +1,10 @@
 import * as THREE from "/vendor/three/three.module.js";
 
+const EYE_HEIGHT = 1.7;
+const CAPSULE_RADIUS = 0.45;
+const CAPSULE_LENGTH = 1.1;
+const CAPSULE_CENTER_Y = CAPSULE_LENGTH / 2 + CAPSULE_RADIUS;
+
 const ws = await SonicWS.connect(`ws://${location.host}`, {
 	reconnect: {
 		enabled: true,
@@ -24,7 +29,7 @@ ground.rotation.x = -Math.PI / 2;
 scene.add(ground, new THREE.GridHelper(200, 200));
 
 const player = {
-	position: new THREE.Vector3(0, 1.7, 5),
+	position: new THREE.Vector3(0, 0, 5),
 	pitch: 0,
 	yaw: 0
 };
@@ -61,11 +66,24 @@ function upsert(data, snap = false) {
 	document.querySelector("#entities").textContent = entities.size;
 }
 
+const sent = {
+	position: player.position.clone(),
+	pitch: 0,
+	yaw: 0,
+	still: 0
+};
+
 ws.on("selfEntity", data => {
 	selfId = data.id;
+
 	player.position.set(data.x, data.y, data.z);
 	player.pitch = data.pitch;
 	player.yaw = data.yaw;
+
+	sent.position.copy(player.position);
+	sent.pitch = player.pitch;
+	sent.yaw = player.yaw;
+	sent.still = Date.now();
 });
 ws.on("entitySnapshot", snapshot => {
 	const ids = new Set(snapshot.map(value => value.id));
@@ -89,12 +107,6 @@ ws.on("entity.remove", ({
 ws.on("pointsInfo", value => document.querySelector("#points").textContent = value);
 document.querySelector("#click").onclick = () => ws.sendReliable("click");
 
-const sent = {
-	position: player.position.clone(),
-	pitch: 0,
-	yaw: 0,
-	still: 0
-};
 setInterval(() => {
 	const delta = player.position.clone().sub(sent.position);
 	const dPitch = player.pitch - sent.pitch,
@@ -102,14 +114,27 @@ setInterval(() => {
 	const moved = delta.lengthSq() > 0,
 		looked = dPitch !== 0 || dYaw !== 0;
 	if (moved || looked) {
-		const value = {
+		const moveValue = {
 			dx: delta.x,
 			dy: delta.y,
-			dz: delta.z,
+			dz: delta.z
+		};
+
+		const lookValue = {
 			dPitch,
 			dYaw
 		};
-		ws.sendVolatile(`movement.${moved && looked ? "both" : moved ? "move" : "look"}`, value);
+
+		if (moved && looked) {
+			ws.sendVolatile("movement.both", {
+				...moveValue,
+				...lookValue
+			});
+		} else if (moved) {
+			ws.sendVolatile("movement.move", moveValue);
+		} else if (looked) {
+			ws.sendVolatile("movement.look", lookValue);
+		}
 		sent.position.copy(player.position);
 		sent.pitch = player.pitch;
 		sent.yaw = player.yaw;
@@ -129,9 +154,13 @@ function frame(now) {
 	if (movement.lengthSq()) movement.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw).multiplyScalar((keys.has("ShiftLeft") ? 12 : 7) * dt);
 	player.position.add(movement);
 	camera.position.copy(player.position);
+	camera.position.y += EYE_HEIGHT;
 	camera.rotation.set(player.pitch, player.yaw, 0, "YXZ");
 	for (const entity of entities.values()) {
-		entity.mesh.position.lerp(entity.target, 1 - Math.pow(.0001, dt));
+		const visualTarget = entity.target.clone();
+		visualTarget.y += CAPSULE_CENTER_Y;
+
+		entity.mesh.position.lerp(visualTarget, 1 - Math.pow(.0001, dt));
 		entity.mesh.rotation.y = entity.yaw;
 	}
 	renderer.render(scene, camera);
