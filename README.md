@@ -74,7 +74,7 @@ Whether you're making a real-time game, a dashboard, a distributed system, or an
 
 You define the packets each side is allowed to send. SonicWS exchanges that schema during the connection handshake, assigns compact numeric packet IDs, and validates incoming data before calling your listeners.
 
-The TypeScript/python layer handles connections, packet definitions, middleware, and the public API. The Rust core handles the wire format:
+The TypeScript, Python, and native Rust packages handle connections, packet definitions, and their language-specific public APIs. The shared Rust core handles the wire format:
 
 - Primitive and object packet encoding/decoding
 - Packet validation and range checks
@@ -82,7 +82,7 @@ The TypeScript/python layer handles connections, packet definitions, middleware,
 - Object framing, batching, and raw DEFLATE compression
 - TypeScript/Python-side JSON conversion transported through reserved wire type 16 as raw bytes
 
-The same Rust implementation runs through WASM in Node, browsers, and Python. Python loads its packaged WASM core through `wasmtime`, while Node uses the packaged Node-target module. Protocol behavior therefore does not depend on the operating system or connected runtime.
+Node and browsers run the core through WebAssembly, and Python loads its packaged WASM core through `wasmtime`. The native Rust package links the core directly and adds a Tokio WebSocket client/server runtime. Protocol behavior therefore comes from the same codec on every supported runtime.
 
 Automatic browser-file serving at `/SonicWS/bundle.js` and
 `/SonicWS/bundle.wasm` is supported only by the Node.js server, where it can be
@@ -109,6 +109,10 @@ Python* (*unpublished currently):
 ```sh
 pip install sonic-ws
 ```
+Rust:
+```toml
+sonic-ws = { path = "projects/rust" }
+```
 
 ## BUILDING AND TESTING
 
@@ -118,7 +122,8 @@ From the repository root, use the build dispatcher:
 
 ```sh
 ./build.sh all       # Build every project
-./build.sh rust      # Rust core only
+./build.sh rust      # Shared core and native Rust runtime
+./build.sh core      # Shared codec core only
 ./build.sh ts        # Complete Node/browser package
 ./build.sh py        # Python wheel and sdist
 ./build.sh test      # Run all test suites
@@ -137,7 +142,7 @@ npm run test_node   # Node end-to-end packet tests
 npm run test_web    # Headless browser/WASM end-to-end tests
 ```
 
-The workspace is split into `projects/core`, `projects/ts`, and `projects/py`.
+The workspace is split into `projects/core`, `projects/rust`, `projects/ts`, and `projects/py`.
 Each project owns its source, tests, and packaging configuration. Shared browser
 artifacts remain at `bundled/bundle.js` and `bundled/bundle.wasm`.
 
@@ -151,6 +156,7 @@ Full API documentation:
 
 - [TypeScript / Node / browser](docs/ts/README.md)
 - [Python](docs/py/README.md)
+- [Native Rust](projects/rust/README.md)
 - [Protocol version 24](docs/protocol.md)
 - [Production defaults](docs/defaults.md)
 - [Authentication and recovery](docs/authentication.md)

@@ -1,0 +1,24 @@
+[package]
+name = "sonic-ws"
+version = "2.3.0"
+edition = "2024"
+description = "Native Rust client and server runtime for the SonicWS protocol"
+license-file = "../../LICENSE"
+repository = "https://github.com/liwybloc/sonic-ws"
+readme = "README.md"
+keywords = ["websocket", "binary", "networking", "wasm", "protocol"]
+categories = ["network-programming", "web-programming::websocket"]
+
+[dependencies]
+sonic-ws-core = { path = "../core", version = "0.1.0" }
+flate2 = "1"
+futures-util = { version = "=0.3.31", features = ["sink"] }
+serde = { version = "=1.0.218", features = ["derive"] }
+serde_json = { version = "=1.0.139", features = ["preserve_order"] }
+thiserror = "=2.0.11"
+tokio = { version = "=1.43.0", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-tungstenite = "=0.20.1"
+uuid = { version = "=1.23.1", features = ["v4"] }
+
+[dev-dependencies]
+tokio = { version = "=1.43.0", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }

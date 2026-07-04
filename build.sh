@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CORE="$ROOT/projects/core"
+RUST="$ROOT/projects/rust"
 TS="$ROOT/projects/ts"
 PY="$ROOT/projects/py"
 
@@ -13,7 +14,9 @@ Usage: ./build.sh <command>
 
 Build commands:
   all          Build Rust, TypeScript/Node/browser, and Python artifacts
-  rust         Build the Rust core in release mode
+  rust         Build the Rust codec core and native Rust runtime
+  core         Build only the shared Rust codec core
+  rust-runtime Build only the native Rust client/server package
   ts           Build the complete TypeScript package and browser bundle
   node         Build the Node distribution and Node WASM fallback
   web          Build the browser JavaScript and WASM bundle
@@ -35,8 +38,17 @@ Test and packaging commands:
 EOF
 }
 
-build_rust() {
+build_core() {
     cargo build --release --manifest-path "$CORE/Cargo.toml"
+}
+
+build_rust_runtime() {
+    cargo build --release --manifest-path "$RUST/Cargo.toml"
+}
+
+build_rust() {
+    build_core
+    build_rust_runtime
 }
 
 build_ts() {
@@ -65,6 +77,7 @@ build_python_sdist() {
 
 test_rust() {
     cargo test --manifest-path "$CORE/Cargo.toml"
+    cargo test --manifest-path "$RUST/Cargo.toml"
 }
 
 test_node() {
@@ -94,6 +107,7 @@ test_conformance() {
 
 static_checks() {
     cargo check --manifest-path "$CORE/Cargo.toml"
+    cargo check --manifest-path "$RUST/Cargo.toml"
     (cd "$TS" && npx tsc --noEmit)
     python3 -m compileall -q "$PY/src" "$PY/tests"
 }
@@ -106,8 +120,14 @@ case "$command" in
         build_ts
         build_python
         ;;
-    rust|core)
+    rust)
         build_rust
+        ;;
+    core)
+        build_core
+        ;;
+    rust-runtime)
+        build_rust_runtime
         ;;
     ts)
         build_ts
