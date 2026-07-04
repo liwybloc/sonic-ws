@@ -78,7 +78,11 @@ export async function processPacket(
             }
         }
 
-        const sendData = values.length > 0 ? await packet.processSend(values)! : EMPTY_UINT8;
+        let sendData: Uint8Array = EMPTY_UINT8;
+        if (values.length > 0) {
+            const encoded = packet.processSend(values);
+            sendData = encoded instanceof Promise ? await encoded : encoded;
+        }
         return [code, sendData, packet];
     });
 }

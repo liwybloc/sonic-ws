@@ -49,6 +49,12 @@ export type SonicServerSettings = {
     readonly bit64Hash?: boolean;
     /** Automatically serves the browser client at /SonicWS/bundle.js and /SonicWS/bundle.wasm. Defaults to true. */
     readonly serveBrowserClient?: boolean;
+    /** Time allowed for a required application handshake packet. Defaults to 10 seconds. */
+    readonly handshakeTimeoutMs?: number;
+    /** WebSocket ping interval; 0 disables it. Defaults to 30 seconds. */
+    readonly heartbeatIntervalMs?: number;
+    /** Time to wait for pong before terminating. Defaults to 10 seconds. */
+    readonly heartbeatTimeoutMs?: number;
 };
 
 /**
@@ -66,7 +72,11 @@ export type SonicServerOptions = {
     /** Optional cross-process adapter used for room membership and room broadcasts. */
     readonly adapter?: SonicWSAdapter;
     /** Bounded replay storage used by reconnecting clients. */
-    readonly recovery?: { maxDisconnectionMs?: number; maxPackets?: number };
+    readonly recovery?: {
+        maxDisconnectionMs?: number;
+        maxPackets?: number;
+        authorize?: (previousState: Record<string, unknown>, currentState: Record<string, unknown>, connection: SonicWSConnection) => boolean | Promise<boolean>;
+    };
 }
 
 type RecoverySession = {
@@ -109,6 +119,7 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
     private readonly sessions = new Map<string, RecoverySession>();
     private readonly recoveryMaxDisconnectionMs: number;
     private readonly recoveryMaxPackets: number;
+    private readonly recoveryAuthorize?: NonNullable<SonicServerOptions["recovery"]>["authorize"];
 
     /**
      * Initializes and hosts a websocket with sonic protocol
@@ -123,12 +134,20 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
         this.adapter = settings.adapter;
         this.recoveryMaxDisconnectionMs = settings.recovery?.maxDisconnectionMs ?? 120_000;
         this.recoveryMaxPackets = settings.recovery?.maxPackets ?? 1_000;
+        this.recoveryAuthorize = settings.recovery?.authorize;
         if (!Number.isFinite(this.recoveryMaxDisconnectionMs) || this.recoveryMaxDisconnectionMs < 0)
             throw new Error("recovery.maxDisconnectionMs must be a non-negative finite number");
         if (!Number.isInteger(this.recoveryMaxPackets) || this.recoveryMaxPackets < 0)
             throw new Error("recovery.maxPackets must be a non-negative integer");
+        const handshakeTimeout = settings.sonicServerSettings?.handshakeTimeoutMs ?? 10_000;
+        const heartbeatInterval = settings.sonicServerSettings?.heartbeatIntervalMs ?? 30_000;
+        const heartbeatTimeout = settings.sonicServerSettings?.heartbeatTimeoutMs ?? 10_000;
+        if (!Number.isFinite(handshakeTimeout) || handshakeTimeout <= 0)
+            throw new Error("handshakeTimeoutMs must be positive");
+        if (!Number.isFinite(heartbeatInterval) || heartbeatInterval < 0 || !Number.isFinite(heartbeatTimeout) || heartbeatTimeout <= 0)
+            throw new Error("Invalid heartbeat timing options");
  
-        this.wss = new WS.WebSocketServer(websocketOptions);
+        this.wss = new WS.WebSocketServer({ maxPayload: 8 * 1024 * 1024, ...websocketOptions });
 
         if (settings.sonicServerSettings?.serveBrowserClient ?? true) {
             const httpServer = websocketOptions.server ?? (this.wss as unknown as { _server?: HTTPServer })._server;
@@ -149,11 +168,23 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
 
         setHashFunc(settings.sonicServerSettings?.bit64Hash ?? true);
 
-        this.wss.on('connection', async (socket) => {
+        this.wss.on('connection', async (socket, request) => {
+            const heartbeatIntervalMs = settings.sonicServerSettings?.heartbeatIntervalMs ?? 30_000;
+            const heartbeatTimeoutMs = settings.sonicServerSettings?.heartbeatTimeoutMs ?? 10_000;
+            let heartbeatTimeout: ReturnType<typeof setTimeout> | undefined;
+            const heartbeat = heartbeatIntervalMs > 0 ? setInterval(() => {
+                if (socket.readyState !== WS.WebSocket.OPEN) return;
+                socket.ping();
+                if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
+                heartbeatTimeout = setTimeout(() => socket.terminate(), heartbeatTimeoutMs);
+                heartbeatTimeout.unref?.();
+            }, heartbeatIntervalMs) : undefined;
+            heartbeat?.unref?.();
+            socket.on("pong", () => { if (heartbeatTimeout) clearTimeout(heartbeatTimeout); heartbeatTimeout = undefined; });
             const sessionId = randomUUID();
             const session: RecoverySession = { state: {}, rooms: new Set(), sequence: 0, frames: [], expiresAt: Infinity };
             this.sessions.set(sessionId, session);
-            const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket, this.clientRateLimit, this.serverRateLimit, sessionId, session.state);
+            const sonicConnection = new SonicWSConnection(socket, this, this.generateSocketID(), this.handshakePacket, this.clientRateLimit, this.serverRateLimit, sessionId, session.state, settings.sonicServerSettings?.handshakeTimeoutMs ?? 10_000, request);
 
             if(await this.callMiddleware("onClientConnect", sonicConnection)) {
                 sonicConnection.close(CloseCodes.MIDDLEWARE, "Connection blocked by middleware.");
@@ -173,6 +204,8 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
             this.connectListeners.forEach(l => l(sonicConnection));
 
             socket.on('close', (code, reason) => {
+                if (heartbeat) clearInterval(heartbeat);
+                if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
                 const previousRooms = new Set(this.tags.get(sonicConnection) ?? []);
                 this.connections.splice(this.connections.indexOf(sonicConnection), 1);
                 delete this.connectionMap[sonicConnection.id];
@@ -368,6 +401,13 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
     public async resumeSession(connection: SonicWSConnection, sessionId: string, lastSequence: number): Promise<void> {
         const session = this.sessions.get(sessionId);
         if (!session || session.expiresAt < Date.now()) {
+            connection.raw_send(encodeResumed(false, 0));
+            return;
+        }
+        const authorized = this.recoveryAuthorize
+            ? await this.recoveryAuthorize(session.state, connection.state, connection)
+            : session.state.userId === undefined || session.state.userId === connection.state.userId;
+        if (!authorized) {
             connection.raw_send(encodeResumed(false, 0));
             return;
         }

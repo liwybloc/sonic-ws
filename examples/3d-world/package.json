@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "express": "^5.1.0",
+    "sonic-ws": "^2.2.0",
+    "three": "^0.185.1"
+  }
+}

@@ -144,6 +144,7 @@ projects/ts/src/native/wasm/pkg/
 
 # Python bytecode and caches
 __pycache__/
+benchmarks/results/
 *.py[cod]
 *$py.class
 .pytest_cache/

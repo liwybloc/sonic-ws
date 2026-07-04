@@ -11,6 +11,8 @@
 - `checkForUpdates` (default true)
 - `bit64Hash` (default true) for rereference hashes
 - `serveBrowserClient` (default true) to install `/SonicWS/bundle.js` and `/SonicWS/bundle.wasm` routes when an HTTP server is available
+- `handshakeTimeoutMs` (default 10,000) for a required application handshake
+- `heartbeatIntervalMs` / `heartbeatTimeoutMs` (defaults 30,000 / 10,000); set interval to zero to disable
 
 ## Server methods
 
@@ -29,10 +31,10 @@
 
 ## `SonicWSConnection`
 
-Server connection methods include `on`, `send`, `sendSafe`, `sendVariant`, `request`, `respond`, `broadcast` (all other users), `broadcastFiltered`, `broadcastRoom`, `join`, `leave`, `getRooms`, packet controls, lifecycle/raw methods, middleware, and `togglePrint`. `handshakeComplete` reports required-handshake state; `id` is unique among currently connected sockets. `state` is restored when connection-state recovery succeeds.
+Server connection methods include `on`, `send`, `sendSafe`, `sendVolatile`, `sendReliable`, `sendVariant`, `request`, `respond`, `broadcast` (all other users), `broadcastFiltered`, `broadcastRoom`, `join`, `leave`, `getRooms`, packet controls, lifecycle/raw methods, middleware, and `togglePrint`. `upgradeRequest` exposes authentication headers and cookies. `handshakeComplete` reports required-handshake state; `id` is unique among currently connected sockets. `state` is restored when connection-state recovery succeeds.
 
 ## Scaling adapters
 
 An adapter implements `start(serverId, receiver)`, `publish(message)`, `join(connectionId, room)`, `leave`, `disconnect`, and optional `close`. SonicWS handles local membership and calls the adapter for cross-process room events. Adapter messages carry `{ origin, room, packetTag, values, exceptConnectionId? }`; implementations must transport these values safely and should not echo messages back to their origin.
 
-Close codes 4000–4008 represent rate limit, undersized input, invalid key, invalid packet, invalid data, repeated handshake, disabled packet, middleware rejection, and manual shutdown. `getClosureCause(code)` converts known standard/private codes to names.
+Close codes 4000–4009 represent rate limit, undersized input, invalid key, invalid packet, invalid data, repeated handshake, disabled packet, middleware rejection, manual shutdown, and backpressure. `getClosureCause(code)` converts known standard/private codes to names.

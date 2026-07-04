@@ -50,10 +50,16 @@ class SonicWS(Connection):
         self._pending_resume_session = None
 
     @classmethod
-    async def connect(cls, url, reconnect=None, **kwargs):
+    async def connect(cls, url, reconnect=None, ready_timeout=10.0, ready_timeout_ms=None, **kwargs):
+        if ready_timeout_ms is not None:
+            ready_timeout = ready_timeout_ms / 1000
         self = cls(await connect(url, **kwargs), url=url, connect_options=kwargs, reconnect=reconnect)
         self._reader = asyncio.create_task(self._run())
-        await self._ready
+        try:
+            await asyncio.wait_for(asyncio.shield(self._ready), ready_timeout)
+        except asyncio.TimeoutError as error:
+            await self.close(4004, "SonicWS schema handshake timed out")
+            raise TimeoutError("SonicWS schema handshake timed out") from error
         return self
 
     async def _run(self):
@@ -219,7 +225,11 @@ class SonicWS(Connection):
         self._responders[self.server_packets.resolve(tag)] = handler
 
     async def _handle_control(self, raw):
-        message = decode_control(raw)
+        try:
+            message = decode_control(raw)
+        except ValueError:
+            await self.close(4004, "malformed SonicWS control frame")
+            return
         if message[0] == REPLAY:
             _, sequence, payload = message
             if sequence <= self.last_replay_sequence:
@@ -281,6 +291,15 @@ class SonicWS(Connection):
             logging.getLogger(__name__).exception('Failed to send packet "%s"', tag)
             return False
 
+    async def send_volatile(self, tag, *values):
+        if not self.can_send_volatile():
+            return False
+        await self.send(tag, *values)
+        return True
+
+    async def send_reliable(self, tag, *values):
+        await self.send(tag, *values)
+
     async def wait_ready(self):
         await self._ready
 
@@ -316,6 +335,8 @@ class SonicWS(Connection):
     waitReady = wait_ready
     sendVariant = send_variant
     sendSafe = send_safe
+    sendVolatile = send_volatile
+    sendReliable = send_reliable
     onReconnecting = on_reconnecting
     onReconnect = on_reconnect
     onReconnectFailed = on_reconnect_failed

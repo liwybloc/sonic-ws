@@ -1,6 +1,6 @@
 import unittest
 
-from sonic_ws import PacketType, CreatePacket, CreateObjPacket, CreatePacketGroup, CreatePacketManifest, LoadPacketManifest
+from sonic_ws import PacketType, CreatePacket, CreateObjPacket, CreatePacketGroup, CreatePacketManifest, LoadPacketManifest, ValidatePacketSchema, AssertPacketSchema
 
 
 class FeatureTests(unittest.TestCase):
@@ -80,6 +80,9 @@ class FeatureTests(unittest.TestCase):
         manifest = LoadPacketManifest(CreatePacketManifest(client_packets=[packet], server_packets=[group[2]]))
         self.assertEqual([value.tag for value in manifest["client_packets"]], ["m"])
         self.assertEqual([value.tag for value in manifest["server_packets"]], ["movement.move"])
+        self.assertFalse(ValidatePacketSchema([packet])["errors"])
+        with self.assertRaisesRegex(ValueError, "duplicate packet tag"):
+            AssertPacketSchema([packet, packet])
 
 
 if __name__ == "__main__":

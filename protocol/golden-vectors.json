@@ -1,0 +1,36 @@
+{
+  "protocolVersion": 24,
+  "vectors": [
+    { "name": "bytes.boundaries", "type": "BYTES", "values": [-128, -1, 0, 1, 127], "hex": "ff010002fe" },
+    { "name": "ubytes.boundaries", "type": "UBYTES", "values": [0, 1, 254, 255], "hex": "0001feff" },
+    { "name": "shorts.boundaries", "type": "SHORTS", "values": [-32768, -1, 0, 1, 32767], "hex": "ffff000100000002fffe" },
+    { "name": "ushorts.boundaries", "type": "USHORTS", "values": [0, 1, 65534, 65535], "hex": "00000001fffeffff" },
+    { "name": "varint.i32", "type": "VARINT", "values": [-2147483648, -1, 0, 1, 2147483647], "hex": "ffffffff0f010002feffffff0f" },
+    { "name": "uvarint.u32", "type": "UVARINT", "values": [0, 1, 127, 128, 255, 16384, 4294967295], "hex": "00017f8001ff01808001ffffffff0f" },
+    { "name": "deltas.sequence", "type": "DELTAS", "values": [-50, -25, 1, 2, 1000, 1004, 1004, -5], "hex": "63323402cc0f0800e10f" },
+    { "name": "ascii.mixed", "type": "STRINGS_ASCII", "values": ["hello world", "SonicWS", ""], "hex": "030b070095523469e01067c98d1d4cf9b3a29e52" },
+    { "name": "utf16.astral", "type": "STRINGS_UTF16", "values": ["another😂", "𐍈", "𝄞", "🧪"], "hex": "08616e6f7468657282ec0701c88604019ea20701eaf307" },
+    { "name": "booleans.partial", "type": "BOOLEANS", "values": [true, false, true, false, true, false, true, false, true], "hex": "aa80" },
+    { "name": "hex.identity", "type": "HEX", "values": ["00abff"], "hex": "00abff" },
+    {
+      "name": "movement.quantized",
+      "type": "VARINT",
+      "schema": ["dx", "dy", "dz"],
+      "quantized": { "scale": 1000, "trackError": false },
+      "values": { "dx": 0.125, "dy": 0, "dz": -0.25 },
+      "hex": "fa0100f303"
+    },
+    {
+      "name": "snapshot.row-major",
+      "type": "VARINT",
+      "schema": ["id", "type", "x", "y", "z", "pitch", "yaw"],
+      "autoFlatten": true,
+      "quantized": { "scale": 1000, "trackError": false },
+      "values": [
+        { "id": 1, "type": 0, "x": 1.25, "y": 1.7, "z": -2.5, "pitch": 0, "yaw": 0.5 },
+        { "id": 2, "type": 0, "x": 2.5, "y": 1.7, "z": -5, "pitch": 0.1, "yaw": 1 }
+      ],
+      "hex": "d00f00c413c81a872700e807a01f008827c81a8f4ec801d00f"
+    }
+  ]
+}

@@ -19,7 +19,7 @@ import { SERVER_SUFFIX, VERSION } from "../../../version";
 import { Packet } from "../../packets/Packets";
 import { BatchHelper } from "../../util/packets/BatchHelper";
 import { toPacketBuffer } from "../../util/BufferUtil";
-import { Connection } from "../../Connection";
+import { CloseCodes, Connection } from "../../Connection";
 import { AsyncPQ, ClientPQ, PacketQueue, SendQueue } from "../../PacketProcessor";
 import { as8String } from "../../util/StringUtil";
 import { ControlType, decodeControl, encodeControlRequest, encodeControlResponse, encodeResume } from "../../util/packets/ControlProtocol";
@@ -71,6 +71,8 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
     private lastReplaySequence = 0;
     private recoveredListeners: Array<(event: { recovered: boolean; replayed: number }) => void> = [];
     private pendingResumeSession?: string;
+    private handshakeTimeoutMs = 10_000;
+    private handshakeTimer?: ReturnType<typeof setTimeout>;
 
     constructor(ws: T, bufferHandler: (val: K) => Promise<Uint8Array>, on: Function, off: Function) {
         super(ws, -1, "LocalSocket", on, off);
@@ -83,8 +85,22 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
         this.messageHandler = this.messageHandler.bind(this);
 
         this.attachClientTransport();
+        this.armHandshakeTimeout();
 
         this.bufferHandler = bufferHandler;
+    }
+
+    protected configureHandshakeTimeout(milliseconds: number): void {
+        if (!Number.isFinite(milliseconds) || milliseconds <= 0) throw new Error("Handshake timeout must be positive");
+        this.handshakeTimeoutMs = milliseconds;
+        this.armHandshakeTimeout();
+    }
+
+    private armHandshakeTimeout(): void {
+        if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
+        this.handshakeTimer = setTimeout(() => {
+            if (!this.pastKeys) this.socket.close(CloseCodes.INVALID_DATA, "SonicWS schema handshake timed out");
+        }, this.handshakeTimeoutMs);
     }
 
     protected configureReconnect(factory: () => TransportBinding<T, K>, options: ReconnectOptions = {}): void {
@@ -154,6 +170,7 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
             this.batcher = new BatchHelper();
             this.replaceTransport(binding.socket, binding.on, binding.off);
             this.attachClientTransport();
+            this.armHandshakeTimeout();
         } catch {
             this.scheduleReconnect();
         }
@@ -210,6 +227,7 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
         this.preListen = null; // clear
 
         this.pastKeys = true;
+        if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
 
         if (this.connectedOnce) {
             this.reconnectAttempt = 0;
@@ -241,6 +259,10 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
     private packetQueue: PacketQueue<ClientPQ> = [];
     
     public async listenPacket(data: string | [any[], boolean], tag: string, packetQueue: PacketQueue<ClientPQ>, isAsync: boolean, asyncData: AsyncPQ<ClientPQ>): Promise<void> {
+        if (this.closed) {
+            await this.triggerNextPacket(packetQueue, isAsync, asyncData);
+            return;
+        }
         const listeners = this.listeners[tag];
         const packet = this.serverPackets.getPacket(tag);
         const parentListeners = packet.parent ? this.listeners[packet.parent] : undefined;
@@ -338,7 +360,9 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
     }
 
     private async handleControl(data: Uint8Array): Promise<void> {
-        const message = decodeControl(data);
+        let message;
+        try { message = decodeControl(data); }
+        catch { this.close(CloseCodes.INVALID_DATA, "Malformed SonicWS control frame"); return; }
         if (message.type === ControlType.REPLAY) {
             if (message.sequence <= this.lastReplaySequence) return;
             this.lastReplaySequence = message.sequence;
@@ -448,6 +472,15 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
         try { await this.send(tag, ...values); return true; }
         catch (error) { console.error(`Failed to send packet "${tag}"`, error); return false; }
     }
+
+    /** Drops this update before encoding when the transport is backpressured. */
+    public async sendVolatile(tag: string, ...values: any[]): Promise<boolean> {
+        if (!this.canSendVolatile()) return false;
+        await this.send(tag, ...values);
+        return true;
+    }
+
+    public sendReliable(tag: string, ...values: any[]): Promise<void> { return this.send(tag, ...values); }
 
     /**
      * Listens for when the client connects

@@ -10,7 +10,7 @@
 # License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
 
 import asyncio
-from sonic_ws import CreatePacket, PacketType, SonicWS, SonicWSServer
+from sonic_ws import CreatePacket, PacketType, SonicWS, SonicWSServer, PacketLogger
 
 
 async def main():
@@ -79,6 +79,8 @@ async def main():
     )
 
     print("Client connected")
+    packet_logs = []
+    client.add_middleware(PacketLogger(logger=packet_logs.append))
 
     client_values = []
 
@@ -111,6 +113,7 @@ async def main():
     print(f"Server received all values: {server_values}")
 
     connection = server.connections[0]
+    connection.add_middleware(PacketLogger(logger=packet_logs.append))
     connection.state["player"] = {"id": 7}
     connection.respond("point", lambda value: {"sum": value["x"] + value["y"]})
     client.respond("point", lambda value: {"sum": value["x"] + value["y"]})
@@ -139,6 +142,10 @@ async def main():
     assert replacement.state["player"] == {"id": 7}
     assert "world:one" in replacement.tags
     connection = replacement
+    assert client.can_send_volatile()
+    client.set_backpressure_limits(volatile_at_bytes=0, close_at_bytes=16 * 1024 * 1024)
+    assert not client.can_send_volatile()
+    client.set_backpressure_limits(volatile_at_bytes=1024 * 1024, close_at_bytes=16 * 1024 * 1024)
 
     print("Server sending numbers: [2, 3, 4]")
     await connection.send("numbers", 2, 3, 4)
@@ -156,6 +163,8 @@ async def main():
 
     assert server_values == [[1, 128, 16384], {"from": "client"}]
     assert client_values == [[2, 3, 4], {"from": "server"}]
+    assert any(entry["direction"] == "send" for entry in packet_logs)
+    assert any(entry["direction"] == "receive" for entry in packet_logs)
 
     print("Assertions passed")
 

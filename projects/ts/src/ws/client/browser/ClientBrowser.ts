@@ -28,9 +28,9 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
     }
 
     /** Initializes WASM, connects, and resolves after schema negotiation. */
-    static async connect(url: string, options: { protocols?: string | string[]; antiTamper?: boolean; reconnect?: ReconnectOptions } = {}): Promise<SonicWS> {
+    static async connect(url: string, options: { protocols?: string | string[]; antiTamper?: boolean; reconnect?: ReconnectOptions; readyTimeoutMs?: number } = {}): Promise<SonicWS> {
         await SonicWS.initialize();
-        const client = new SonicWS(url, options.protocols, options.antiTamper ?? false, options.reconnect);
+        const client = new SonicWS(url, options.protocols, options.antiTamper ?? false, options.reconnect, options.readyTimeoutMs);
         await new Promise<void>((resolve, reject) => {
             client.on_ready(resolve);
             client.on_close((event: CloseEvent) => reject(new Error(`SonicWS connection closed before ready (${event.code})`)));
@@ -46,9 +46,10 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
      * @param options The websocket options
      * @param antiTamper Attempts to prevent crude tampering with the socket. Defaults to false.
      */
-    constructor(url: string, protocols?: string | string[], antiTamper: boolean = false, reconnect?: ReconnectOptions) {
+    constructor(url: string, protocols?: string | string[], antiTamper: boolean = false, reconnect?: ReconnectOptions, readyTimeoutMs: number = 10_000) {
         const ws = new WebSocket(url, protocols);
         super(ws, async (val: MessageEvent) => new Uint8Array(await (val.data as Blob).arrayBuffer()), ws.addEventListener.bind(ws), ws.removeEventListener.bind(ws));
+        this.configureHandshakeTimeout(readyTimeoutMs);
 
         if (reconnect?.enabled) {
             if (antiTamper) throw new Error("Reconnect and antiTamper cannot currently be enabled together");

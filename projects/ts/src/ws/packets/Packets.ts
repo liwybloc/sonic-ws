@@ -66,12 +66,13 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public readonly client: boolean;
     
     public processReceive: (data: Uint8Array, validationResult: any) => any;
-    public processSend: (data: any[]) => Promise<Uint8Array>;
+    public processSend: (data: any[]) => Uint8Array | Promise<Uint8Array>;
     public validate: (data: Uint8Array) => Promise<[Uint8Array, boolean]>;
     public customValidator: ((socket: SonicWSConnection, ...values: any[]) => boolean) | null;
     lastReceived: Record<number, any> = {};
     lastSent: Record<number, number | bigint> = {};
     private quantizationErrors: Record<number, number> = {};
+    private readonly recordValues?: (record: Record<string, any>) => any[];
 
     constructor(tag: string, schema: PacketSchema<T>, customValidator: ValidatorFunction, enabled: boolean, client: boolean) {
         this.tag = tag;
@@ -88,6 +89,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         this.maxBatchSize    = client ? Infinity : schema.maxBatchSize;
         this.gzipCompression = schema.gzipCompression;
         this.fields = schema.fields;
+        this.recordValues = this.fields ? Packet.compileRecordValues(this.fields) : undefined;
         this.quantized = schema.quantized ? { ...schema.quantized, trackError: schema.quantized.trackError ?? true } : undefined;
         this.valueMin = schema.valueMin;
         this.valueMax = schema.valueMax;
@@ -118,7 +120,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             };
             this.processReceive = data => decodeNativeObject(nativeSchema, data).map((field, index) =>
                 this.type[index] === PacketType.JSON ? decompressJSON(field as Uint8Array) : field);
-            this.processSend = async data => {
+            this.processSend = data => {
                 let enumIndex = 0;
                 const nativeData = data.map((field, index) => {
                     if (this.type[index] === PacketType.JSON) return compressJSON(field);
@@ -155,7 +157,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             this.processReceive = data => this.type === PacketType.JSON
                 ? decompressJSON(data)
                 : decodeNative(this.type, data, this.dataMax, enumData);
-            this.processSend = async data => {
+            this.processSend = data => {
                 let encoded: Uint8Array;
                 if (this.type === PacketType.JSON) encoded = compressJSON(data);
                 else if (this.type === PacketType.ENUMS) encoded = Uint8Array.from(data);
@@ -182,39 +184,71 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         this.customValidator = customValidator;
     }
 
+    private static compileRecordValues(fields: readonly string[]): (record: Record<string, any>) => any[] {
+        // Fixed-width schemas are common enough that avoiding Array.map's callback
+        // machinery is measurable. Bracket access keeps this CSP-safe (no eval/new Function).
+        switch (fields.length) {
+            case 0: return () => [];
+            case 1: { const [a] = fields; return record => [record[a]]; }
+            case 2: { const [a, b] = fields; return record => [record[a], record[b]]; }
+            case 3: { const [a, b, c] = fields; return record => [record[a], record[b], record[c]]; }
+            case 4: { const [a, b, c, d] = fields; return record => [record[a], record[b], record[c], record[d]]; }
+            case 5: { const [a, b, c, d, e] = fields; return record => [record[a], record[b], record[c], record[d], record[e]]; }
+            case 6: { const [a, b, c, d, e, f] = fields; return record => [record[a], record[b], record[c], record[d], record[e], record[f]]; }
+            case 7: { const [a, b, c, d, e, f, g] = fields; return record => [record[a], record[b], record[c], record[d], record[e], record[f], record[g]]; }
+            case 8: { const [a, b, c, d, e, f, g, h] = fields; return record => [record[a], record[b], record[c], record[d], record[e], record[f], record[g], record[h]]; }
+            default: return record => {
+                const output = new Array(fields.length);
+                for (let index = 0; index < fields.length; index++) output[index] = record[fields[index]];
+                return output;
+            };
+        }
+    }
+
     private assertRecord(record: any, context: string): any[] {
         if (!this.fields) throw new Error(`Packet "${this.tag}" ${context} requires schema`);
         if (record === null || typeof record !== "object" || Array.isArray(record))
             throw new Error(`Packet "${this.tag}" ${context} requires an object record`);
-        const missing = this.fields.filter(field => !Object.prototype.hasOwnProperty.call(record, field));
-        if (missing.length) throw new Error(`Packet "${this.tag}" is missing schema field(s): ${missing.join(", ")}`);
-        const extra = Object.keys(record).filter(field => !this.fields!.includes(field));
-        if (extra.length) throw new Error(`Packet "${this.tag}" has unknown schema field(s): ${extra.join(", ")}`);
-        return this.fields.map(field => record[field]);
+        for (const field of this.fields) {
+            if (!Object.prototype.hasOwnProperty.call(record, field))
+                throw new Error(`Packet "${this.tag}" is missing schema field(s): ${field}`);
+        }
+        const keys = Object.keys(record);
+        if (keys.length !== this.fields.length) {
+            const extra = keys.filter(field => !this.fields!.includes(field));
+            if (extra.length) throw new Error(`Packet "${this.tag}" has unknown schema field(s): ${extra.join(", ")}`);
+        }
+        return this.recordValues!(record);
     }
 
     private construct(values: Record<string, any>): any {
         return this.constructorName ? new (resolvePacketConstructor(this.constructorName))(values) : values;
     }
 
-    private logical(values: any[], direction: "send" | "receive", stateKey: number = -1): any[] {
+    private logicalValue(value: any, direction: "send" | "receive", stateKey: number): number {
         const scale = this.quantized?.scale;
-        return values.map(value => {
-            if (typeof value !== "number" || !Number.isFinite(value))
-                throw new Error(`Packet "${this.tag}" ${direction} value must be a finite number`);
-            const logical = direction === "receive" && scale ? value / scale : value;
-            if (this.valueMin !== undefined && logical < this.valueMin)
-                throw new Error(`Packet "${this.tag}" value ${logical} is below minimum ${this.valueMin}`);
-            if (this.valueMax !== undefined && logical > this.valueMax)
-                throw new Error(`Packet "${this.tag}" value ${logical} exceeds maximum ${this.valueMax}`);
-            if (direction === "send" && scale) {
-                const adjusted = logical * scale + (this.quantized?.trackError ? (this.quantizationErrors[stateKey] ?? 0) : 0);
-                const wire = Math.round(adjusted);
-                if (this.quantized?.trackError) this.quantizationErrors[stateKey] = adjusted - wire;
-                return wire;
-            }
-            return logical;
-        });
+        if (typeof value !== "number" || !Number.isFinite(value))
+            throw new Error(`Packet "${this.tag}" ${direction} value must be a finite number`);
+        const logical = direction === "receive" && scale ? value / scale : value;
+        if (this.valueMin !== undefined && logical < this.valueMin)
+            throw new Error(`Packet "${this.tag}" value ${logical} is below minimum ${this.valueMin}`);
+        if (this.valueMax !== undefined && logical > this.valueMax)
+            throw new Error(`Packet "${this.tag}" value ${logical} exceeds maximum ${this.valueMax}`);
+        if (direction === "send" && scale) {
+            const adjusted = logical * scale + (this.quantized?.trackError ? (this.quantizationErrors[stateKey] ?? 0) : 0);
+            const wire = Math.round(adjusted);
+            if (this.quantized?.trackError) this.quantizationErrors[stateKey] = adjusted - wire;
+            return wire;
+        }
+        return logical;
+    }
+
+    private logical(values: any[], direction: "send" | "receive", stateKey: number = -1): any[] {
+        const output = new Array(values.length);
+        for (let index = 0; index < values.length; index++) {
+            output[index] = this.logicalValue(values[index], direction, stateKey);
+        }
+        return output;
     }
 
     /** Converts ergonomic application values into the existing positional wire model. */
@@ -233,9 +267,21 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         if (this.autoFlatten) {
             if (values.length !== 1 || !Array.isArray(values[0]))
                 throw new Error(`Packet "${this.tag}" autoFlatten requires one array of records`);
-            flat = values[0].flatMap((row: any) => this.assertRecord(row, "autoFlatten"));
+            const rows = values[0];
+            const width = this.fields!.length;
+            flat = new Array(rows.length * width);
+            let offset = 0;
+            const transform = this.quantized || this.valueMin !== undefined || this.valueMax !== undefined;
+            for (const row of rows) {
+                const mapped = this.assertRecord(row, "autoFlatten");
+                for (let column = 0; column < width; column++) {
+                    const value = mapped[column];
+                    flat[offset++] = transform ? this.logicalValue(value, "send", stateKey) : value;
+                }
+            }
             if (this.fields && flat.length % this.fields.length !== 0)
                 throw new Error(`Packet "${this.tag}" flat value count must be divisible by schema length ${this.fields.length}`);
+            if (transform) return flat;
         } else if (this.fields && values.length === 1 && values[0] !== null && typeof values[0] === "object" && !Array.isArray(values[0])) {
             flat = this.assertRecord(values[0], "schema mapping");
         }

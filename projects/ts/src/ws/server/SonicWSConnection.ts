@@ -12,6 +12,7 @@
  */
 
 import * as WS from 'ws';
+import type { IncomingMessage } from 'node:http';
 import { SonicWSServer } from "./SonicWSServer";
 import { listenPacket, processPacket } from "../util/packets/PacketUtils";
 import { BatchHelper } from "../util/packets/BatchHelper";
@@ -55,12 +56,15 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
     private pendingRequests = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
     private responders = new Map<string, (...values: any[]) => any>();
     public sessionId: string;
+    /** HTTP upgrade request, useful for authentication headers and cookies. */
+    public readonly upgradeRequest: IncomingMessage;
 
-    constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number, sessionId: string, state: Record<string, unknown>) {
+    constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number, sessionId: string, state: Record<string, unknown>, handshakeTimeoutMs: number, upgradeRequest: IncomingMessage) {
         super(socket, id, "Socket " + id, socket.addEventListener.bind(socket), socket.removeEventListener.bind(socket));
 
         this.host = host;
         this.sessionId = sessionId;
+        this.upgradeRequest = upgradeRequest;
         this.state = state;
         
         this.handshakePacket = handshakePacket;
@@ -94,6 +98,9 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
         } else {
             this.handshakeLambda = (data: WS.MessageEvent) => this.handshakeHandler(data);
             this.socket.addEventListener('message', this.handshakeLambda);
+            this.setTimeout(() => {
+                if (!this.handshakeComplete) this.close(CloseCodes.INVALID_DATA, "Application handshake timed out");
+            }, handshakeTimeoutMs);
         }
 
         this.socket.on('close', () => {
@@ -155,7 +162,9 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
 
     private async handleControl(data: Uint8Array): Promise<void> {
         if (this.rater.trigger(CLIENT_RATELIMIT_TAG)) return;
-        const message = decodeControl(data);
+        let message;
+        try { message = decodeControl(data); }
+        catch { this.close(CloseCodes.INVALID_DATA, "Malformed SonicWS control frame"); return; }
         if (message.type === ControlType.RESUME) {
             await this.host.resumeSession(this, message.sessionId, message.lastSequence);
             return;
@@ -399,6 +408,15 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
         try { await this.send(tag, ...values); return true; }
         catch (error) { this.host.handleSendError(error, { packetTag: tag, connection: this }); return false; }
     }
+
+    /** Drops this update before encoding when the transport is backpressured. */
+    public async sendVolatile(tag: string, ...values: any[]): Promise<boolean> {
+        if (!this.canSendVolatile()) return false;
+        await this.send(tag, ...values);
+        return true;
+    }
+
+    public sendReliable(tag: string, ...values: any[]): Promise<void> { return this.send(tag, ...values); }
 
     /**
      * Broadcasts a packet to all other users connected

@@ -37,7 +37,7 @@ CamelCase aliases exist for the corresponding TypeScript methods.
 
 ## Connection methods
 
-`SonicWSConnection` provides `on`, `off`, `send`, `send_safe`, `send_variant`, `request`, `respond`, broadcasts, `join`, `leave`, packet controls, raw methods, timers, middleware, names, `on_close`, and `close`. `handshake_complete`, `id`, mutable `state`, `tags`, `socket`, and `host` are available. State and tags are restored before the server's `on_recovered` callback.
+`SonicWSConnection` provides `on`, `off`, `send`, `send_safe`, `send_volatile`, `send_reliable`, `send_variant`, `request`, `respond`, broadcasts, `join`, `leave`, packet controls, raw methods, timers, middleware, names, `on_close`, and `close`. `upgrade_request` exposes authentication headers. `handshake_complete`, `id`, mutable `state`, `tags`, `socket`, and `host` are available. State and tags are restored before the server's `on_recovered` callback.
 
 An optional adapter follows the same method contract as TypeScript: `start`, `publish`, `join`, `leave`, `disconnect`, and `close`; methods may be synchronous or awaitable. Recovery defaults to 120 seconds and 1,000 frames. Declare `replay=True` only for idempotent server packets that are safe to deliver after reconnect.
 

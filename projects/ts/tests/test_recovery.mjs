@@ -40,8 +40,10 @@ try {
     }), "old connection removal");
     const missedPayload = await packet.processSend([2]);
     server.replayFrame(original, Uint8Array.from([1, ...missedPayload]));
+    for (let index = 0; index < 20; index++) server.replayFrame(original, Uint8Array.from([1, ...missedPayload]));
+    assert.equal(server.sessions.get(original.sessionId).frames.length, 10, "replay maxPackets bound");
 
-    assert.deepEqual(await timeout(recovered, "session recovery"), { recovered: true, replayed: 1 });
+    assert.deepEqual(await timeout(recovered, "session recovery"), { recovered: true, replayed: 10 });
     await timeout(new Promise(resolve => {
         const poll = setInterval(() => received.includes(2) && (clearInterval(poll), resolve()), 5);
     }), "missed packet replay");

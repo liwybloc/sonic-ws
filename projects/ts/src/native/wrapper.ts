@@ -166,6 +166,40 @@ function enumIndex(pkg: EnumPackage, value: EnumValue): number {
     return index;
 }
 
+/**
+ * Encode the protocol's 32-bit integer varints without crossing the WASM
+ * boundary. This is the dominant path for small movement packets and large
+ * flattened snapshots. Decoding and all less-common codecs remain in Rust.
+ */
+function encodeIntegerVarints(input: number | number[], signed: boolean): Uint8Array {
+    const source = values(input);
+    const output = new Uint8Array(source.length * 5);
+    let offset = 0;
+    for (let index = 0; index < source.length; index++) {
+        const original = source[index];
+        if (!Number.isInteger(original) || !Number.isFinite(original))
+            throw new TypeError(`${signed ? "VARINT" : "UVARINT"} requires integer values`);
+        if (!signed && (original < 0 || original > 0xffffffff))
+            throw new RangeError("UVARINT value must be between 0 and 4294967295");
+
+        const integer = signed
+            ? Math.max(-0x80000000, Math.min(0x7fffffff, original))
+            : original;
+        let value = signed
+            ? (((integer | 0) << 1) ^ ((integer | 0) >> 31)) >>> 0
+            : integer;
+        do {
+            let byte = value % 128;
+            value = Math.floor(value / 128);
+            if (value !== 0) byte |= 0x80;
+            output[offset++] = byte;
+        } while (value !== 0);
+    }
+    // slice intentionally returns an exact-sized backing store. This avoids
+    // retaining a five-byte-per-value scratch allocation through queued sends.
+    return output.slice(0, offset);
+}
+
 export function encodeNative(
     type: PacketType,
     input: unknown,
@@ -184,13 +218,15 @@ export function encodeNative(
             return input instanceof Uint8Array ? buffer(input) : Uint8Array.from(input as number[]);
         case PacketType.BYTES:
         case PacketType.SHORTS:
-        case PacketType.VARINT:
         case PacketType.DELTAS:
             return core.encodeSigned(type, values(input as number | number[]));
+        case PacketType.VARINT:
+            return encodeIntegerVarints(input as number | number[], true);
         case PacketType.UBYTES:
         case PacketType.USHORTS:
-        case PacketType.UVARINT:
             return core.encodeUnsigned(type, values(input as number | number[]));
+        case PacketType.UVARINT:
+            return encodeIntegerVarints(input as number | number[], false);
         case PacketType.FLOATS:
         case PacketType.DOUBLES:
             return core.encodeFloats(type, values(input as number | number[]));
@@ -305,6 +341,28 @@ export function encodeNativeBatch(
     compressed: boolean,
     core = loadNativeCore(),
 ): Uint8Array {
+    if (!compressed) {
+        let size = 0;
+        for (const payload of payloads) {
+            let length = payload.byteLength;
+            size += length + 1;
+            while (length >= 128) { size++; length = Math.floor(length / 128); }
+        }
+        const output = new Uint8Array(size);
+        let offset = 0;
+        for (const payload of payloads) {
+            let length = payload.byteLength;
+            do {
+                let byte = length % 128;
+                length = Math.floor(length / 128);
+                if (length !== 0) byte |= 0x80;
+                output[offset++] = byte;
+            } while (length !== 0);
+            output.set(payload, offset);
+            offset += payload.byteLength;
+        }
+        return output;
+    }
     return core.encodeBatch(payloads.map(buffer), compressed);
 }
 

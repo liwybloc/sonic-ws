@@ -15,6 +15,8 @@ It is designed for real-time applications such as games, dashboards, collaborati
 - Batch, validate, compress, and rate-limit packets with minimal boilerplate.
 - Reconnect with bounded state recovery and opt-in missed-packet replay.
 - Use validated RPC, server-side rooms, and pluggable scaling adapters.
+- Inspect, encode, decode, size, validate, and generate types from packet manifests with the CLI.
+- Drop replaceable updates under backpressure without silently dropping reliable messages.
 - Code is much more readable than every other socket library*
 
 <details>
@@ -149,6 +151,12 @@ Full API documentation:
 
 - [TypeScript / Node / browser](docs/ts/README.md)
 - [Python](docs/py/README.md)
+- [Protocol version 24](docs/protocol.md)
+- [Production defaults](docs/defaults.md)
+- [Authentication and recovery](docs/authentication.md)
+- [Inspector, generated types, conformance, and benchmarks](docs/tooling.md)
+- [Backpressure and delivery](docs/backpressure.md)
+- [Runnable examples](examples/README.md)
 
 Packet schemas can now map the existing single-type wire format directly to application objects:
 
@@ -174,6 +182,10 @@ Clients can opt into capped exponential-backoff reconnect. Packets marked `repla
 - Better encoding for the first packet that sends packet information
 - Publish the Rust core as a standalone, documented crate
 - Add first-class Go bindings
+
+## API AND PROTOCOL STABILITY
+
+SonicWS uses semantic package versions and an explicit wire-protocol version. Incompatible wire changes require a protocol-version change and fail during handshake instead of silently decoding with different semantics. Public APIs may still evolve between major package versions; pin the package version for production deployments and run the shared conformance corpus when upgrading.
 
 ## LICENSE
 This project is source-available.

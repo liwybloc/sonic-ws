@@ -14,7 +14,7 @@
 import WS from 'ws';
 import { ReconnectOptions, SonicWSCore } from "../core/ClientCore";
 
-export type SonicConnectOptions = WS.ClientOptions & { reconnect?: ReconnectOptions };
+export type SonicConnectOptions = WS.ClientOptions & { reconnect?: ReconnectOptions; readyTimeoutMs?: number };
 
 /** Class to connect to a SonicWS server */
 export class SonicWS extends SonicWSCore<WS.WebSocket, Buffer> {
@@ -23,10 +23,11 @@ export class SonicWS extends SonicWSCore<WS.WebSocket, Buffer> {
      * @param url The url to connect to
      * @param options The websocket options
      */
-    constructor(url: string, options?: WS.ClientOptions, reconnect?: ReconnectOptions) {
+    constructor(url: string, options?: WS.ClientOptions, reconnect?: ReconnectOptions, readyTimeoutMs: number = 10_000) {
         const ws = new WS.WebSocket(url, options);
         ws.on("error", () => {});
         super(ws, (val: Buffer) => Promise.resolve(new Uint8Array(val)), ws.on.bind(ws), ws.off.bind(ws));
+        this.configureHandshakeTimeout(readyTimeoutMs);
         if (reconnect?.enabled) this.configureReconnect(() => {
             const socket = new WS.WebSocket(url, options);
             socket.on("error", () => {});
@@ -36,8 +37,8 @@ export class SonicWS extends SonicWSCore<WS.WebSocket, Buffer> {
 
     /** Creates a client and resolves after WASM loading and schema negotiation. */
     static async connect(url: string, options: SonicConnectOptions = {}): Promise<SonicWS> {
-        const { reconnect, ...websocketOptions } = options;
-        const client = new SonicWS(url, websocketOptions, reconnect);
+        const { reconnect, readyTimeoutMs, ...websocketOptions } = options;
+        const client = new SonicWS(url, websocketOptions, reconnect, readyTimeoutMs);
         await new Promise<void>((resolve, reject) => {
             client.on_ready(resolve);
             client.on_close((code: number, reason: Buffer) => {

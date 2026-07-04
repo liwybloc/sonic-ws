@@ -114,6 +114,8 @@ export abstract class Connection<T extends {
     public id: number;
     /** Mutable application-owned state scoped to this connection. */
     public state: Record<string, unknown> = {};
+    private volatileAtBytes = 1 * 1024 * 1024;
+    private closeAtBytes = 16 * 1024 * 1024;
 
     constructor(socket: T, id: number, name: string, addListener: Function, removeListener: Function) {
         super();
@@ -178,9 +180,31 @@ export abstract class Connection<T extends {
     }
 
     public raw_send(data: Uint8Array): void {
+        if (this.getBufferedAmount() >= this.closeAtBytes) {
+            this.close(CloseCodes.BACKPRESSURE, "Outbound buffer exceeded the configured limit");
+            throw new Error("SonicWS outbound backpressure limit exceeded");
+        }
         this.socket.send(data);
         for (const listener of this.rawSendListeners) listener(data);
     }
+
+    /** Bytes currently queued by the underlying transport. */
+    public getBufferedAmount(): number {
+        const amount = (this.socket as T & { bufferedAmount?: number }).bufferedAmount;
+        return typeof amount === "number" && Number.isFinite(amount) ? amount : 0;
+    }
+
+    /** Configures volatile-drop and forced-close outbound buffer thresholds. */
+    public setBackpressureLimits(options: { volatileAtBytes?: number; closeAtBytes?: number }): void {
+        const volatile = options.volatileAtBytes ?? this.volatileAtBytes;
+        const close = options.closeAtBytes ?? this.closeAtBytes;
+        if (!Number.isFinite(volatile) || !Number.isFinite(close) || volatile < 0 || close <= 0 || volatile > close)
+            throw new Error("Invalid SonicWS backpressure limits");
+        this.volatileAtBytes = volatile;
+        this.closeAtBytes = close;
+    }
+
+    protected canSendVolatile(): boolean { return this.getBufferedAmount() < this.volatileAtBytes; }
 
     public raw_onmessage(listener: (data: K) => void): void {
         this._on("message", listener);
@@ -220,6 +244,7 @@ export enum CloseCodes {
     DISABLED_PACKET    = 4006,
     MIDDLEWARE         = 4007,
     MANUAL_SHUTDOWN    = 4008,
+    BACKPRESSURE       = 4009,
 }
 
 export function getClosureCause(id: number): string {

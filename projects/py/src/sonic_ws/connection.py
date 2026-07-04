@@ -19,6 +19,7 @@ from enum import IntEnum
 from typing import Any, Callable
 from .codec import encode_batch, decode_batch
 from .packets import Packet, flatten_data
+from .schema_validation import assert_packet_schema
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class CloseCodes(IntEnum):
     DISABLED_PACKET = 4006
     MIDDLEWARE = 4007
     MANUAL_SHUTDOWN = 4008
+    BACKPRESSURE = 4009
 
 
 def get_closure_cause(code):
@@ -66,6 +68,7 @@ class PacketHolder:
 
     def hold_packets(self, packets):
         self.packets = list(packets)
+        assert_packet_schema(self.packets)
         self.by_tag = {p.tag: p for p in self.packets}
         self.tags = [p.tag for p in self.packets]
         self.variants = {f"{p.parent}.{p.variant}": p.tag for p in self.packets if p.parent and p.variant}
@@ -120,6 +123,8 @@ class Connection:
         self._async_packet_locks = defaultdict(asyncio.Lock)
         self._send_lock = asyncio.Lock()
         self.state = {}
+        self._volatile_at_bytes = 1 * 1024 * 1024
+        self._close_at_bytes = 16 * 1024 * 1024
 
     def _within_rate(self, key, limit):
         if not limit or limit < 0:
@@ -181,9 +186,27 @@ class Connection:
             )
 
     async def raw_send(self, data):
+        if self.get_buffered_amount() >= self._close_at_bytes:
+            await self.close(CloseCodes.BACKPRESSURE, "outbound buffer exceeded the configured limit")
+            raise RuntimeError("SonicWS outbound backpressure limit exceeded")
         raw = bytes(data)
         await self.socket.send(raw)
         await self._emit("__raw_send__", raw, False)
+
+    def get_buffered_amount(self):
+        transport = getattr(self.socket, "transport", None)
+        getter = getattr(transport, "get_write_buffer_size", None)
+        return int(getter()) if getter else 0
+
+    def set_backpressure_limits(self, *, volatile_at_bytes=None, close_at_bytes=None):
+        volatile = self._volatile_at_bytes if volatile_at_bytes is None else int(volatile_at_bytes)
+        close = self._close_at_bytes if close_at_bytes is None else int(close_at_bytes)
+        if volatile < 0 or close <= 0 or volatile > close:
+            raise ValueError("invalid SonicWS backpressure limits")
+        self._volatile_at_bytes, self._close_at_bytes = volatile, close
+
+    def can_send_volatile(self):
+        return self.get_buffered_amount() < self._volatile_at_bytes
 
     def raw_onmessage(self, listener):
         return self.on("__raw_message__", listener)
@@ -282,9 +305,13 @@ class Connection:
     setInterval = set_interval
     clearTimeout = clear_timeout
     clearInterval = clear_interval
+    getBufferedAmount = get_buffered_amount
+    setBackpressureLimits = set_backpressure_limits
 
 
 async def dispatch_packet(connection, packet, payload, socket_for_validator=None):
+    if connection._closed:
+        return
     async with connection._async_packet_locks[packet.tag]:
         cache_key = connection.id
         if packet.rereference and not payload:
@@ -302,6 +329,8 @@ async def dispatch_packet(connection, packet, payload, socket_for_validator=None
             else [payload]
         )
         for item in payloads:
+            if connection._closed:
+                return
             values = packet.decode(item)
             if packet.rereference:
                 packet.last_received[cache_key] = values

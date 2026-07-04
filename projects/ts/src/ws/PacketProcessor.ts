@@ -68,7 +68,7 @@ export class MiddlewareHolder<T extends BasicMiddleware> implements IMiddlewareH
             if (!fn) continue;
 
             try {
-                if (await (fn as (...args: any[]) => Promise<boolean> | boolean)(...values)) {
+                if (await (fn as (...args: any[]) => Promise<boolean> | boolean).call(middleware, ...values)) {
                     cancelled = true;
                 }
             } catch (e) {

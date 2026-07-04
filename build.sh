@@ -27,7 +27,9 @@ Test and packaging commands:
   test-node    Run the Node end-to-end suite
   test-web     Run the browser/WASM end-to-end suite
   test-py      Run Python codec, parity, integration, and runtime tests
+  conformance  Run the shared Node and Python golden-vector corpus
   pack-node    Build and create the npm tarball
+  benchmark    Build and run the reproducible codec benchmark suite
   check        Run non-networked static checks
   help         Show this message
 EOF
@@ -77,9 +79,17 @@ test_python() {
     export PYTHONPATH="$PY/src${PYTHONPATH:+:$PYTHONPATH}"
     python3 "$PY/tests/test_codec.py"
     python3 "$PY/tests/test_parity.py"
+    python3 "$PY/tests/test_conformance.py"
     python3 -m unittest "$PY/tests/test_features.py" -v
+    python3 -m unittest "$PY/tests/test_security.py" -v
     python3 -u "$PY/tests/test_integration.py"
     python3 -u "$PY/tests/test_runtime.py"
+}
+
+test_conformance() {
+    (cd "$TS" && npm run test_conformance)
+    export PYTHONPATH="$PY/src${PYTHONPATH:+:$PYTHONPATH}"
+    python3 "$PY/tests/test_conformance.py"
 }
 
 static_checks() {
@@ -135,8 +145,14 @@ case "$command" in
     test-py)
         test_python
         ;;
+    conformance)
+        test_conformance
+        ;;
     pack-node)
         (cd "$TS" && npm pack)
+        ;;
+    benchmark)
+        (cd "$TS" && npm run benchmark)
         ;;
     check)
         static_checks

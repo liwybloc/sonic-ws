@@ -14,6 +14,7 @@
 import { Packet } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
 import { PacketTypings } from "../../server/SonicWSServer";
+import { AssertPacketSchema } from "./SchemaValidation";
 
 /**
  * Holds and maps packets to indexed keys and tags for serialization and lookup
@@ -65,6 +66,7 @@ export class PacketHolder {
      * @param packets Array of packets to register
      */
     public holdPackets(packets: PacketTypings): void {
+        AssertPacketSchema(packets);
         this.packets = packets;
         for (const packet of packets) {
             this.createKey(packet.tag);

@@ -10,6 +10,11 @@ The Python package is an asyncio client and server compatible with the TypeScrip
 - [Server and connection API](server.md)
 - [Middleware](middleware.md)
 - [Native core, packaging, and compatibility](runtime.md)
+- [Protocol specification](../protocol.md)
+- [Production defaults](../defaults.md)
+- [Tooling and conformance](../tooling.md)
+- [Backpressure](../backpressure.md)
+- [Authentication](../authentication.md)
 
 ## Public imports
 
@@ -25,6 +30,8 @@ from sonic_ws import (
     BasicMiddleware, ConnectionMiddleware, ServerMiddleware, BCInfo,
     CloseCodes, get_closure_cause,
     compress_json, decompress_json,
+    CreatePacketManifest, LoadPacketManifest,
+    ValidatePacketSchema, AssertPacketSchema, PacketLogger,
 )
 ```
 

@@ -46,8 +46,16 @@ class SonicWSConnection(Connection):
         self._next_request_id = 1
         self._pending_requests = {}
         self._responders = {}
+        self.upgrade_request = getattr(socket, "request", None)
 
     async def run(self):
+        handshake_timer = None
+        if not self.handshake_complete:
+            async def expire_handshake():
+                await asyncio.sleep(self.host.handshake_timeout)
+                if not self.handshake_complete:
+                    await self.close(CloseCodes.INVALID_DATA, "application handshake timed out")
+            handshake_timer = asyncio.create_task(expire_handshake())
         try:
             async for message in self.socket:
                 raw = bytes(message)
@@ -101,6 +109,8 @@ class SonicWSConnection(Connection):
         except ConnectionClosed:
             pass
         finally:
+            if handshake_timer:
+                handshake_timer.cancel()
             for packet in self.host.server_packets.packets:
                 packet.quantization_errors.pop(self.id, None)
             code = getattr(self.socket, "close_code", 1000) or 1000
@@ -161,7 +171,11 @@ class SonicWSConnection(Connection):
         if not self._within_rate("client", self.host.client_rate_limit):
             await self.close(CloseCodes.RATELIMIT, "rate limit exceeded")
             return
-        message = decode_control(raw)
+        try:
+            message = decode_control(raw)
+        except ValueError:
+            await self.close(CloseCodes.INVALID_DATA, "malformed SonicWS control frame")
+            return
         if message[0] == RESUME:
             await self.host.resume_session(self, message[1], message[2])
             return
@@ -217,6 +231,15 @@ class SonicWSConnection(Connection):
             self.host.handle_send_error(error, {"packetTag": tag, "connection": self})
             return False
 
+    async def send_volatile(self, tag, *values):
+        if not self.can_send_volatile():
+            return False
+        await self.send(tag, *values)
+        return True
+
+    async def send_reliable(self, tag, *values):
+        await self.send(tag, *values)
+
     async def send_processed(self, code, data, packet):
         if not self._within_rate("server", self.host.server_rate_limit) or not self._within_rate("server:" + packet.tag, packet.rate_limit):
             return
@@ -262,6 +285,8 @@ class SonicWSConnection(Connection):
     togglePrint = toggle_print
     sendVariant = send_variant
     sendSafe = send_safe
+    sendVolatile = send_volatile
+    sendReliable = send_reliable
 
 
 class SonicWSServer:
@@ -290,15 +315,21 @@ class SonicWSServer:
             self.on_send_error = settings.get("onSendError", settings.get("on_send_error"))
             self.adapter = settings.get("adapter", adapter)
             recovery = settings.get("recovery", recovery or {})
+            sonic_settings = settings.get("sonicServerSettings", settings.get("sonic_server_settings", {}))
         else:
             self.on_send_error = None
             self.adapter = adapter
             recovery = recovery or {}
+            sonic_settings = {}
         self.client_packets = PacketHolder(client_packets)
         self.server_packets = PacketHolder(server_packets)
         self.host = host
         self.port = port
+        kwargs.setdefault("max_size", 8 * 1024 * 1024)
         self.websocket_options = kwargs
+        self.handshake_timeout = sonic_settings.get("handshakeTimeoutMs", sonic_settings.get("handshake_timeout_ms", 10_000)) / 1000
+        if self.handshake_timeout <= 0:
+            raise ValueError("handshake timeout must be positive")
         self.connections = []
         self.connection_map = {}
         self.connect_listeners = []
@@ -315,6 +346,7 @@ class SonicWSServer:
         self.server_id = str(uuid.uuid4())
         self.recovery_max_disconnection = recovery.get("maxDisconnectionMs", recovery.get("max_disconnection_ms", 120_000)) / 1000
         self.recovery_max_packets = int(recovery.get("maxPackets", recovery.get("max_packets", 1_000)))
+        self.recovery_authorize = recovery.get("authorize")
         if self.recovery_max_disconnection < 0 or self.recovery_max_packets < 0:
             raise ValueError("recovery limits cannot be negative")
         self.sessions = {}
@@ -454,6 +486,17 @@ class SonicWSServer:
     async def resume_session(self, connection, session_id, last_sequence):
         session = self.sessions.get(session_id)
         if session is None or session["expires"] < time.monotonic():
+            await connection.raw_send(encode_resumed(False, 0))
+            return
+        if self.recovery_authorize:
+            authorized = self.recovery_authorize(session["state"], connection.state, connection)
+            if inspect.isawaitable(authorized):
+                authorized = await authorized
+        else:
+            previous_user = session["state"].get("userId", session["state"].get("user_id"))
+            current_user = connection.state.get("userId", connection.state.get("user_id"))
+            authorized = previous_user is None or previous_user == current_user
+        if not authorized:
             await connection.raw_send(encode_resumed(False, 0))
             return
         self.sessions.pop(connection.session_id, None)

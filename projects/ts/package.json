@@ -4,8 +4,10 @@
   "description": "Ultra-lightweight, high-performance, and bandwidth efficient websocket library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": { "sonicws": "bin/sonicws.mjs" },
   "files": [
     "dist/**/*",
+    "bin/sonicws.mjs",
     "bundled/bundle.js",
     "bundled/bundle.wasm",
     "README.md",
@@ -23,6 +25,8 @@
     
     "test_web": "npm run build && node tests/test_web.mjs",
     "test_node": "npm run build_node && node tests/test_node.mjs",
+    "test_conformance": "npm run build_node && node tests/test_conformance.mjs",
+    "benchmark": "npm run build_node && node ../../benchmarks/run.mjs && node ../../benchmarks/transport.mjs",
     "prepack": "npm run build",
     
     "stage_package": "node package-files.mjs",

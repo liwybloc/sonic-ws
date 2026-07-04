@@ -25,7 +25,35 @@ const {
     RegisterPacketConstructor,
     CreatePacketManifest,
     LoadPacketManifest,
+    ValidatePacketSchema,
+    AssertPacketSchema,
+    PacketLogger,
 } = await import("../dist/index.js");
+const { encodeNative, encodeNativeBatch, loadNativeCore } = await import("../dist/native/wrapper.js");
+
+const referenceCore = loadNativeCore();
+for (const values of [
+    [-2147483648, -129, -1, 0, 1, 127, 128, 2147483647],
+    [2147483648, 4294967295], // wasm-bindgen saturates out-of-range signed inputs
+]) {
+    assert.deepEqual(
+        [...encodeNative(PacketType.VARINT, values)],
+        [...referenceCore.encodeSigned(PacketType.VARINT, values)],
+        "JS VARINT fast path diverged from the Rust/WASM reference",
+    );
+}
+const unsignedValues = [0, 1, 127, 128, 255, 16384, 4294967295];
+assert.deepEqual(
+    [...encodeNative(PacketType.UVARINT, unsignedValues)],
+    [...referenceCore.encodeUnsigned(PacketType.UVARINT, unsignedValues)],
+    "JS UVARINT fast path diverged from the Rust/WASM reference",
+);
+const batchPayloads = [new Uint8Array(), Uint8Array.from([1, 2, 3]), new Uint8Array(130).fill(7)];
+assert.deepEqual(
+    [...encodeNativeBatch(batchPayloads, false)],
+    [...referenceCore.encodeBatch(batchPayloads, false)],
+    "JS batch framing fast path diverged from the Rust/WASM reference",
+);
 
 class C2SMovement {
     constructor({ x, y, z }) { this.x = x; this.y = y; this.z = z; }
@@ -182,6 +210,9 @@ try {
     ]), 5_000, "client handshake");
 
     const connection = await connectionPromise;
+    const packetLogs = [];
+    client.addMiddleware(new PacketLogger({ logger: entry => packetLogs.push(entry) }));
+    connection.addMiddleware(new PacketLogger({ logger: entry => packetLogs.push(entry) }));
     connection.state.player = { id: 7 };
     assert.deepEqual(connection.state.player, { id: 7 });
     connection.respond("client_schema", ({ dx, dy, dz }) => ({ sum: dx + dy + dz }));
@@ -264,6 +295,15 @@ try {
     assert.equal(await server.broadcastSafe("not-a-packet"), false);
     assert.equal(sendErrors.length, 2);
     assert.equal(sendErrors[0].context.packetTag, "not-a-packet");
+    assert.throws(() => AssertPacketSchema([mapped, mapped]), /duplicate packet tag/i);
+    assert(ValidatePacketSchema([mapped]).errors.length === 0);
+    assert.throws(() => client.setBackpressureLimits({ volatileAtBytes: 10, closeAtBytes: 5 }), /backpressure/i);
+    assert.equal(await client.sendVolatile("client_none"), true);
+    client.setBackpressureLimits({ volatileAtBytes: 0, closeAtBytes: 16 * 1024 * 1024 });
+    assert.equal(await client.sendVolatile("client_none"), false, "volatile send was not dropped under configured pressure");
+    client.setBackpressureLimits({ volatileAtBytes: 1024 * 1024, closeAtBytes: 16 * 1024 * 1024 });
+    assert(packetLogs.some(entry => entry.direction === "send" && entry.bytes > 0));
+    assert(packetLogs.some(entry => entry.direction === "receive" && entry.bytes > 0));
     console.log(`passed ${cases.length * 2} packet roundtrips across ${cases.length} packet definitions`);
 } finally {
     if (client && !client.isClosed()) {
@@ -275,3 +315,5 @@ try {
 }
 
 await import("./test_recovery.mjs");
+await import("./test_malformed.mjs");
+await import("./test_cli.mjs");

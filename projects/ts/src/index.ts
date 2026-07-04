@@ -22,6 +22,10 @@ export { BasicMiddleware, ConnectionMiddleware, ServerMiddleware, BCInfo } from 
 export { CreatePacket, CreateObjPacket, CreateEnumPacket, CreatePacketGroup, FlattenData, UnFlattenData } from './ws/util/packets/PacketUtils';
 export { CreatePacketManifest, LoadPacketManifest } from './ws/util/packets/PacketManifest';
 export type { PacketManifest } from './ws/util/packets/PacketManifest';
+export { ValidatePacketSchema, AssertPacketSchema } from './ws/util/packets/SchemaValidation';
+export type { SchemaValidationResult } from './ws/util/packets/SchemaValidation';
+export { PacketLogger } from './ws/debug/PacketLogger';
+export type { PacketLogEntry, PacketLoggerOptions } from './ws/debug/PacketLogger';
 export { RegisterPacketConstructor, UnregisterPacketConstructor } from './ws/util/packets/ConstructorRegistry';
 export type { PacketConstructor } from './ws/util/packets/ConstructorRegistry';
 export type { SonicWSAdapter, AdapterBroadcast } from './ws/server/Adapter';
