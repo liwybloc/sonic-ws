@@ -13,8 +13,6 @@
 
 #[cfg(feature = "c-api")]
 pub mod c_api;
-#[cfg(feature = "node")]
-pub mod node;
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(all(feature = "wasm", target_arch = "wasm32"))]

@@ -13,27 +13,13 @@ import argparse
 import asyncio
 import contextlib
 import math
-import os
 import pathlib
 import sys
 from dataclasses import dataclass
 from typing import Any, Callable
 
 PYTHON_ROOT = pathlib.Path(__file__).resolve().parents[1]
-REPOSITORY_ROOT = PYTHON_ROOT.parents[1]
 sys.path.insert(0, str(PYTHON_ROOT / "src"))
-
-if sys.platform == "win32":
-    core_name = "sonic_ws_core.dll"
-elif sys.platform == "darwin":
-    core_name = "libsonic_ws_core.dylib"
-else:
-    core_name = "libsonic_ws_core.so"
-
-os.environ.setdefault(
-    "SONIC_WS_CORE_PATH",
-    str(REPOSITORY_ROOT / "projects" / "core" / "target" / "release" / core_name),
-)
 
 from sonic_ws import (
     CreateEnumPacket,

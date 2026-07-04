@@ -14,7 +14,7 @@
 import { DebugClient } from "../../debug/DebugClient";
 import { WrapEnum, DeWrapEnum } from "../../util/enums/EnumHandler";
 import { FlattenData, UnFlattenData } from "../../util/packets/PacketUtils";
-import { SonicWSCore } from "../core/ClientCore";
+import { ReconnectOptions, SonicWSCore } from "../core/ClientCore";
 import { initializeWasmCore } from "../../../native/wrapper";
 
 // Defines SonicWS class in the browser and gives delegation of functions
@@ -27,6 +27,17 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
         return initializeWasmCore();
     }
 
+    /** Initializes WASM, connects, and resolves after schema negotiation. */
+    static async connect(url: string, options: { protocols?: string | string[]; antiTamper?: boolean; reconnect?: ReconnectOptions } = {}): Promise<SonicWS> {
+        await SonicWS.initialize();
+        const client = new SonicWS(url, options.protocols, options.antiTamper ?? false, options.reconnect);
+        await new Promise<void>((resolve, reject) => {
+            client.on_ready(resolve);
+            client.on_close((event: CloseEvent) => reject(new Error(`SonicWS connection closed before ready (${event.code})`)));
+        });
+        return client;
+    }
+
     private antiTamperCall: () => void = () => { };
 
     /**
@@ -35,9 +46,22 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
      * @param options The websocket options
      * @param antiTamper Attempts to prevent crude tampering with the socket. Defaults to false.
      */
-    constructor(url: string, protocols?: string | string[], antiTamper: boolean = false) {
+    constructor(url: string, protocols?: string | string[], antiTamper: boolean = false, reconnect?: ReconnectOptions) {
         const ws = new WebSocket(url, protocols);
         super(ws, async (val: MessageEvent) => new Uint8Array(await (val.data as Blob).arrayBuffer()), ws.addEventListener.bind(ws), ws.removeEventListener.bind(ws));
+
+        if (reconnect?.enabled) {
+            if (antiTamper) throw new Error("Reconnect and antiTamper cannot currently be enabled together");
+            this.configureReconnect(() => {
+                const socket = new WebSocket(url, protocols);
+                return {
+                    socket,
+                    bufferHandler: async (value: MessageEvent) => new Uint8Array(await (value.data as Blob).arrayBuffer()),
+                    on: socket.addEventListener.bind(socket),
+                    off: socket.removeEventListener.bind(socket),
+                };
+            }, reconnect);
+        }
 
         if (antiTamper) {
             const thiz = this;

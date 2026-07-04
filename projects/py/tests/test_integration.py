@@ -23,11 +23,28 @@ async def main():
         CreatePacket(
             {"tag": "json", "type": PacketType.JSON, "dataMin": 1, "dataMax": 1}
         ),
+        CreatePacket({"tag": "point", "type": PacketType.VARINT, "schema": ["x", "y"], "dataMax": 2, "replay": True}),
     ]
 
     print("Starting SonicWS server...")
 
-    server = SonicWSServer(client_packets=packets, server_packets=packets, port=0)
+    adapter_events = []
+
+    class Adapter:
+        def start(self, server_id, receiver):
+            self.receiver = receiver
+        def publish(self, message):
+            adapter_events.append(("publish", message))
+        def join(self, identifier, room):
+            adapter_events.append(("join", identifier, room))
+        def leave(self, identifier, room):
+            adapter_events.append(("leave", identifier, room))
+        def disconnect(self, identifier):
+            adapter_events.append(("disconnect", identifier))
+        def close(self):
+            pass
+
+    server = SonicWSServer(client_packets=packets, server_packets=packets, port=0, adapter=Adapter())
     server_values = []
 
     def handle_server_connect(connection):
@@ -57,7 +74,7 @@ async def main():
     print("Connecting client...")
 
     client = await asyncio.wait_for(
-        SonicWS.connect(f"ws://127.0.0.1:{server.port}"),
+        SonicWS.connect(f"ws://127.0.0.1:{server.port}", reconnect={"enabled": True, "attempts": 5, "minDelayMs": 150, "maxDelayMs": 150, "jitter": 0}),
         5,
     )
 
@@ -94,6 +111,34 @@ async def main():
     print(f"Server received all values: {server_values}")
 
     connection = server.connections[0]
+    connection.state["player"] = {"id": 7}
+    connection.respond("point", lambda value: {"sum": value["x"] + value["y"]})
+    client.respond("point", lambda value: {"sum": value["x"] + value["y"]})
+    assert await client.request("point", {"x": 3, "y": 4}) == {"sum": 7}
+    assert await connection.request("point", {"x": 5, "y": 6}) == {"sum": 11}
+    connection.join("world:one")
+    room_value = asyncio.get_running_loop().create_future()
+    client.on("point", lambda value: room_value.set_result(value) if not room_value.done() else None)
+    await server.broadcast_room("world:one", "point", {"x": 8, "y": 9})
+    assert await asyncio.wait_for(room_value, 2) == {"x": 8, "y": 9}
+    assert any(event[0] == "join" and event[2] == "world:one" for event in adapter_events)
+    assert any(event[0] == "publish" for event in adapter_events)
+
+    recovered = asyncio.get_running_loop().create_future()
+    client.on_recovered(lambda event: recovered.set_result(event) if not recovered.done() else None)
+    replayed = asyncio.get_running_loop().create_future()
+    client.on("point", lambda value: replayed.set_result(value) if value.get("x") == 10 and not replayed.done() else None)
+    client.socket.transport.abort()
+    while server.connections:
+        await asyncio.sleep(.01)
+    missed = server.server_packets.packet("point").encode(({"x": 10, "y": 11},), connection.id)
+    server.replay_frame(connection, bytes([server.server_packets.code("point")]) + missed)
+    assert await asyncio.wait_for(recovered, 5) == {"recovered": True, "replayed": 1}
+    assert await asyncio.wait_for(replayed, 2) == {"x": 10, "y": 11}
+    replacement = server.connections[0]
+    assert replacement.state["player"] == {"id": 7}
+    assert "world:one" in replacement.tags
+    connection = replacement
 
     print("Server sending numbers: [2, 3, 4]")
     await connection.send("numbers", 2, 3, 4)

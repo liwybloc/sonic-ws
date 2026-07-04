@@ -1,6 +1,6 @@
 # Python getting started
 
-Python 3.10+ and `websockets>=14` are required. Building from source also requires a Rust toolchain; wheel creation compiles and bundles the platform shared library.
+Python 3.10+, `websockets>=14`, and `wasmtime` are required. Building from source also requires a Rust toolchain; wheel creation compiles and bundles the portable Rust WASM codec.
 
 ```py
 import asyncio

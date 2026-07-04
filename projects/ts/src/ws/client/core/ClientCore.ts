@@ -22,6 +22,22 @@ import { toPacketBuffer } from "../../util/BufferUtil";
 import { Connection } from "../../Connection";
 import { AsyncPQ, ClientPQ, PacketQueue, SendQueue } from "../../PacketProcessor";
 import { as8String } from "../../util/StringUtil";
+import { ControlType, decodeControl, encodeControlRequest, encodeControlResponse, encodeResume } from "../../util/packets/ControlProtocol";
+
+export type ReconnectOptions = {
+    enabled?: boolean;
+    attempts?: number;
+    minDelayMs?: number;
+    maxDelayMs?: number;
+    jitter?: number;
+};
+
+type TransportBinding<T, K> = {
+    socket: T;
+    bufferHandler: (value: K) => Promise<Uint8Array>;
+    on: Function;
+    off: Function;
+};
 
 export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint8Array<ArrayBufferLike>) => void; close: (c: number, d: string | undefined) => void; }, K>
             extends Connection<T, K> {
@@ -39,6 +55,22 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
 
     private asyncData: Record<number, AsyncPQ<ClientPQ>> = {};
     private asyncMap: Record<number, boolean> = {};
+    private reconnectFactory?: () => TransportBinding<T, K>;
+    private reconnectOptions: Required<ReconnectOptions> = { enabled: false, attempts: Infinity, minDelayMs: 500, maxDelayMs: 10_000, jitter: .25 };
+    private reconnectAttempt = 0;
+    private reconnectTimer?: ReturnType<typeof setTimeout>;
+    private intentionalClose = false;
+    private connectedOnce = false;
+    private reconnectingListeners: Array<(event: { attempt: number; delayMs: number }) => void> = [];
+    private reconnectListeners: Array<() => void> = [];
+    private reconnectFailedListeners: Array<() => void> = [];
+    private nextRequestId = 1;
+    private pendingRequests = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+    private responders = new Map<string, (...values: any[]) => any>();
+    private sessionId?: string;
+    private lastReplaySequence = 0;
+    private recoveredListeners: Array<(event: { recovered: boolean; replayed: number }) => void> = [];
+    private pendingResumeSession?: string;
 
     constructor(ws: T, bufferHandler: (val: K) => Promise<Uint8Array>, on: Function, off: Function) {
         super(ws, -1, "LocalSocket", on, off);
@@ -50,10 +82,29 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
         this.serverKeyHandler = this.serverKeyHandler.bind(this);
         this.messageHandler = this.messageHandler.bind(this);
 
-        this._on('message', this.serverKeyHandler);
+        this.attachClientTransport();
 
-        this._on('close', () => {
-            this.callMiddleware('onStatusChange', WebSocket.CLOSED);
+        this.bufferHandler = bufferHandler;
+    }
+
+    protected configureReconnect(factory: () => TransportBinding<T, K>, options: ReconnectOptions = {}): void {
+        this.reconnectFactory = factory;
+        this.reconnectOptions = {
+            enabled: options.enabled ?? true,
+            attempts: options.attempts ?? Infinity,
+            minDelayMs: options.minDelayMs ?? 500,
+            maxDelayMs: options.maxDelayMs ?? 10_000,
+            jitter: options.jitter ?? .25,
+        };
+        if (this.reconnectOptions.attempts < 0 || this.reconnectOptions.minDelayMs < 0 || this.reconnectOptions.maxDelayMs < this.reconnectOptions.minDelayMs)
+            throw new Error("Invalid reconnect timing options");
+        if (this.reconnectOptions.jitter < 0 || this.reconnectOptions.jitter > 1)
+            throw new Error("Reconnect jitter must be between 0 and 1");
+    }
+
+    private attachClientTransport(): void {
+        this._on('message', this.serverKeyHandler);
+        this._on('close', (...args: any[]) => {
             for(const [id, callback, shouldCall] of Object.values(this._timers)) {
                 this.clearTimeout(id);
                 if(shouldCall) callback(true);
@@ -65,9 +116,47 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
             for(const packet of this.serverPackets.getPackets()) {
                 delete packet.lastReceived[0];
             }
+            const event = args[0];
+            const code = typeof event === "number" ? event : event?.code;
+            if (!this.intentionalClose && code !== 1000) this.scheduleReconnect();
         });
+    }
 
-        this.bufferHandler = bufferHandler;
+    private scheduleReconnect(): void {
+        if (!this.reconnectFactory || !this.reconnectOptions.enabled || this.reconnectTimer) return;
+        if (this.reconnectAttempt >= this.reconnectOptions.attempts) {
+            this.reconnectFailedListeners.forEach(listener => listener());
+            return;
+        }
+        const attempt = ++this.reconnectAttempt;
+        const base = Math.min(this.reconnectOptions.maxDelayMs, this.reconnectOptions.minDelayMs * 2 ** (attempt - 1));
+        const spread = base * this.reconnectOptions.jitter;
+        const delayMs = Math.max(0, Math.round(base - spread + Math.random() * spread * 2));
+        this.reconnectingListeners.forEach(listener => listener({ attempt, delayMs }));
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = undefined;
+            this.beginReconnect();
+        }, delayMs);
+    }
+
+    private beginReconnect(): void {
+        try {
+            const binding = this.reconnectFactory!();
+            this.clientPackets = new PacketHolder();
+            this.serverPackets = new PacketHolder();
+            this.asyncData = {};
+            this.asyncMap = {};
+            this.reading = false;
+            this.readQueue = [];
+            this.pastKeys = false;
+            this.preListen = {};
+            this.bufferHandler = binding.bufferHandler;
+            this.batcher = new BatchHelper();
+            this.replaceTransport(binding.socket, binding.on, binding.off);
+            this.attachClientTransport();
+        } catch {
+            this.scheduleReconnect();
+        }
     }
 
     private reading: boolean = false;
@@ -91,10 +180,12 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
 
         const data = inflateNative(cdata.subarray(4, cdata.length));
 
+        const previousSession = this.sessionId;
         const [ckOff,id] = readVarInt(data, 0);
         this.id = id;
-
-        const [valuesOff,ckLength] = readVarInt(data, ckOff);
+        const [sessionOffset, sessionLength] = readVarInt(data, ckOff);
+        this.sessionId = new TextDecoder().decode(data.slice(sessionOffset, sessionOffset + sessionLength));
+        const [valuesOff,ckLength] = readVarInt(data, sessionOffset + sessionLength);
         
         const ckData = data.subarray(valuesOff, valuesOff + ckLength);
         this.clientPackets.holdPackets(Packet.deserializeAll(ckData, true));
@@ -111,7 +202,7 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
             }
         }
 
-        Object.keys(this.preListen!).forEach(tag => this.preListen![tag].forEach(listener => {
+        Object.keys(this.preListen ?? {}).forEach(tag => this.preListen![tag].forEach(listener => {
             // print the error to console without halting execution
             if(!this.serverPackets.hasTag(tag)) return console.error(new Error(`The server does not send the packet with tag "${tag}"!`));
             this.listen(tag, listener);
@@ -120,11 +211,22 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
 
         this.pastKeys = true;
 
-        this.readyListeners!.forEach(l => l());
+        if (this.connectedOnce) {
+            this.reconnectAttempt = 0;
+            this.reconnectListeners.forEach(listener => listener());
+        }
+        this.connectedOnce = true;
+
+        this.readyListeners?.forEach(l => l());
         this.readyListeners = null; // clear
 
         this._off('message', this.serverKeyHandler);
         this._on('message', this.messageHandler);
+
+        if (previousSession && previousSession !== this.sessionId) {
+            this.pendingResumeSession = previousSession;
+            this.raw_send(encodeResume(previousSession, this.lastReplaySequence));
+        }
 
         this.readQueue.forEach(e => this.messageHandler(e));
         this.readQueue = [];
@@ -185,6 +287,7 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
     }
 
     private async dataHandler(data: Uint8Array): Promise<void> {
+        if (data[0] === 0) return this.handleControl(data);
         const key = data[0];
         const value = data.slice(1);
 
@@ -234,6 +337,48 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
         batchData.forEach(data => this.listenPacket(data, tag, packetQueue, isAsync, asyncData!));
     }
 
+    private async handleControl(data: Uint8Array): Promise<void> {
+        const message = decodeControl(data);
+        if (message.type === ControlType.REPLAY) {
+            if (message.sequence <= this.lastReplaySequence) return;
+            this.lastReplaySequence = message.sequence;
+            await this.dataHandler(message.payload);
+            return;
+        }
+        if (message.type === ControlType.RESUMED) {
+            if (message.recovered && this.pendingResumeSession) this.sessionId = this.pendingResumeSession;
+            this.pendingResumeSession = undefined;
+            this.recoveredListeners.forEach(listener => listener({ recovered: message.recovered, replayed: message.replayed }));
+            if (!message.recovered) this.lastReplaySequence = 0;
+            return;
+        }
+        if (message.type === ControlType.RESUME)
+            throw new Error("A client cannot receive a recovery request");
+        if (message.type === ControlType.RESPONSE) {
+            const pending = this.pendingRequests.get(message.id);
+            if (!pending) return;
+            clearTimeout(pending.timer);
+            this.pendingRequests.delete(message.id);
+            if (message.ok) pending.resolve(message.value);
+            else pending.reject(new Error(String(message.value)));
+            return;
+        }
+
+        try {
+            const tag = this.serverPackets.getTag(message.packetKey);
+            if (!tag) throw new Error(`Unknown RPC packet key ${message.packetKey}`);
+            const responder = this.responders.get(tag);
+            if (!responder) throw new Error(`No responder registered for packet "${tag}"`);
+            const decoded = await this.serverPackets.getPacket(tag).listen(message.payload, null);
+            if (typeof decoded === "string") throw new Error(decoded);
+            const [payload, spread] = decoded;
+            const result = spread ? await responder(...payload) : await responder(payload);
+            this.raw_send(encodeControlResponse(message.id, true, result ?? null));
+        } catch (error) {
+            this.raw_send(encodeControlResponse(message.id, false, error instanceof Error ? error.message : String(error)));
+        }
+    }
+
     private async messageHandler(event: K): Promise<void> {
         const data = await this.bufferHandler(event);
         if (data.length < 1) return;
@@ -273,6 +418,32 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
         return this.send(this.clientPackets.getVariantTag(parent, variant), ...values);
     }
 
+    /** Sends a validated packet as an RPC request and waits for its response. */
+    public async request(tag: string, ...valuesAndOptions: any[]): Promise<any> {
+        const possibleOptions = valuesAndOptions.at(-1);
+        const options = valuesAndOptions.length > 1 && possibleOptions && typeof possibleOptions === "object" && !Array.isArray(possibleOptions)
+            && Object.keys(possibleOptions).every(key => key === "timeoutMs")
+            ? valuesAndOptions.pop() as { timeoutMs?: number }
+            : {};
+        const [packetKey, payload] = await processPacket(this.clientPackets, tag, valuesAndOptions, this.sendQueue, 0);
+        const id = this.nextRequestId++;
+        if (this.nextRequestId > 0x7fffffff) this.nextRequestId = 1;
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.pendingRequests.delete(id);
+                reject(new Error(`RPC request "${tag}" timed out`));
+            }, options.timeoutMs ?? 5_000);
+            this.pendingRequests.set(id, { resolve, reject, timer });
+            this.raw_send(encodeControlRequest(id, packetKey, payload));
+        });
+    }
+
+    /** Registers the client-side responder for server requests using this packet tag. */
+    public respond(tag: string, handler: (...values: any[]) => any): void {
+        const resolved = this.serverPackets.resolveTag(tag);
+        this.responders.set(resolved, handler);
+    }
+
     public async sendSafe(tag: string, ...values: any[]): Promise<boolean> {
         try { await this.send(tag, ...values); return true; }
         catch (error) { console.error(`Failed to send packet "${tag}"`, error); return false; }
@@ -284,15 +455,26 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
      */
     public on_ready(listener: () => void): void {
         if (this.pastKeys) listener();
-        else this.readyListeners!.push(listener);
+        else (this.readyListeners ??= []).push(listener);
     } 
 
     /**
      * Listens for when the client closes
      * @param listener Callback on close with close event
      */
-    public on_close(listener: (event: CloseEvent) => void): void {
+    public on_close(listener: (...args: any[]) => void): void {
         this._on("close", listener);
+    }
+
+    public on_reconnecting(listener: (event: { attempt: number; delayMs: number }) => void): void { this.reconnectingListeners.push(listener); }
+    public on_reconnect(listener: () => void): void { this.reconnectListeners.push(listener); }
+    public on_reconnect_failed(listener: () => void): void { this.reconnectFailedListeners.push(listener); }
+    public on_recovered(listener: (event: { recovered: boolean; replayed: number }) => void): void { this.recoveredListeners.push(listener); }
+
+    public override close(code: number = 1000, reason?: string | Buffer): void {
+        this.intentionalClose = true;
+        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+        super.close(code, reason);
     }
 
     /**
@@ -302,8 +484,9 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
      */
     public on(tag: string, listener: (value: any[]) => void): void {
         if (this.socket.readyState !== WebSocket.OPEN) {
-            if (!this.preListen![tag]) this.preListen![tag] = [];
-            this.preListen![tag].push(listener);
+            const pending = this.preListen ??= {};
+            if (!pending[tag]) pending[tag] = [];
+            pending[tag].push(listener);
             return;
         }
         this.listen(tag, listener);

@@ -12,12 +12,6 @@
  */
 
 import assert from "node:assert/strict";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-process.env.SONIC_WS_CORE_PATH ??= path.resolve(project, "../core/tests/typescript/sonic_ws_core.node");
-
 const {
     SonicWS,
     SonicWSServer,
@@ -29,6 +23,8 @@ const {
     DefineEnum,
     WrapEnum,
     RegisterPacketConstructor,
+    CreatePacketManifest,
+    LoadPacketManifest,
 } = await import("../dist/index.js");
 
 class C2SMovement {
@@ -148,6 +144,14 @@ function withTimeout(promise, milliseconds, label) {
 let server;
 let client;
 const sendErrors = [];
+const adapterEvents = [];
+const adapter = {
+    start(serverId, receiver) { this.serverId = serverId; this.receiver = receiver; },
+    publish(message) { adapterEvents.push(["publish", message]); },
+    join(id, room) { adapterEvents.push(["join", id, room]); },
+    leave(id, room) { adapterEvents.push(["leave", id, room]); },
+    disconnect(id) { adapterEvents.push(["disconnect", id]); },
+};
 
 try {
     server = new SonicWSServer({
@@ -156,6 +160,7 @@ try {
         websocketOptions: { port: 0, host: "127.0.0.1" },
         sonicServerSettings: { checkForUpdates: false },
         onSendError: (error, context) => sendErrors.push({ error, context }),
+        adapter,
     });
 
     await withTimeout(new Promise(resolve => server.on_ready(resolve)), 5_000, "server listen");
@@ -179,6 +184,13 @@ try {
     const connection = await connectionPromise;
     connection.state.player = { id: 7 };
     assert.deepEqual(connection.state.player, { id: 7 });
+    connection.respond("client_schema", ({ dx, dy, dz }) => ({ sum: dx + dy + dz }));
+    client.respond("server_schema", ({ dx, dy, dz }) => ({ sum: dx + dy + dz }));
+    assert.deepEqual(await client.request("client_schema", { dx: 2, dy: 3, dz: 4 }), { sum: 9 });
+    assert.deepEqual(await connection.request("server_schema", { dx: 4, dy: 5, dz: 6 }), { sum: 15 });
+    connection.join("world:one");
+    assert(connection.getRooms().has("world:one"));
+    assert(adapterEvents.some(event => event[0] === "join" && event[2] === "world:one"));
     const clientRawSends = [];
     const serverRawSends = [];
     client.raw_onsend(data => clientRawSends.push(Uint8Array.from(data)));
@@ -204,6 +216,12 @@ try {
     await connection.sendVariant("server_movement", "move", { dx: 5, dy: 6, dz: 7 });
 
     await withTimeout(Promise.all([...clientReceives, ...serverReceives, serverParent, clientParent, childReceive]), 10_000, "packet roundtrips");
+    const roomReceive = new Promise(resolve => client.on("server_schema", value => {
+        if (value.dx === 11) resolve();
+    }));
+    await server.broadcastRoom("world:one", "server_schema", { dx: 11, dy: 12, dz: 13 });
+    await withTimeout(roomReceive, 2_000, "room broadcast");
+    assert(adapterEvents.some(event => event[0] === "publish" && event[1].room === "world:one"));
     assert(clientRawSends.length >= cases.length, "client raw_onsend did not observe sends");
     assert(serverRawSends.length >= cases.length, "server raw_onsend did not observe sends");
     assert.equal(CreatePacket({ tag: "rate16", rateLimit: 65_535 }).rateLimit, 65_535);
@@ -235,6 +253,13 @@ try {
     const constructedPacket = CreatePacket({ tag: "constructed-unit", type: PacketType.VARINT, schema: ["x", "y", "z"], dataMax: 3, constructor: C2SMovement });
     assert.equal(constructedPacket.constructorName, "C2SMovement");
     assert(constructedPacket.finishReceive([1, 2, 3]) instanceof C2SMovement);
+    const replayedPacket = CreatePacket({ tag: "replayed", type: PacketType.VARINT, replay: true });
+    assert.equal(replayedPacket.replay, true);
+    assert(Buffer.from(replayedPacket.serialize()).includes(Buffer.from('"replay":true')));
+    assert.throws(() => CreatePacket({ tag: "invalid-replay", replay: true, dataBatching: 1 }), /replay.*batching/i);
+    const manifest = LoadPacketManifest(CreatePacketManifest({ clientPackets: [mapped], serverPackets: [replayedPacket] }));
+    assert.deepEqual(manifest.clientPackets.map(value => value.tag), ["mapped"]);
+    assert.deepEqual(manifest.serverPackets.map(value => value.tag), ["replayed"]);
     assert.equal(await connection.sendSafe("not-a-packet"), false);
     assert.equal(await server.broadcastSafe("not-a-packet"), false);
     assert.equal(sendErrors.length, 2);
@@ -248,3 +273,5 @@ try {
     }
     if (server) await new Promise(resolve => server.shutdown(() => resolve()));
 }
+
+await import("./test_recovery.mjs");

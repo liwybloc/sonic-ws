@@ -15,13 +15,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-process.env.SONIC_WS_CORE_PATH ??= path.join(
-    repository,
-    "projects/core/tests/typescript/sonic_ws_core.node",
-);
 
 const {
     SonicWS,

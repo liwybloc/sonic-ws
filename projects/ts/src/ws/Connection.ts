@@ -140,6 +140,19 @@ export abstract class Connection<T extends {
         this._on('open', () => this.callMiddleware('onStatusChange', WebSocket.OPEN));
     }
 
+    /** Rebinds this connection object to a replacement transport. */
+    protected replaceTransport(socket: T, addListener: Function, removeListener: Function): void {
+        this.socket = socket;
+        this._on = addListener;
+        this._off = removeListener;
+        this.closed = false;
+        this._on("close", () => {
+            this.callMiddleware('onStatusChange', WebSocket.CLOSED);
+            this.closed = true;
+        });
+        this._on('open', () => this.callMiddleware('onStatusChange', WebSocket.OPEN));
+    }
+
     public setTimeout(call: () => void, time: number, callOnClose: boolean = false): number {
         const timeout = setTimeout(() => {
             call();

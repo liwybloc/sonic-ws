@@ -4,3 +4,5 @@ tsconfig.json
 webpack.config.js
 minify.mjs
 package-files.mjs
+dist/native/wasm/pkg/
+dist/ws/client/browser/

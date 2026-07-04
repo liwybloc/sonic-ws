@@ -240,6 +240,8 @@ export type SharedPacketSettings = {
 
     /** If this is true, the packet will be Gzip compressed. Defaults to false on all types but JSON. */
     gzipCompression?: boolean;
+    /** Retain this server-to-client packet briefly for connection-state recovery. */
+    replay?: boolean;
 };
 
 /** Settings for single-typed packets */
@@ -327,6 +329,7 @@ export function CreatePacket<T extends ArguableType>(
     } else if(dataMin == undefined) dataMin = type == PacketType.NONE ? 0 : dataMax;
 
     if(rereference && dataMin == 0) throw new Error("Rereference cannot be true if the dataMin is 0");
+    if (settings.replay && dataBatching) throw new Error(`Packet "${tag}" cannot combine replay with batching`);
 
     if (isInvalidType(type)) {
         throw new Error(`Invalid packet type: ${type}`);
@@ -342,7 +345,7 @@ export function CreatePacket<T extends ArguableType>(
 
     const schema = new PacketSchema<PacketType>(false, type, async, clampDataMin(dataMin, dataMax), clampDataMax(dataMax), clampRateLimit(rateLimit),
                     dontSpread, autoFlatten, rereference, dataBatching, maxBatchSize, gzipCompression,
-                    fields, quantized, min, max, settings._group, packetConstructor?.name);
+                    fields, quantized, min, max, settings._group, packetConstructor?.name, settings.replay ?? false);
 
     return new Packet<ConvertType<T>>(tag, schema, validator, enabled, false);
 }
@@ -365,6 +368,7 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
 
     if(!tag) throw new Error("Tag not selected!");
     if(!types || types.length == 0) throw new Error("Types is set to 0 length");
+    if (settings.replay && dataBatching) throw new Error(`Packet "${tag}" cannot combine replay with batching`);
     validateFields(fields, tag);
     if (packetConstructor && !fields) throw new Error(`Packet "${tag}" constructor requires schema`);
     if (packetConstructor) RegisterPacketConstructor(packetConstructor);
@@ -392,7 +396,7 @@ export function CreateObjPacket<T extends readonly ArguableType[], V extends rea
     const clampedDataMaxes = dataMaxes.map(clampDataMax);
     const clampedDataMins = dataMins.map((m, i) => types[i] == PacketType.NONE ? 0 : clampDataMin(m, clampedDataMaxes[i]));
 
-    const schema = new PacketSchema<readonly PacketType[]>(true, types as any, async, clampedDataMins, clampedDataMaxes, clampRateLimit(rateLimit), dontSpread, transpose, false, dataBatching, maxBatchSize, gzipCompression, fields, undefined, undefined, undefined, undefined, packetConstructor?.name);
+    const schema = new PacketSchema<readonly PacketType[]>(true, types as any, async, clampedDataMins, clampedDataMaxes, clampRateLimit(rateLimit), dontSpread, transpose, false, dataBatching, maxBatchSize, gzipCompression, fields, undefined, undefined, undefined, undefined, packetConstructor?.name, settings.replay ?? false);
 
     return new Packet<V>(tag, schema, validator, enabled, false);
 }

@@ -12,7 +12,9 @@
  */
 
 import WS from 'ws';
-import { SonicWSCore } from "../core/ClientCore";
+import { ReconnectOptions, SonicWSCore } from "../core/ClientCore";
+
+export type SonicConnectOptions = WS.ClientOptions & { reconnect?: ReconnectOptions };
 
 /** Class to connect to a SonicWS server */
 export class SonicWS extends SonicWSCore<WS.WebSocket, Buffer> {
@@ -21,8 +23,27 @@ export class SonicWS extends SonicWSCore<WS.WebSocket, Buffer> {
      * @param url The url to connect to
      * @param options The websocket options
      */
-    constructor(url: string, options?: WS.ClientOptions) {
+    constructor(url: string, options?: WS.ClientOptions, reconnect?: ReconnectOptions) {
         const ws = new WS.WebSocket(url, options);
+        ws.on("error", () => {});
         super(ws, (val: Buffer) => Promise.resolve(new Uint8Array(val)), ws.on.bind(ws), ws.off.bind(ws));
+        if (reconnect?.enabled) this.configureReconnect(() => {
+            const socket = new WS.WebSocket(url, options);
+            socket.on("error", () => {});
+            return { socket, bufferHandler: (value: Buffer) => Promise.resolve(new Uint8Array(value)), on: socket.on.bind(socket), off: socket.off.bind(socket) };
+        }, reconnect);
+    }
+
+    /** Creates a client and resolves after WASM loading and schema negotiation. */
+    static async connect(url: string, options: SonicConnectOptions = {}): Promise<SonicWS> {
+        const { reconnect, ...websocketOptions } = options;
+        const client = new SonicWS(url, websocketOptions, reconnect);
+        await new Promise<void>((resolve, reject) => {
+            client.on_ready(resolve);
+            client.on_close((code: number, reason: Buffer) => {
+                if (!client.clientPackets.getPackets()?.length) reject(new Error(`SonicWS connection closed before ready (${code}: ${reason})`));
+            });
+        });
+        return client;
     }
 }

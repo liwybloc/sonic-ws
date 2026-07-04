@@ -18,8 +18,6 @@ import {
 	chromium
 } from "playwright";
 
-delete process.env.SONIC_WS_CORE_PATH; // Exercise the Node WASM fallback on the server too.
-
 const {
 	SonicWSServer,
 	PacketType,
@@ -420,7 +418,7 @@ try {
 	const wasmFixture = await readFile(new URL("../../../bundled/bundle.wasm", import.meta.url));
 	const fallbackPage = await browser.newPage();
 	await fallbackPage.route("**/SonicWS/bundle.wasm", route => route.fulfill({ status: 404, body: "missing" }));
-	await fallbackPage.route("https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/version", route => route.fulfill({ status: 200, body: "23" }));
+	await fallbackPage.route("https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/version", route => route.fulfill({ status: 200, body: "24" }));
 	await fallbackPage.route("https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/bundle.wasm", route => route.fulfill({ status: 200, contentType: "application/wasm", body: wasmFixture }));
 	await fallbackPage.goto(`http://127.0.0.1:${address.port}/`);
 	assert.equal(await fallbackPage.evaluate(async () => {
@@ -442,7 +440,7 @@ try {
 			return error instanceof Error ? error.message : String(error);
 		}
 	});
-	assert.match(mismatch, /CDN protocol mismatch: expected 23, received 999/);
+	assert.match(mismatch, /CDN protocol mismatch: expected 24, received 999/);
 	await mismatchPage.close();
 	console.log("browser: mismatched CDN protocol was rejected");
 } finally {

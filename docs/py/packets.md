@@ -87,3 +87,7 @@ Python JSONUtil supports `None`, booleans, integers, IEEE numbers, strings, list
 ## Batching, compression, and rereference
 
 Batching collects sends of one packet for `dataBatching` milliseconds. Each item is length-framed; an empty item is valid. `gzipCompression` is the historical setting name but means raw DEFLATE. Compressed batch expansion is bounded. Rereference caches the last value per connection and sends an empty payload for equality; an empty first value is invalid.
+
+`replay=True` opts a server packet into bounded connection-state recovery. Only use it for updates that are safe to deliver after reconnect. Replay and `dataBatching` are intentionally incompatible.
+
+`create_packet_manifest(client_packets=[...], server_packets=[...])` creates the same versioned binary definition artifact as TypeScript. `load_packet_manifest(data)` returns both packet lists. Validators and local constructors remain application code and are not embedded in the manifest.

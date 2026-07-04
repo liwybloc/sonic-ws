@@ -1,6 +1,6 @@
 # SonicWS TypeScript documentation
 
-The TypeScript package is the primary Node and browser API for SonicWS. It exchanges packet schemas during the WebSocket handshake and delegates binary encoding, decoding, validation, batching, and raw DEFLATE to the Rust core. Node loads a native addon when available and falls back to WebAssembly; browsers use WebAssembly.
+The TypeScript package is the primary Node and browser API for SonicWS. It exchanges packet schemas during the WebSocket handshake and delegates binary encoding, decoding, validation, batching, and raw DEFLATE to the Rust WebAssembly core in both environments.
 
 ## Contents
 

@@ -2,7 +2,7 @@
 
 ## Rust core loading
 
-Node first checks an explicit addon path, `SONIC_WS_CORE_PATH`, and packaged native-addon candidates. If none load, it requires the packaged Node WASM module. Native `.node` files are specific to operating system, CPU architecture, Node ABI/N-API support, and libc environment; build and publish separate artifacts. WASM is portable and is the default browser route.
+Node synchronously loads the packaged Node-target WASM module. Browsers load the bundler-target WASM module during `SonicWS.initialize()`. SonicWS does not ship or discover platform-specific Node addons.
 
 `initializeWasmCore()` explicitly loads the WASM implementation. The stable wrapper handles signed/unsigned numbers, floats, strings, booleans, raw decode, hex, object framing, batching, compression, and encoded validation.
 

@@ -13,6 +13,8 @@ It is designed for real-time applications such as games, dashboards, collaborati
 - Use compact numeric packet IDs instead of repeated string keys.
 - Share the same packet codec across Node and browser clients.
 - Batch, validate, compress, and rate-limit packets with minimal boilerplate.
+- Reconnect with bounded state recovery and opt-in missed-packet replay.
+- Use validated RPC, server-side rooms, and pluggable scaling adapters.
 - Code is much more readable than every other socket library*
 
 <details>
@@ -20,7 +22,7 @@ It is designed for real-time applications such as games, dashboards, collaborati
 
 SonicWS is an ultra-lightweight, high-performance WebSocket library focused on maximum bandwidth efficiency, speed, and security.
 
-The packet codec is written in Rust and shared by every runtime. Node can use the native N-API addon (with a WASM fallback), while browsers use the same core compiled to WebAssembly. This keeps packet encoding, decoding, validation, batching, and compression consistent between the server and client.
+The packet codec is written in Rust and shared by every runtime. Node and browsers use the core compiled to WebAssembly. This keeps packet encoding, decoding, validation, batching, and compression consistent between the server and client without platform-specific Node binaries.
 
 Compression:
 - Lossless compression up to 70% or more (for example, 38kb -> 14kb)
@@ -78,7 +80,7 @@ The TypeScript/python layer handles connections, packet definitions, middleware,
 - Object framing, batching, and raw DEFLATE compression
 - TypeScript/Python-side JSON conversion transported through reserved wire type 16 as raw bytes
 
-The same Rust implementation is exposed through N-API for native Node use and through WASM for browsers, Python, and the portable Node fallback. Python loads its packaged WASM core through `wasmtime`, so the Python package does not need separate SonicWS DLL, dylib, or shared-object releases. Protocol behavior therefore does not depend on which runtime is connected.
+The same Rust implementation runs through WASM in Node, browsers, and Python. Python loads its packaged WASM core through `wasmtime`, while Node uses the packaged Node-target module. Protocol behavior therefore does not depend on the operating system or connected runtime.
 
 Automatic browser-file serving at `/SonicWS/bundle.js` and
 `/SonicWS/bundle.wasm` is supported only by the Node.js server, where it can be
@@ -127,7 +129,7 @@ The underlying TypeScript commands can also be run directly:
 cd projects/ts
 npm install
 npm run build       # TypeScript, Node WASM, browser WASM, and browser bundle
-npm run build_node  # Node distribution and WASM fallback
+npm run build_node  # Node distribution and Node-target WASM
 npm run build_web   # Browser bundle and WASM
 npm run test_node   # Node end-to-end packet tests
 npm run test_web    # Headless browser/WASM end-to-end tests
@@ -163,15 +165,15 @@ await ws.send("entitySnapshot", [...entities.values()]);
 
 This remains a homogeneous `VARINT` packet. Schema mapping, row-major `autoFlatten`, object-packet `autoTranspose`, quantization, bounds, and packet groups are application-layer conveniences and do not turn the codec into a mixed-type serializer. See the packet documentation above for TypeScript and Python examples.
 
+Clients can opt into capped exponential-backoff reconnect. Packets marked `replay: true` are retained in a bounded per-session buffer; successful recovery also restores server-side `state` and room membership. RPC request payloads use ordinary packet definitions, so validation and compact encoding still apply. Room broadcasts work locally and can be forwarded across processes through an adapter. Long-polling fallback is intentionally outside SonicWS's scope.
+
 ## KNOWN ISSUES
 
-- Native `.node` addons are platform-specific. WASM is used as the portable fallback, while prebuilt native binaries will need separate builds for each supported operating system and architecture.
 
 ## PLANNED FEATURES
 - Better encoding for the first packet that sends packet information
 - Publish the Rust core as a standalone, documented crate
 - Add first-class Go bindings
-- Provide prebuilt N-API binaries for the main Node platforms to avoid using WASM for the server
 
 ## LICENSE
 This project is source-available.

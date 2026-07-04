@@ -54,6 +54,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public readonly variant?: string;
     public readonly isParent: boolean;
     public readonly constructorName?: string;
+    public readonly replay: boolean;
 
     public readonly rateLimit: number;
 
@@ -94,6 +95,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         this.variant = schema.group?.variant;
         this.isParent = schema.group?.isParent ?? false;
         this.constructorName = schema.constructorName;
+        this.replay = schema.replay;
 
         this.object = schema.object;
 
@@ -305,6 +307,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             max: this.valueMax,
             group: this.parent !== undefined ? { parent: this.parent, variant: this.variant ?? "", isParent: this.isParent } : undefined,
             constructor: this.constructorName,
+            replay: this.replay || undefined,
         }));
 
         // shared values for both
@@ -362,9 +365,14 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         const metadata = JSON.parse(new TextDecoder().decode(data.slice(offset, offset += metadataLength))) as {
             schema?: string[]; quantized?: { scale: number; trackError?: boolean }; min?: number; max?: number;
             group?: { parent: string; variant: string; isParent: boolean };
-            constructor?: string;
+            constructor?: string; replay?: boolean;
         };
-        const constructorName = Object.prototype.hasOwnProperty.call(metadata, "constructor") ? metadata.constructor : undefined;
+        const fields = Array.isArray(metadata.schema) ? metadata.schema : undefined;
+        const quantized = metadata.quantized && typeof metadata.quantized.scale === "number" ? metadata.quantized : undefined;
+        const valueMin = typeof metadata.min === "number" ? metadata.min : undefined;
+        const valueMax = typeof metadata.max === "number" ? metadata.max : undefined;
+        const group = metadata.group && typeof metadata.group.parent === "string" ? metadata.group : undefined;
+        const constructorName = typeof metadata.constructor === "string" ? metadata.constructor : undefined;
 
         // read batching, up 1
         const dataBatching: number = data[offset++];
@@ -417,7 +425,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             const finalTypes: ArguableType[] = types.map(x => x == PacketType.ENUMS ? enums[index++] : x); // convert enums to their enum packages
 
             // make schema
-            const schema = new PacketSchema<readonly PacketType[]>(true, finalTypes, async, dataMins, dataMaxes, -1, dontSpread, autoFlatten, false, dataBatching, -1, gzipCompression, metadata.schema, undefined, undefined, undefined, metadata.group, constructorName);
+            const schema = new PacketSchema<readonly PacketType[]>(true, finalTypes, async, dataMins, dataMaxes, -1, dontSpread, autoFlatten, false, dataBatching, -1, gzipCompression, fields, undefined, undefined, undefined, group, constructorName, metadata.replay === true);
             return [
                 new Packet(tag, schema, null, false, client),
                 // +1 to go next
@@ -444,7 +452,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     
         // make schema
         const schema = new PacketSchema<PacketType>(false, finalType, async, dataMin, dataMax, -1, dontSpread, autoFlatten, rereference, dataBatching, -1, gzipCompression,
-            metadata.schema, metadata.quantized, metadata.min, metadata.max, metadata.group, constructorName);
+            fields, quantized, valueMin, valueMax, group, constructorName, metadata.replay === true);
         
         return [
             new Packet(tag, schema, null, false, client),
@@ -494,11 +502,12 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
     public valueMax?: number;
     public group?: { parent: string; variant: string; isParent: boolean };
     public constructorName?: string;
+    public replay: boolean;
 
     constructor(object: boolean, type: ImpactType<T, ArguableType>, async: boolean, dataMin: ImpactType<T, number>, dataMax: ImpactType<T, number>, rateLimit: number,
                 dontSpread: boolean, autoFlatten: boolean, rereference: boolean, dataBatching: number, maxBatchSize: number, gzipCompression: boolean,
                 fields?: readonly string[], quantized?: { scale: number; trackError?: boolean }, valueMin?: number, valueMax?: number,
-                group?: { parent: string; variant: string; isParent: boolean }, constructorName?: string) {
+                group?: { parent: string; variant: string; isParent: boolean }, constructorName?: string, replay: boolean = false) {
         // todo add rereference to objects
         this.object = object;
         this.async = async;
@@ -517,6 +526,7 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
         this.valueMax = valueMax;
         this.group = group ? { ...group } : undefined;
         this.constructorName = constructorName;
+        this.replay = replay;
 
         this.type = (object ? (type as ArguableType[]).map(t => convertType(t, this.enumData)) : convertType((type as ArguableType), this.enumData)) as ImpactType<T, PacketType>;
     }

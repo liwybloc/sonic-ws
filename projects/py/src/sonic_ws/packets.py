@@ -112,6 +112,7 @@ class Packet:
     group_variant: str | None = None
     is_parent: bool = False
     constructor_name: str | None = None
+    replay: bool = False
 
     def __post_init__(self):
         if self.quantized is not None:
@@ -359,6 +360,7 @@ class Packet:
             "max": self.value_max,
             "group": ({"parent": self.group_parent, "variant": self.group_variant or "", "isParent": self.is_parent} if self.group_parent is not None else None),
             "constructor": self.constructor_name,
+            "replay": self.replay or None,
         }, separators=(",", ":")).encode()
         shared = (
             bytes([len(tag)])
@@ -473,6 +475,7 @@ class Packet:
                 group_variant=(metadata.get("group") or {}).get("variant"),
                 is_parent=bool((metadata.get("group") or {}).get("isParent", False)),
                 constructor_name=metadata.get("constructor"),
+                replay=bool(metadata.get("replay", False)),
             ),
             offset - start,
         )
@@ -533,6 +536,7 @@ def _common(s, *, default_gzip=False):
         rate_limit=rate,
         default_enabled=bool(s.pop("enabled", s.pop("default_enabled", True))),
         validator=s.pop("validator", None),
+        replay=bool(s.pop("replay", False)),
     )
 
 
@@ -579,6 +583,8 @@ def create_packet(settings=None, **kwargs):
     if value_min is not None and value_max is not None and value_min > value_max:
         raise ValueError(f'Packet "{tag}" min cannot exceed max')
     common = _common(s, default_gzip=kind == PacketType.JSON)
+    if common["replay"] and common["data_batching"]:
+        raise ValueError(f'Packet "{tag}" cannot combine replay with batching')
     packet = Packet(
         tag=tag,
         types=(kind,),
@@ -632,6 +638,8 @@ def create_obj_packet(settings=None, **kwargs):
     maxes = [_data_max(v) for v in maxes]
     mins = [_data_min(v, maxes[i], types[i]) for i, v in enumerate(mins)]
     common = _common(s, default_gzip=PacketType.JSON in types)
+    if common["replay"] and common["data_batching"]:
+        raise ValueError(f'Packet "{tag}" cannot combine replay with batching')
     old_auto = s.pop("autoFlatten", s.pop("auto_flatten", None))
     transpose = s.pop("autoTranspose", s.pop("auto_transpose", None))
     if old_auto is not None and transpose is not None and bool(old_auto) != bool(transpose):

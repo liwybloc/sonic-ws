@@ -20,7 +20,7 @@ Set `SONIC_WS_CORE_PATH=/absolute/path/to/sonic_ws_core.wasm` to test a particul
 
 ## Compatibility contract
 
-TypeScript and Python use protocol version 23, the same schema serializer, one-based packet keys, raw DEFLATE, object sector frames, batch frames, enum ordering, and JSONUtil binary representation. `projects/ts/tests/test_compat.mjs` and `projects/py/tests/test_compat.py` exercise every supported packet mode in both server/client directions.
+TypeScript and Python use protocol version 24, the same schema serializer, one-based packet keys, reserved control frames, raw DEFLATE, object sector frames, batch frames, enum ordering, and JSONUtil binary representation. `projects/ts/tests/test_compat.mjs` and `projects/py/tests/test_compat.py` exercise every supported packet mode in both server/client directions.
 
 The Python project uses the standard `src/` package layout. Wheel builds compile the sibling Rust project to portable WASM. Source-distribution builds temporarily stage the Rust workspace input so the published sdist can build independently.
 

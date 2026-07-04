@@ -62,10 +62,10 @@ function assertNativeCore(value: Partial<SonicNativeCore>): asserts value is Son
         "validateEncoded", "validateEnum", "validateObject",
     ];
     const missing = required.filter(name => typeof value[name] !== "function");
-    if (missing.length > 0) throw new Error(`Invalid SonicWS native addon; missing: ${missing.join(", ")}`);
+    if (missing.length > 0) throw new Error(`Invalid SonicWS codec module; missing: ${missing.join(", ")}`);
 }
 
-/** Injects a native implementation, primarily for tests or custom addon loaders. */
+/** Injects a codec implementation, primarily for tests. */
 export function setNativeCore(core: SonicNativeCore): void {
     assertNativeCore(core);
     loadedCore = core;
@@ -143,41 +143,19 @@ export function initializeWasmCore(): Promise<SonicNativeCore> {
     return wasmInitialization;
 }
 
-/** Loads the platform-specific Node addon lazily. */
-export function loadNativeCore(addonPath?: string): SonicNativeCore {
-    if (loadedCore && !addonPath) return loadedCore;
-
-    const candidates = addonPath
-        ? [addonPath]
-        : [
-            typeof process !== "undefined" ? process.env.SONIC_WS_CORE_PATH : undefined,
-            typeof __dirname !== "undefined" ? `${__dirname}/sonic_ws_core.node` : undefined,
-            typeof __dirname !== "undefined" ? `${__dirname}/../../../native/sonic_ws_core.node` : undefined,
-        ].filter((candidate): candidate is string => Boolean(candidate));
-
-    const failures: string[] = [];
-    const nodeRequire = typeof window === "undefined" ? eval("require") as NodeRequire : undefined;
-    for (const candidate of candidates) {
-        try {
-            const core = nodeRequire!(candidate) as Partial<SonicNativeCore>;
-            assertNativeCore(core);
-            if (!addonPath) loadedCore = core;
-            return core;
-        } catch (error) {
-            failures.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
-        }
+/** Loads the packaged Node-target WASM codec synchronously. */
+export function loadNativeCore(): SonicNativeCore {
+    if (loadedCore) return loadedCore;
+    if (typeof window !== "undefined")
+        throw new Error("SonicWS codec is not initialized; await initializeWasmCore() in browsers.");
+    try {
+        const wasm = (eval("require") as NodeRequire)("./wasm/node/sonic_ws_core.js") as Partial<SonicNativeCore>;
+        assertNativeCore(wasm);
+        loadedCore = wasm;
+        return wasm;
+    } catch (error) {
+        throw new Error(`Unable to load the packaged SonicWS Node WASM codec: ${error instanceof Error ? error.message : String(error)}`);
     }
-    if (typeof window === "undefined") {
-        try {
-            const wasm = nodeRequire!("./wasm/node/sonic_ws_core.js") as Partial<SonicNativeCore>;
-            assertNativeCore(wasm);
-            loadedCore = wasm;
-            return wasm;
-        } catch (error) {
-            failures.push(`Node WASM fallback: ${error instanceof Error ? error.message : String(error)}`);
-        }
-    }
-    throw new Error(`SonicWS codec is not initialized. In Node, set SONIC_WS_CORE_PATH; in browsers, await initializeWasmCore().\n${failures.join("\n")}`);
 }
 
 function enumIndex(pkg: EnumPackage, value: EnumValue): number {

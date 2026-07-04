@@ -63,7 +63,7 @@ class SourceDistribution(sdist):
         shutil.copytree(
             PROJECT.parent / "core",
             VENDOR / "core",
-            ignore=shutil.ignore_patterns("target", "node_modules", ".git", "*.node"),
+            ignore=shutil.ignore_patterns("target", "node_modules", ".git"),
         )
         try:
             super().run()

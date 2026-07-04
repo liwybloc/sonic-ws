@@ -29,7 +29,6 @@ pub enum PacketType {
     Floats = 12,
     Doubles = 13,
     Booleans = 14,
-    Reserved15 = 15,
     Reserved16 = 16,
     Hex = 17,
 }

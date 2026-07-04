@@ -25,9 +25,11 @@ server.on_connect(connection => {
   connection.on("chat", text => connection.send("accepted", text.length > 0));
 });
 
-const client = new SonicWS("ws://127.0.0.1:8080");
+const client = await SonicWS.connect("ws://127.0.0.1:8080", {
+  reconnect: { enabled: true },
+});
 client.on("accepted", accepted => console.log(accepted));
-client.on_ready(() => client.send("chat", "hello"));
+await client.send("chat", "hello");
 ```
 
 `send()` is asynchronous because schema processing can be queued. Await it when ordering or error handling matters.
@@ -44,9 +46,8 @@ By default, the Node.js `SonicWSServer` attached to an HTTP server serves `/Soni
 <script src="/SonicWS/bundle.js"></script>
 <script>
   (async () => {
-    await SonicWS.initialize();
-    const socket = new SonicWS(`ws://${location.host}`);
-    socket.on_ready(() => socket.send("chat", "hello"));
+    const socket = await SonicWS.connect(`ws://${location.host}`);
+    await socket.send("chat", "hello");
   })();
 </script>
 ```

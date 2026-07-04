@@ -20,6 +20,7 @@ import { RateHandler } from "../util/packets/RateHandler";
 import { stringifyBuffer, toPacketBuffer } from "../util/BufferUtil";
 import { CloseCodes, Connection } from "../Connection";
 import { AsyncPQ, PacketQueue, SendQueue, ServerPQ } from "../PacketProcessor";
+import { ControlType, decodeControl, encodeControlRequest, encodeControlResponse } from "../util/packets/ControlProtocol";
 
 const CLIENT_RATELIMIT_TAG = "C", SERVER_RATELIMIT_TAG = "S";
 
@@ -32,8 +33,9 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
     private handshakePacket: string | null;
     private handshakeLambda!: (data: WS.MessageEvent) => void;
 
-    private messageLambda = (data: WS.MessageEvent) => this.messageHandler(this.parseData(data));
+    private messageLambda = (data: WS.MessageEvent) => this.routeMessage(data);
     private handshakedMessageLambda = (data: WS.MessageEvent) => {
+        if (this.isControl(data)) return void this.handleControl(new Uint8Array(data.data as Buffer));
         const parsed = this.parseData(data);
         if(parsed == null) return this.socket.close(CloseCodes.INVALID_DATA);
         if(parsed[0] == this.handshakePacket) return this.socket.close(CloseCodes.REPEATED_HANDSHAKE);
@@ -49,11 +51,17 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
 
     private asyncMap: Record<string, boolean> = {};
     private asyncData: Record<string, [boolean, PacketQueue<ServerPQ>]> = {};
+    private nextRequestId = 1;
+    private pendingRequests = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+    private responders = new Map<string, (...values: any[]) => any>();
+    public sessionId: string;
 
-    constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number) {
+    constructor(socket: WS.WebSocket, host: SonicWSServer, id: number, handshakePacket: string | null, clientRateLimit: number, serverRateLimit: number, sessionId: string, state: Record<string, unknown>) {
         super(socket, id, "Socket " + id, socket.addEventListener.bind(socket), socket.removeEventListener.bind(socket));
 
         this.host = host;
+        this.sessionId = sessionId;
+        this.state = state;
         
         this.handshakePacket = handshakePacket;
 
@@ -136,7 +144,62 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
         return [tag, value];
     }
 
+    private isControl(event: WS.MessageEvent): boolean {
+        return event.data instanceof Buffer && event.data.length > 0 && event.data[0] === 0;
+    }
+
+    private routeMessage(event: WS.MessageEvent): void {
+        if (this.isControl(event)) void this.handleControl(new Uint8Array(event.data as Buffer));
+        else void this.messageHandler(this.parseData(event));
+    }
+
+    private async handleControl(data: Uint8Array): Promise<void> {
+        if (this.rater.trigger(CLIENT_RATELIMIT_TAG)) return;
+        const message = decodeControl(data);
+        if (message.type === ControlType.RESUME) {
+            await this.host.resumeSession(this, message.sessionId, message.lastSequence);
+            return;
+        }
+        if (!this.handshakeComplete && this.handshakePacket !== null) {
+            this.close(CloseCodes.INVALID_DATA, "Handshake required before control requests");
+            return;
+        }
+        if (message.type === ControlType.REPLAY || message.type === ControlType.RESUMED)
+            throw new Error("A server cannot receive replay delivery frames");
+        if (message.type === ControlType.RESPONSE) {
+            const pending = this.pendingRequests.get(message.id);
+            if (!pending) return;
+            clearTimeout(pending.timer);
+            this.pendingRequests.delete(message.id);
+            if (message.ok) pending.resolve(message.value);
+            else pending.reject(new Error(String(message.value)));
+            return;
+        }
+
+        try {
+            const tag = this.host.clientPackets.getTag(message.packetKey);
+            if (!tag) throw new Error(`Unknown RPC packet key ${message.packetKey}`);
+            if (!this.enabledPackets[tag]) return this.close(CloseCodes.DISABLED_PACKET, `Packet "${tag}" is disabled`);
+            if (this.rater.trigger("client" + message.packetKey)) return this.close(CloseCodes.RATELIMIT, `Packet "${tag}" exceeded its rate limit`);
+            if (await this.callMiddleware('onReceive_pre', tag, message.payload, message.payload.length))
+                throw new Error(`Packet "${tag}" was rejected by middleware`);
+            const responder = this.responders.get(tag);
+            if (!responder) throw new Error(`No responder registered for packet "${tag}"`);
+            const decoded = await this.host.clientPackets.getPacket(tag).listen(message.payload, this);
+            if (typeof decoded === "string") throw new Error(decoded);
+            const [payload, spread] = decoded;
+            const result = spread ? await responder(...payload) : await responder(payload);
+            this.raw_send(encodeControlResponse(message.id, true, result ?? null));
+        } catch (error) {
+            this.raw_send(encodeControlResponse(message.id, false, error instanceof Error ? error.message : String(error)));
+        }
+    }
+
     private handshakeHandler(data: WS.MessageEvent): void {
+        if (this.isControl(data)) {
+            void this.handleControl(new Uint8Array(data.data as Buffer));
+            return;
+        }
         const parsed = this.parseData(data);
         if(parsed == null) return this.socket.close(CloseCodes.INVALID_DATA);
 
@@ -281,7 +344,10 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
     public send_processed(code: number, data: Uint8Array, packet: Packet<any>) {
         if(this.rater.trigger("server" + code)) return;
 
-        if(packet.dataBatching == 0) this.raw_send(toPacketBuffer(code, data));
+        if(packet.dataBatching == 0) {
+            const frame = toPacketBuffer(code, data);
+            this.raw_send(packet.replay ? this.host.replayFrame(this, frame) : frame);
+        }
         else this.batcher.batchPacket(code, data);
     }
 
@@ -301,6 +367,32 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
 
     public sendVariant(parent: string, variant: string, ...values: any[]): Promise<void> {
         return this.send(this.host.serverPackets.getVariantTag(parent, variant), ...values);
+    }
+
+    /** Sends a validated server packet as an RPC request to this client. */
+    public async request(tag: string, ...valuesAndOptions: any[]): Promise<any> {
+        const possibleOptions = valuesAndOptions.at(-1);
+        const options = valuesAndOptions.length > 1 && possibleOptions && typeof possibleOptions === "object" && !Array.isArray(possibleOptions)
+            && Object.keys(possibleOptions).every(key => key === "timeoutMs")
+            ? valuesAndOptions.pop() as { timeoutMs?: number }
+            : {};
+        const [packetKey, payload] = await processPacket(this.host.serverPackets, tag, valuesAndOptions, this.sendQueue, this.id);
+        if (this.rater.trigger("server" + packetKey)) throw new Error(`Packet "${tag}" exceeded its rate limit`);
+        const id = this.nextRequestId++;
+        if (this.nextRequestId > 0x7fffffff) this.nextRequestId = 1;
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.pendingRequests.delete(id);
+                reject(new Error(`RPC request "${tag}" timed out`));
+            }, options.timeoutMs ?? 5_000);
+            this.pendingRequests.set(id, { resolve, reject, timer });
+            this.raw_send(encodeControlRequest(id, packetKey, payload));
+        });
+    }
+
+    /** Registers the server-side responder for client requests using this packet tag. */
+    public respond(tag: string, handler: (...values: any[]) => any): void {
+        this.responders.set(this.host.clientPackets.resolveTag(tag), handler);
     }
 
     public async sendSafe(tag: string, ...values: any[]): Promise<boolean> {
@@ -324,6 +416,14 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
      */
     public broadcast(tag: string, ...values: any[]) {
         this.broadcastFiltered(tag, () => true, ...values);
+    }
+
+    public join(room: string): void { this.host.join(this, room); }
+    public leave(room: string): void { this.host.leave(this, room); }
+    public getRooms(): ReadonlySet<string> { return this.host.rooms(this); }
+
+    public broadcastRoom(room: string, tag: string, ...values: any[]): Promise<void> {
+        return this.host.broadcastRoomExcept(this, room, tag, ...values);
     }
 
     /**

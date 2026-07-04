@@ -139,6 +139,8 @@ html*
 
 # rust output
 *.node
+projects/ts/src/native/wasm/node/
+projects/ts/src/native/wasm/pkg/
 
 # Python bytecode and caches
 __pycache__/

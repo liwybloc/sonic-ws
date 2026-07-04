@@ -1,6 +1,6 @@
 import unittest
 
-from sonic_ws import PacketType, CreatePacket, CreateObjPacket, CreatePacketGroup
+from sonic_ws import PacketType, CreatePacket, CreateObjPacket, CreatePacketGroup, CreatePacketManifest, LoadPacketManifest
 
 
 class FeatureTests(unittest.TestCase):
@@ -62,11 +62,14 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual([stateless.prepare_send([1.5283])[0] for _ in range(2)], [1565, 1565])
 
     def test_metadata_roundtrip_and_groups(self):
-        packet = CreatePacket(tag="m", type=PacketType.VARINT, schema=["x"], dataMin=1, dataMax=1, quantized={"scale": 10}, min=-2, max=2)
+        packet = CreatePacket(tag="m", type=PacketType.VARINT, schema=["x"], dataMin=1, dataMax=1, quantized={"scale": 10}, min=-2, max=2, replay=True)
         restored, consumed = type(packet).deserialize(packet.serialize())
         self.assertEqual(consumed, len(packet.serialize()))
         self.assertEqual(restored.schema, ("x",))
         self.assertEqual(restored.quantized["scale"], 10)
+        self.assertTrue(restored.replay)
+        with self.assertRaisesRegex(ValueError, "replay.*batching"):
+            CreatePacket(tag="invalid", replay=True, dataBatching=1)
         group = CreatePacketGroup(tag="movement", variants={"still": {"type": PacketType.NONE}, "move": {"type": PacketType.VARINT, "schema": ["x"], "dataMax": 1}})
         self.assertEqual([item.tag for item in group], ["movement", "movement.still", "movement.move"])
         self.assertTrue(group[0].is_parent)
@@ -74,6 +77,9 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(group[0].decode(group[0].encode(())), {"variant": "", "payload": None})
         self.assertEqual(group[2].parent, "movement")
         self.assertEqual(group[2].variant, "move")
+        manifest = LoadPacketManifest(CreatePacketManifest(client_packets=[packet], server_packets=[group[2]]))
+        self.assertEqual([value.tag for value in manifest["client_packets"]], ["m"])
+        self.assertEqual([value.tag for value in manifest["server_packets"]], ["movement.move"])
 
 
 if __name__ == "__main__":

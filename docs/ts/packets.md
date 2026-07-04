@@ -36,9 +36,12 @@ Required: `tag`. `type` defaults to `NONE`. Settings:
 - `dataBatching`: milliseconds to collect sends before framing them as one WebSocket message. Zero disables batching.
 - `maxBatchSize`: maximum received items in one batch; zero means unlimited where supported.
 - `gzipCompression`: legacy name for raw DEFLATE, not a gzip container. Defaults on for JSON.
+- `replay`: retain this server-to-client packet in the bounded session buffer for connection recovery. Use only for idempotent updates; it cannot be combined with `dataBatching`.
 - `rateLimit`: per-second limit stored in the 0…65,535 range; zero or a larger value means unlimited.
 - `enabled`: whether clients may send this packet initially.
 - `validator(socket, ...values)`: server-side application validation. Return false to reject the packet.
+
+`CreatePacketManifest({ clientPackets, serverPackets })` serializes both packet tables into a protocol-versioned binary artifact. `LoadPacketManifest(bytes)` loads an artifact produced by TypeScript or Python. Validators and local constructors remain application code and must be registered in each runtime.
 
 ## Schemas, repeated records, and quantization
 

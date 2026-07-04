@@ -10,6 +10,9 @@
 # License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
 
 from .packet_type import PacketType
+from .version import VERSION
+from .adapter import SonicWSAdapter
+from .manifest import create_packet_manifest, load_packet_manifest, CreatePacketManifest, LoadPacketManifest
 from .enums import (
     EnumPackage,
     Undefined,
