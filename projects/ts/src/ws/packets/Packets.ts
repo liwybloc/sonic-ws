@@ -11,6 +11,8 @@
  * License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
  */
 
+// TODO: uhm make the packet manifest better encoded lmfao
+
 import { DefineEnum } from "../util/enums/EnumHandler";
 import { EnumPackage, TYPE_CONVERSION_MAP } from "../util/enums/EnumType";
 import { SonicWSConnection } from "../server/SonicWSConnection";

@@ -361,45 +361,93 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
 
     private async handleControl(data: Uint8Array): Promise<void> {
         let message;
-        try { message = decodeControl(data); }
-        catch { this.close(CloseCodes.INVALID_DATA, "Malformed SonicWS control frame"); return; }
-        if (message.type === ControlType.REPLAY) {
-            if (message.sequence <= this.lastReplaySequence) return;
-            this.lastReplaySequence = message.sequence;
-            await this.dataHandler(message.payload);
-            return;
-        }
-        if (message.type === ControlType.RESUMED) {
-            if (message.recovered && this.pendingResumeSession) this.sessionId = this.pendingResumeSession;
-            this.pendingResumeSession = undefined;
-            this.recoveredListeners.forEach(listener => listener({ recovered: message.recovered, replayed: message.replayed }));
-            if (!message.recovered) this.lastReplaySequence = 0;
-            return;
-        }
-        if (message.type === ControlType.RESUME)
-            throw new Error("A client cannot receive a recovery request");
-        if (message.type === ControlType.RESPONSE) {
-            const pending = this.pendingRequests.get(message.id);
-            if (!pending) return;
-            clearTimeout(pending.timer);
-            this.pendingRequests.delete(message.id);
-            if (message.ok) pending.resolve(message.value);
-            else pending.reject(new Error(String(message.value)));
+        try {
+            message = decodeControl(data);
+        } catch {
+            this.close(CloseCodes.INVALID_DATA, "Malformed SonicWS control frame");
             return;
         }
 
-        try {
-            const tag = this.serverPackets.getTag(message.packetKey);
-            if (!tag) throw new Error(`Unknown RPC packet key ${message.packetKey}`);
-            const responder = this.responders.get(tag);
-            if (!responder) throw new Error(`No responder registered for packet "${tag}"`);
-            const decoded = await this.serverPackets.getPacket(tag).listen(message.payload, null);
-            if (typeof decoded === "string") throw new Error(decoded);
-            const [payload, spread] = decoded;
-            const result = spread ? await responder(...payload) : await responder(payload);
-            this.raw_send(encodeControlResponse(message.id, true, result ?? null));
-        } catch (error) {
-            this.raw_send(encodeControlResponse(message.id, false, error instanceof Error ? error.message : String(error)));
+        switch (message.type) {
+            case ControlType.REPLAY: {
+                if (message.sequence <= this.lastReplaySequence) return;
+
+                this.lastReplaySequence = message.sequence;
+                await this.dataHandler(message.payload);
+                return;
+            }
+
+            case ControlType.RESUMED: {
+                if (message.recovered && this.pendingResumeSession) {
+                    this.sessionId = this.pendingResumeSession;
+                }
+
+                this.pendingResumeSession = undefined;
+
+                this.recoveredListeners.forEach(listener =>
+                    listener({
+                        recovered: message.recovered,
+                        replayed: message.replayed,
+                    }),
+                );
+
+                if (!message.recovered) {
+                    this.lastReplaySequence = 0;
+                }
+
+                return;
+            }
+
+            case ControlType.RESUME: {
+                throw new Error("A client cannot receive a recovery request");
+            }
+
+            case ControlType.RESPONSE: {
+                const pending = this.pendingRequests.get(message.id);
+                if (!pending) return;
+
+                clearTimeout(pending.timer);
+                this.pendingRequests.delete(message.id);
+
+                if (message.ok) {
+                    pending.resolve(message.value);
+                } else {
+                    pending.reject(new Error(String(message.value)));
+                }
+
+                return;
+            }
+
+            default: {
+                try {
+                    const tag = this.serverPackets.getTag(message.packetKey);
+                    if (!tag) throw new Error(`Unknown RPC packet key ${message.packetKey}`);
+
+                    const responder = this.responders.get(tag);
+                    if (!responder) throw new Error(`No responder registered for packet "${tag}"`);
+
+                    const decoded = await this.serverPackets
+                        .getPacket(tag)
+                        .listen(message.payload, null);
+
+                    if (typeof decoded === "string") throw new Error(decoded);
+
+                    const [payload, spread] = decoded;
+                    const result = spread
+                        ? await responder(...payload)
+                        : await responder(payload);
+
+                    this.raw_send(encodeControlResponse(message.id, true, result ?? null));
+                } catch (error) {
+                    this.raw_send(
+                        encodeControlResponse(
+                            message.id,
+                            false,
+                            error instanceof Error ? error.message : String(error),
+                        ),
+                    );
+                }
+            }
         }
     }
 
@@ -449,9 +497,11 @@ export abstract class SonicWSCore<T extends { readyState: number; send: (u: Uint
             && Object.keys(possibleOptions).every(key => key === "timeoutMs")
             ? valuesAndOptions.pop() as { timeoutMs?: number }
             : {};
-        const [packetKey, payload] = await processPacket(this.clientPackets, tag, valuesAndOptions, this.sendQueue, 0);
+        
+            const [packetKey, payload] = await processPacket(this.clientPackets, tag, valuesAndOptions, this.sendQueue, 0);
         const id = this.nextRequestId++;
         if (this.nextRequestId > 0x7fffffff) this.nextRequestId = 1;
+
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 this.pendingRequests.delete(id);
