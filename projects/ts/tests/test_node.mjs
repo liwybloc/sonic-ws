@@ -20,6 +20,7 @@ const {
     CreateObjPacket,
     CreateEnumPacket,
     CreatePacketGroup,
+    VariantPermutation,
     DefineEnum,
     WrapEnum,
     RegisterPacketConstructor,
@@ -137,6 +138,11 @@ function makePackets(prefix) {
         ...CreatePacketGroup({ tag: `${prefix}_movement`, variants: {
             move: { type: PacketType.VARINT, schema: ["dx", "dy", "dz"], dataMin: 3, dataMax: 3 },
         } }),
+        ...CreatePacketGroup({
+            tag: `${prefix}_permutation`,
+            variants: VariantPermutation.WASD(),
+            defaults: { type: PacketType.SHORTS, dataMin: 1, dataMax: 1 },
+        }),
     ];
 }
 
@@ -240,13 +246,32 @@ try {
     const childReceive = new Promise(resolve => client.on("server_movement.move", value => {
         assert.deepEqual(value, { dx: 5, dy: 6, dz: 7 }); resolve();
     }));
+    const serverPermutation = new Promise(resolve => connection.on("client_permutation", value => {
+        assert.deepEqual(value, {
+            variant: "W,A", payload: [5],
+            permutation: { W: true, A: true, S: false, D: false },
+        });
+        resolve();
+    }));
+    const clientPermutation = new Promise(resolve => client.on("server_permutation", value => {
+        assert.deepEqual(value, {
+            variant: "S,D", payload: [6],
+            permutation: { W: false, A: false, S: true, D: true },
+        });
+        resolve();
+    }));
 
     for (const testCase of cases) await client.send(`client_${testCase.name}`, ...testCase.send);
     for (const testCase of cases) await connection.send(`server_${testCase.name}`, ...testCase.send);
     await client.sendVariant("client_movement", "move", { dx: 8, dy: 9, dz: 10 });
     await connection.sendVariant("server_movement", "move", { dx: 5, dy: 6, dz: 7 });
+    await client.sendPermutation("client_permutation", { W: true, A: true, S: false, D: false }, 5);
+    await connection.sendPermutation("server_permutation", [false, false, true, true], 6);
 
-    await withTimeout(Promise.all([...clientReceives, ...serverReceives, serverParent, clientParent, childReceive]), 10_000, "packet roundtrips");
+    await withTimeout(Promise.all([
+        ...clientReceives, ...serverReceives, serverParent, clientParent, childReceive,
+        serverPermutation, clientPermutation,
+    ]), 10_000, "packet roundtrips");
 
     let rejectNextClientRaw = true;
     connection.addMiddleware({
@@ -308,6 +333,70 @@ try {
     assert.equal(group[0].type, PacketType.NONE);
     assert.equal(group[0].variant, "");
     assert.deepEqual(await group[0].listen(new Uint8Array(), null), [{ variant: "", payload: undefined }, false]);
+    const directional = CreatePacketGroup({
+        tag: "directional",
+        variants: ["W", "A", "S", "D"],
+        defaults: { type: PacketType.SHORTS },
+    });
+    assert.deepEqual(directional.map(packet => packet.tag), [
+        "directional", "directional.W", "directional.A", "directional.S", "directional.D",
+    ]);
+    assert(directional.slice(1).every(packet => packet.type === PacketType.SHORTS));
+    const overridden = CreatePacketGroup({
+        tag: "overridden",
+        variants: { W: {}, A: { type: PacketType.SHORTS } },
+        defaults: { type: PacketType.USHORTS },
+    });
+    assert.equal(overridden[1].type, PacketType.USHORTS);
+    assert.equal(overridden[2].type, PacketType.SHORTS);
+    const delegated = CreatePacketGroup({
+        tag: "delegated",
+        variants: ["v1", "v2"],
+        delegate: { type: PacketType.UBYTES },
+    });
+    assert(delegated.slice(1).every(packet => packet.type === PacketType.UBYTES));
+    assert.throws(
+        () => CreatePacketGroup({ tag: "missing-defaults", variants: ["v1"] }),
+        /require defaults/i,
+    );
+    assert.throws(
+        () => CreatePacketGroup({
+            tag: "conflicting-defaults",
+            variants: ["v1"],
+            defaults: { type: PacketType.BYTES },
+            delegate: { type: PacketType.UBYTES },
+        }),
+        /both defaults and delegate/i,
+    );
+    assert.throws(
+        () => CreatePacketGroup({
+            tag: "duplicate-variants",
+            variants: ["v1", "v1"],
+            defaults: { type: PacketType.BYTES },
+        }),
+        /duplicate variant/i,
+    );
+    const wasdPermutation = VariantPermutation.WASD();
+    assert.deepEqual(wasdPermutation.generate(), ["W", "A", "S", "D", "W,A", "W,D", "S,A", "S,D"]);
+    assert.equal(wasdPermutation.resolve({ W: true, A: true, S: false, D: false }), "W,A");
+    assert.equal(wasdPermutation.resolve([false, true, true, false]), "S,A");
+    assert.deepEqual(wasdPermutation.expand("W,A"), { W: true, A: true, S: false, D: false });
+    assert.throws(() => wasdPermutation.resolve([true, false, true, false]), /opposite/i);
+    const permutationGroup = CreatePacketGroup({
+        tag: "permutation",
+        variants: wasdPermutation,
+        defaults: { type: PacketType.SHORTS, dataMin: 1, dataMax: 1 },
+    });
+    assert.deepEqual(permutationGroup.map(packet => packet.tag), [
+        "permutation", "permutation.W", "permutation.A", "permutation.S", "permutation.D",
+        "permutation.W,A", "permutation.W,D", "permutation.S,A", "permutation.S,D",
+    ]);
+    assert.deepEqual(permutationGroup[5].permutation(), { W: true, A: true, S: false, D: false });
+    const restoredPermutation = LoadPacketManifest(CreatePacketManifest({
+        clientPackets: permutationGroup,
+        serverPackets: [],
+    })).clientPackets;
+    assert.deepEqual(restoredPermutation[5].permutation(), { W: true, A: true, S: false, D: false });
     const constructedPacket = CreatePacket({ tag: "constructed-unit", type: PacketType.VARINT, schema: ["x", "y", "z"], dataMax: 3, constructor: C2SMovement });
     assert.equal(constructedPacket.constructorName, "C2SMovement");
     assert(constructedPacket.finishReceive([1, 2, 3]) instanceof C2SMovement);

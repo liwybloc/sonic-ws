@@ -623,6 +623,14 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
         return this.broadcast(this.serverPackets.getVariantTag(parent, variant), ...values);
     }
 
+    public broadcastPermutation(
+        parent: string,
+        selection: readonly boolean[] | Record<string, boolean>,
+        ...values: any[]
+    ): Promise<void> {
+        return this.broadcast(this.serverPackets.getPermutationVariant(parent, selection), ...values);
+    }
+
     public handleSendError(
         error: unknown,
         context: { packetTag: string; connection?: SonicWSConnection; operation?: "broadcast" },

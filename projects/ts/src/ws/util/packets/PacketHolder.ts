@@ -132,6 +132,39 @@ export class PacketHolder {
         return tag;
     }
 
+    public getPermutationVariant(
+        parent: string,
+        selection: readonly boolean[] | Record<string, boolean>,
+    ): string {
+        const values = this.getPacket(parent).permutationValues;
+        if (!values) throw new Error(`Packet group "${parent}" does not define a VariantPermutation`);
+        let enabled: string[];
+        if (Array.isArray(selection)) {
+            if (selection.length !== values.length || selection.some(value => typeof value !== "boolean")) {
+                throw new Error(`Variant permutation requires ${values.length} boolean flags`);
+            }
+            enabled = values.filter((_, index) => selection[index]);
+        } else {
+            const mapping = selection as Record<string, boolean>;
+            const keys = Object.keys(mapping);
+            if (keys.length !== values.length
+                || keys.some(key => !values.includes(key) || typeof mapping[key] !== "boolean")) {
+                throw new Error("Variant permutation object must define every known key as a boolean");
+            }
+            enabled = values.filter(value => mapping[value]);
+        }
+        if (!enabled.length) return parent;
+        const variant = Object.keys(this.variants)
+            .filter(key => key.startsWith(`${parent}.`))
+            .map(key => key.slice(parent.length + 1))
+            .find(candidate => {
+                const selected = candidate.split(",");
+                return selected.length === enabled.length && selected.every(value => enabled.includes(value));
+            });
+        if (!variant) throw new Error("Variant permutation contains an invalid or opposite combination");
+        return this.getVariantTag(parent, variant);
+    }
+
     /** Returns the mapping of tags to keys */
     public getKeys(): Record<string, number> {
         return this.keys;

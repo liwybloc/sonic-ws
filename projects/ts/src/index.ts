@@ -20,6 +20,7 @@ export type { SonicServerOptions, SonicServerSettings } from './ws/server/SonicW
 export { PacketType } from './ws/packets/PacketType';
 export { BasicMiddleware, ConnectionMiddleware, ServerMiddleware, BCInfo } from './ws/PacketProcessor';
 export { CreatePacket, CreateObjPacket, CreateEnumPacket, CreatePacketGroup, FlattenData, UnFlattenData } from './ws/util/packets/PacketUtils';
+export { VariantPermutation } from './ws/util/packets/VariantPermutation';
 export { CreatePacketManifest, LoadPacketManifest } from './ws/util/packets/PacketManifest';
 export type { PacketManifest } from './ws/util/packets/PacketManifest';
 export { ValidatePacketSchema, AssertPacketSchema } from './ws/util/packets/SchemaValidation';

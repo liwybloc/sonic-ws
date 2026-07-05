@@ -367,6 +367,42 @@ impl Server {
             .collect();
         send_many(connections, tag, value).await
     }
+
+    pub async fn broadcast_permutation_flags(
+        &self,
+        parent: &str,
+        flags: &[bool],
+        value: &SonicValue,
+    ) -> Vec<(u64, Error)> {
+        let tag = match self
+            .inner
+            .config
+            .server_packets
+            .permutation_tag_flags(parent, flags)
+        {
+            Ok(tag) => tag,
+            Err(error) => return vec![(0, error)],
+        };
+        self.broadcast(&tag, value).await
+    }
+
+    pub async fn broadcast_permutation_map(
+        &self,
+        parent: &str,
+        flags: &HashMap<String, bool>,
+        value: &SonicValue,
+    ) -> Vec<(u64, Error)> {
+        let tag = match self
+            .inner
+            .config
+            .server_packets
+            .permutation_tag_map(parent, flags)
+        {
+            Ok(tag) => tag,
+            Err(error) => return vec![(0, error)],
+        };
+        self.broadcast(&tag, value).await
+    }
 }
 
 async fn send_many(

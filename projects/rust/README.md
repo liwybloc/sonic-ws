@@ -10,6 +10,7 @@ The Rust package is a native Tokio client and server for SonicWS protocol 24. It
 - Row-major `auto_flatten` and column-major `auto_transpose`
 - Packet-level quantization with per-connection error feedback and logical min/max checks
 - Packet groups and parent/variant metadata
+- Generated `VariantPermutation` groups with boolean-map send and receive helpers
 - Async Tokio client and server transports
 - Typed incoming events, RPC request/response control frames, rooms, and broadcast helpers
 - Rereference packets and first-class connection state
@@ -87,6 +88,30 @@ client.send("movement", &SonicValue::Object(vec![
 `request` returns the generated request ID. A matching `Incoming::Response` is delivered by `recv`. A peer receives `Incoming::Request` and answers with `respond(request.id, result)`.
 
 This design does not hide normal packet events behind a request future. One receive loop remains the single ordered source of network messages.
+
+## Variant permutations
+
+```rust,no_run
+use sonic_ws::{Packet, PacketType, SonicValue, VariantPermutation, permutation_packet_group};
+
+# async fn example(connection: sonic_ws::Connection) -> sonic_ws::Result<()> {
+let permutation = VariantPermutation::wasd();
+let packets = permutation_packet_group(
+    "movement",
+    &permutation,
+    Packet::builder("template", PacketType::Shorts).build()?,
+)?;
+
+connection.send_permutation_flags(
+    "movement",
+    &[true, true, false, false],
+    &SonicValue::I64(5),
+).await?;
+# Ok(())
+# }
+```
+
+The selected packet is `movement.W,A`. Received `Event` values include the generated variant and a `permutation: Option<HashMap<String, bool>>`. Use `send_permutation_map` when keyed flags are clearer.
 
 ## Recovery
 

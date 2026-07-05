@@ -19,6 +19,7 @@ import { EMPTY_UINT8, MAX_USHORT } from "./CompressionUtil";
 import { SendQueue } from "../../PacketProcessor";
 import { hashValue } from "./HashUtil";
 import { PacketConstructor, RegisterPacketConstructor } from "./ConstructorRegistry";
+import { VariantPermutation } from "./VariantPermutation";
 
 export type ProcessedPacket = [code: number, data: Uint8Array, packet: Packet<any>];
 
@@ -328,12 +329,25 @@ export type MultiPacketSettings = SharedPacketSettings & {
     constructor?: Function;
 };
 
-export type PacketGroupSettings = {
-    tag: string;
-    variants: Record<string, Omit<SinglePacketSettings, "tag">>;
+type PacketGroupVariant = Omit<SinglePacketSettings, "tag">;
+type PacketGroupDefaults = {
+    /** Settings inherited by every variant. Individual variant settings take precedence. */
+    defaults?: PacketGroupVariant;
+    /** Deprecated alias for `defaults`. */
+    delegate?: PacketGroupVariant;
 };
 
-type GroupMetadata = { parent: string; variant: string; isParent: boolean };
+export type PacketGroupSettings = {
+    tag: string;
+} & PacketGroupDefaults & (
+    | { variants: Record<string, PacketGroupVariant> }
+    | { variants: readonly string[]; defaults: PacketGroupVariant }
+    | { variants: readonly string[]; delegate: PacketGroupVariant }
+    | { variants: VariantPermutation; defaults: PacketGroupVariant }
+    | { variants: VariantPermutation; delegate: PacketGroupVariant }
+);
+
+type GroupMetadata = { parent: string; variant: string; isParent: boolean; permutation?: string[] };
 
 /** Settings for single-typed enum packets */
 export type EnumPacketSettings = SharedPacketSettings & {
@@ -559,15 +573,36 @@ export function CreateObjPacket<
  * listeners on `movement.move` receive the child payload, while listeners on
  * `movement` also receive `{ variant: "move", payload }`. Sending `movement`
  * directly represents the parent/empty variant (`variant: ""`).
+ *
+ * `defaults` applies shared settings before each variant override. Array variants
+ * require `defaults`, for example `{ variants: ["W", "A"], defaults: { type:
+ * PacketType.SHORTS } }`. `delegate` remains accepted as a deprecated alias.
  */
 export function CreatePacketGroup(settings: PacketGroupSettings): Packet<any>[] {
     if (!settings.tag || settings.tag.includes("$")) {
         throw new Error("Packet group tag is required and cannot contain '$'");
     }
 
-    const entries = Object.entries(settings.variants);
+    if (settings.defaults !== undefined && settings.delegate !== undefined) {
+        throw new Error(`Packet group "${settings.tag}" cannot define both defaults and delegate`);
+    }
+
+    const defaults = settings.defaults ?? settings.delegate;
+    const permutation = settings.variants instanceof VariantPermutation ? settings.variants : undefined;
+    if ((Array.isArray(settings.variants) || permutation) && defaults === undefined) {
+        throw new Error(`Packet group "${settings.tag}" array variants require defaults`);
+    }
+
+    const entries: Array<[string, PacketGroupVariant]> = permutation
+        ? permutation.generate().map(variant => [variant, {}])
+        : Array.isArray(settings.variants)
+            ? settings.variants.map(variant => [variant, {}])
+            : Object.entries(settings.variants as Record<string, PacketGroupVariant>);
     if (!entries.length) {
         throw new Error(`Packet group "${settings.tag}" requires at least one variant`);
+    }
+    if (new Set(entries.map(([variant]) => variant)).size !== entries.length) {
+        throw new Error(`Packet group "${settings.tag}" contains duplicate variant names`);
     }
 
     const parent = CreatePacket({
@@ -575,18 +610,19 @@ export function CreatePacketGroup(settings: PacketGroupSettings): Packet<any>[] 
         type: PacketType.NONE,
         dataMin: 0,
         dataMax: 0,
-        _group: { parent: settings.tag, variant: "", isParent: true },
+        _group: { parent: settings.tag, variant: "", isParent: true, permutation: permutation?.getValues() },
     });
 
     const children = entries.map(([variant, definition]) => {
-        if (!variant || variant.includes("$")) {
+        if (typeof variant !== "string" || !variant || variant.includes("$")) {
             throw new Error("Packet variant names cannot be empty or contain '$'");
         }
 
         return CreatePacket({
+            ...defaults,
             ...definition,
             tag: `${settings.tag}.${variant}`,
-            _group: { parent: settings.tag, variant, isParent: false },
+            _group: { parent: settings.tag, variant, isParent: false, permutation: permutation?.getValues() },
         } as SinglePacketSettings & { _group: GroupMetadata });
     });
 

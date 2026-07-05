@@ -66,6 +66,10 @@ Pass `constructor=MovementValue` to construct decoded schema values with `Moveme
 
 `CreatePacketGroup(...)` returns a `NONE` parent followed by its normal dot-qualified child packets. Use `send_variant`/`sendVariant`; listeners may subscribe to `movement.move` or to `movement`, whose child event is `{"variant": "move", "payload": ...}`. Sending `movement` itself represents the empty variant.
 
+Shared variant settings belong in `defaults`. With defaults present, `variants` may be a list such as `["W", "A", "S", "D"]`. A mapping remains supported, and each mapping value overrides the defaults. `delegate` is accepted as a deprecated alias for `defaults`; providing both is an error.
+
+Pass `VariantPermutation.WASD()` as `variants` to generate the valid cardinal and diagonal combinations while excluding W+S and A+D. `send_permutation("movement", flags, *values)` accepts either a keyed boolean dictionary or a boolean list in declared order. Parent listeners additionally receive a `permutation` dictionary. Servers also expose `broadcast_permutation`.
+
 ## Values and listener spreading
 
 Ordinary packet listeners receive positional values. With `dontSpread=True`, they receive one collection. Each object field is normalized to a collection and checked against its own range. `NONE` sends no values. A RAW bytes object should be passed as the single argument.

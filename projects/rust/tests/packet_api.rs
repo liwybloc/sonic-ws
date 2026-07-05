@@ -1,5 +1,6 @@
 use sonic_ws::{
-    EnumPackage, EnumValue, Packet, PacketRegistry, PacketType, SonicValue, packet_group,
+    EnumPackage, EnumValue, Packet, PacketRegistry, PacketType, SonicValue, VariantPermutation,
+    packet_group, permutation_packet_group,
 };
 
 fn record(entries: &[(&str, SonicValue)]) -> SonicValue {
@@ -217,4 +218,64 @@ fn none_raw_and_hex_scalar_modes_roundtrip_without_array_wrapping() {
         .unwrap();
     let value = SonicValue::String("00abff".into());
     assert_eq!(hex.decode(&hex.encode(&value, 1).unwrap()).unwrap(), value);
+}
+
+#[test]
+fn variant_permutations_generate_resolve_and_survive_negotiation() {
+    let permutation = VariantPermutation::wasd();
+    assert_eq!(
+        permutation.generate(),
+        ["W", "A", "S", "D", "W,A", "W,D", "S,A", "S,D"]
+    );
+    assert_eq!(
+        permutation
+            .resolve_flags(&[true, true, false, false])
+            .unwrap(),
+        "W,A"
+    );
+    assert_eq!(
+        permutation
+            .resolve_flags(&[false, true, true, false])
+            .unwrap(),
+        "S,A"
+    );
+    assert!(
+        permutation
+            .resolve_flags(&[true, false, true, false])
+            .is_err()
+    );
+    let packets = permutation_packet_group(
+        "movement",
+        &permutation,
+        Packet::builder("template", PacketType::Shorts)
+            .build()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        packets
+            .iter()
+            .map(|packet| packet.definition.tag.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "movement",
+            "movement.W",
+            "movement.A",
+            "movement.S",
+            "movement.D",
+            "movement.W,A",
+            "movement.W,D",
+            "movement.S,A",
+            "movement.S,D",
+        ]
+    );
+    let restored =
+        PacketRegistry::deserialize(&PacketRegistry::new(packets).unwrap().serialize().unwrap())
+            .unwrap();
+    assert_eq!(
+        restored
+            .permutation_tag_flags("movement", &[true, true, false, false])
+            .unwrap(),
+        "movement.W,A"
+    );
 }

@@ -61,6 +61,75 @@ impl PacketRegistry {
             .and_then(|index| self.packets.get(index as usize))
     }
 
+    pub fn permutation_tag_flags(&self, parent: &str, flags: &[bool]) -> Result<String> {
+        let values = self.permutation_values(parent)?;
+        if flags.len() != values.len() {
+            return Err(Error::Value(format!(
+                "variant permutation requires {} boolean flags",
+                values.len()
+            )));
+        }
+        let enabled = values
+            .iter()
+            .zip(flags)
+            .filter_map(|(value, enabled)| enabled.then_some(value.as_str()))
+            .collect::<std::collections::HashSet<_>>();
+        self.find_permutation_tag(parent, &enabled)
+    }
+
+    pub fn permutation_tag_map(
+        &self,
+        parent: &str,
+        flags: &HashMap<String, bool>,
+    ) -> Result<String> {
+        let values = self.permutation_values(parent)?;
+        if flags.len() != values.len() || flags.keys().any(|key| !values.contains(key)) {
+            return Err(Error::Value(
+                "variant permutation map must define every known key".into(),
+            ));
+        }
+        let enabled = values
+            .iter()
+            .filter_map(|value| flags[value].then_some(value.as_str()))
+            .collect::<std::collections::HashSet<_>>();
+        self.find_permutation_tag(parent, &enabled)
+    }
+
+    fn permutation_values(&self, parent: &str) -> Result<&[String]> {
+        self.by_tag(parent)
+            .and_then(|packet| packet.group.as_ref())
+            .and_then(|group| group.permutation.as_deref())
+            .ok_or_else(|| {
+                Error::Value(format!(
+                    "packet group \"{parent}\" does not define a VariantPermutation"
+                ))
+            })
+    }
+
+    fn find_permutation_tag(
+        &self,
+        parent: &str,
+        enabled: &std::collections::HashSet<&str>,
+    ) -> Result<String> {
+        if enabled.is_empty() {
+            return Ok(parent.to_owned());
+        }
+        self.packets
+            .iter()
+            .find_map(|packet| {
+                let group = packet.group.as_ref()?;
+                if group.parent != parent || group.variant.is_empty() {
+                    return None;
+                }
+                let selected = group
+                    .variant
+                    .split(',')
+                    .collect::<std::collections::HashSet<_>>();
+                (selected == *enabled).then(|| packet.definition.tag.clone())
+            })
+            .ok_or_else(|| Error::Value("permutation contains an opposite combination".into()))
+    }
+
     /// Serializes the table exactly as TypeScript and Python handshake tables do.
     pub fn serialize(&self) -> Result<Vec<u8>> {
         let mut output = Vec::new();

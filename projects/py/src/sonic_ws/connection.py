@@ -20,6 +20,7 @@ from typing import Any, Callable
 from .codec import encode_batch, decode_batch
 from .packets import Packet, flatten_data
 from .schema_validation import assert_packet_schema
+from .variant_permutation import VariantPermutation
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,14 @@ class PacketHolder:
             return self.variants[f"{parent}.{variant}"]
         except KeyError as error:
             raise ValueError(f"Unknown packet variant: {parent}.{variant}") from error
+
+    def permutation_tag(self, parent, selection):
+        packet = self.packet(parent)
+        if packet.permutation_values is None:
+            raise ValueError(f'Packet group "{parent}" does not define a VariantPermutation')
+        permutation = VariantPermutation(packet.permutation_values)
+        variant = permutation.resolve(selection)
+        return parent if not variant else self.variant_tag(parent, variant)
 
 
 class Connection:
@@ -335,9 +344,10 @@ async def dispatch_packet(connection, packet, payload, socket_for_validator=None
                 await connection._emit(
                     f"{packet.parent}.{packet.variant}", values, False
                 )
-                await connection._emit(
-                    packet.parent, {"variant": packet.variant, "payload": values}, False
-                )
+                event = {"variant": packet.variant, "payload": values}
+                if packet.permutation() is not None:
+                    event["permutation"] = packet.permutation()
+                await connection._emit(packet.parent, event, False)
             return
         payloads = (
             decode_batch(payload, packet.gzip_compression, packet.max_batch_size)
@@ -367,7 +377,8 @@ async def dispatch_packet(connection, packet, payload, socket_for_validator=None
                 await connection._emit(
                     f"{packet.parent}.{packet.variant}", values, False
                 )
-                await connection._emit(
-                    packet.parent, {"variant": packet.variant, "payload": values}, False
-                )
+                event = {"variant": packet.variant, "payload": values}
+                if packet.permutation() is not None:
+                    event["permutation"] = packet.permutation()
+                await connection._emit(packet.parent, event, False)
             await connection._middleware("onReceive_post", packet.tag, values)

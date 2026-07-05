@@ -3,7 +3,7 @@ use sonic_ws::{
     ServerConfig, SonicValue,
 };
 use std::collections::HashMap;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 const PORT: u16 = 8963;
 const HOST: &str = "127.0.0.1";
@@ -76,27 +76,74 @@ fn object_enum() -> EnumPackage {
 fn make_packets(prefix: &str) -> Vec<Packet> {
     let tag = |name: &str| format!("{prefix}_{name}");
     vec![
-        Packet::builder(tag("none"), PacketType::None).build().unwrap(),
-        Packet::builder(tag("raw"), PacketType::Raw).data_range(4, 4).build().unwrap(),
-        Packet::builder(tag("ascii"), PacketType::StringsAscii).data_range(3, 3).build().unwrap(),
-        Packet::builder(tag("utf16"), PacketType::StringsUtf16).data_range(4, 4).build().unwrap(),
+        Packet::builder(tag("none"), PacketType::None)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("raw"), PacketType::Raw)
+            .data_range(4, 4)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("ascii"), PacketType::StringsAscii)
+            .data_range(3, 3)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("utf16"), PacketType::StringsUtf16)
+            .data_range(4, 4)
+            .build()
+            .unwrap(),
         Packet::builder(tag("enums"), PacketType::Enums)
             .data_range(4, 4)
             .enum_data(mixed_enum())
             .build()
             .unwrap(),
-        Packet::builder(tag("bytes"), PacketType::Bytes).data_range(5, 5).build().unwrap(),
-        Packet::builder(tag("ubytes"), PacketType::UBytes).data_range(4, 4).build().unwrap(),
-        Packet::builder(tag("shorts"), PacketType::Shorts).data_range(5, 5).build().unwrap(),
-        Packet::builder(tag("ushorts"), PacketType::UShorts).data_range(4, 4).build().unwrap(),
-        Packet::builder(tag("varint"), PacketType::VarInt).data_range(5, 5).build().unwrap(),
-        Packet::builder(tag("uvarint"), PacketType::UVarInt).data_range(7, 7).build().unwrap(),
-        Packet::builder(tag("deltas"), PacketType::Deltas).data_range(8, 8).build().unwrap(),
-        Packet::builder(tag("floats"), PacketType::Floats).data_range(5, 5).build().unwrap(),
-        Packet::builder(tag("doubles"), PacketType::Doubles).data_range(5, 5).build().unwrap(),
-        Packet::builder(tag("booleans"), PacketType::Booleans).data_range(9, 9).build().unwrap(),
-        Packet::builder(tag("json"), PacketType::Reserved16).data_range(1, 1).build().unwrap(),
-        Packet::builder(tag("hex"), PacketType::Hex).data_range(1, 3).build().unwrap(),
+        Packet::builder(tag("bytes"), PacketType::Bytes)
+            .data_range(5, 5)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("ubytes"), PacketType::UBytes)
+            .data_range(4, 4)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("shorts"), PacketType::Shorts)
+            .data_range(5, 5)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("ushorts"), PacketType::UShorts)
+            .data_range(4, 4)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("varint"), PacketType::VarInt)
+            .data_range(5, 5)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("uvarint"), PacketType::UVarInt)
+            .data_range(7, 7)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("deltas"), PacketType::Deltas)
+            .data_range(8, 8)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("floats"), PacketType::Floats)
+            .data_range(5, 5)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("doubles"), PacketType::Doubles)
+            .data_range(5, 5)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("booleans"), PacketType::Booleans)
+            .data_range(9, 9)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("json"), PacketType::Reserved16)
+            .data_range(1, 1)
+            .build()
+            .unwrap(),
+        Packet::builder(tag("hex"), PacketType::Hex)
+            .data_range(1, 3)
+            .build()
+            .unwrap(),
         Packet::object_builder(
             tag("object"),
             [
@@ -216,11 +263,7 @@ fn cases(prefix: &str) -> Vec<(String, SonicValue, SonicValue)> {
             array([true, false, true, false, true, false, true, false, true].map(SonicValue::Bool)),
             array([true, false, true, false, true, false, true, false, true].map(SonicValue::Bool)),
         ),
-        (
-            tag("json"),
-            array([json_val.clone()]),
-            array([json_val]),
-        ),
+        (tag("json"), array([json_val.clone()]), array([json_val])),
         (
             tag("hex"),
             SonicValue::String("00abff".into()),
@@ -233,14 +276,20 @@ fn cases(prefix: &str) -> Vec<(String, SonicValue, SonicValue)> {
                 array([true, false, true].map(SonicValue::Bool)),
                 signed(&[-1, 0, 1]),
                 strings(&["right", "left"]),
-                array([SonicValue::Object(vec![("json".into(), SonicValue::Bool(true))])]),
+                array([SonicValue::Object(vec![(
+                    "json".into(),
+                    SonicValue::Bool(true),
+                )])]),
             ]),
             array([
                 strings(&["hello", "world"]),
                 array([true, false, true].map(SonicValue::Bool)),
                 signed(&[-1, 0, 1]),
                 strings(&["right", "left"]),
-                array([SonicValue::Object(vec![("json".into(), SonicValue::Bool(true))])]),
+                array([SonicValue::Object(vec![(
+                    "json".into(),
+                    SonicValue::Bool(true),
+                )])]),
             ]),
         ),
     ]
@@ -253,7 +302,11 @@ async fn send_all(label: &str, sender: &sonic_ws::Connection, prefix: &str) {
         sender.send(tag, value).await.unwrap();
     }
     let batch_tag = format!("{prefix}_batch");
-    let batch_item = array([SonicValue::U64(7), SonicValue::U64(128), SonicValue::U64(16384)]);
+    let batch_item = array([
+        SonicValue::U64(7),
+        SonicValue::U64(128),
+        SonicValue::U64(16384),
+    ]);
     println!("[{label}] sending {batch_tag}");
     sender.send_batch(&batch_tag, &[batch_item]).await.unwrap();
     sleep(Duration::from_millis(100)).await;
@@ -261,14 +314,16 @@ async fn send_all(label: &str, sender: &sonic_ws::Connection, prefix: &str) {
 
 async fn wait_all(label: &str, receiver: &sonic_ws::Connection, prefix: &str) {
     let data = cases(prefix);
-    let mut expected: HashMap<String, SonicValue> = data
-        .into_iter()
-        .map(|(tag, _, exp)| (tag, exp))
-        .collect();
+    let mut expected: HashMap<String, SonicValue> =
+        data.into_iter().map(|(tag, _, exp)| (tag, exp)).collect();
     let batch_tag = format!("{prefix}_batch");
     expected.insert(
         batch_tag,
-        array([SonicValue::U64(7), SonicValue::U64(128), SonicValue::U64(16384)]),
+        array([
+            SonicValue::U64(7),
+            SonicValue::U64(128),
+            SonicValue::U64(16384),
+        ]),
     );
 
     let total = expected.len();

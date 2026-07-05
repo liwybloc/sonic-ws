@@ -64,6 +64,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public readonly parent?: string;
     public readonly variant?: string;
     public readonly isParent: boolean;
+    public readonly permutationValues?: readonly string[];
     public readonly constructorName?: string;
     public readonly replay: boolean;
 
@@ -107,6 +108,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         this.parent = schema.group?.parent;
         this.variant = schema.group?.variant;
         this.isParent = schema.group?.isParent ?? false;
+        this.permutationValues = schema.group?.permutation;
         this.constructorName = schema.constructorName;
         this.replay = schema.replay;
 
@@ -337,6 +339,13 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         delete this.quantizationErrors[stateKey];
     }
 
+    /** Expands this group variant into its negotiated boolean permutation. */
+    public permutation(): Record<string, boolean> | undefined {
+        if (!this.permutationValues) return undefined;
+        const enabled = new Set(this.variant ? this.variant.split(",") : []);
+        return Object.fromEntries(this.permutationValues.map(value => [value, enabled.has(value)]));
+    }
+
     /** Converts decoded positional data into schema objects and application-level numbers. */
     public finishReceive(decoded: any): any {
         if (this.object) {
@@ -394,7 +403,10 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
                 }
             }
 
-            const delivered = this.isParent ? { variant: "", payload: usableData } : usableData;
+            const permutation = this.permutation();
+            const delivered = this.isParent
+                ? { variant: "", payload: usableData, ...(permutation && { permutation }) }
+                : usableData;
             return [delivered, this.isParent || this.fields ? false : !this.dontSpread];
         } catch (error) {
             console.error(
@@ -412,7 +424,12 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             quantized: this.quantized,
             min: this.valueMin,
             max: this.valueMax,
-            group: this.parent !== undefined ? { parent: this.parent, variant: this.variant ?? "", isParent: this.isParent } : undefined,
+            group: this.parent !== undefined ? {
+                parent: this.parent,
+                variant: this.variant ?? "",
+                isParent: this.isParent,
+                permutation: this.permutationValues,
+            } : undefined,
             constructor: this.constructorName,
             replay: this.replay || undefined,
         }));
@@ -476,7 +493,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
             quantized?: { scale: number; trackError?: boolean };
             min?: number;
             max?: number;
-            group?: { parent: string; variant: string; isParent: boolean };
+            group?: { parent: string; variant: string; isParent: boolean; permutation?: string[] };
             constructor?: string;
             replay?: boolean;
         };
@@ -634,7 +651,7 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
     public quantized?: { scale: number; trackError?: boolean };
     public valueMin?: number;
     public valueMax?: number;
-    public group?: { parent: string; variant: string; isParent: boolean };
+    public group?: { parent: string; variant: string; isParent: boolean; permutation?: string[] };
     public constructorName?: string;
     public replay: boolean;
 
@@ -655,7 +672,7 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
         quantized?: { scale: number; trackError?: boolean },
         valueMin?: number,
         valueMax?: number,
-        group?: { parent: string; variant: string; isParent: boolean },
+        group?: { parent: string; variant: string; isParent: boolean; permutation?: string[] },
         constructorName?: string,
         replay: boolean = false,
     ) {

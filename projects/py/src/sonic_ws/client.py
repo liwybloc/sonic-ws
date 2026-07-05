@@ -249,6 +249,9 @@ class SonicWS(Connection):
     async def send_variant(self, parent, variant, *values):
         await self.send(self.client_packets.variant_tag(parent, variant), *values)
 
+    async def send_permutation(self, parent, selection, *values):
+        await self.send(self.client_packets.permutation_tag(parent, selection), *values)
+
     async def request(self, tag, *values, timeout=5.0):
         tag = self.client_packets.resolve(tag)
         packet = self.client_packets.packet(tag)
@@ -391,6 +394,7 @@ class SonicWS(Connection):
     onReady = on_ready
     waitReady = wait_ready
     sendVariant = send_variant
+    sendPermutation = send_permutation
     sendSafe = send_safe
     sendVolatile = send_volatile
     sendReliable = send_reliable

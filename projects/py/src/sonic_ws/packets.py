@@ -10,6 +10,7 @@
 # License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
 
 from dataclasses import dataclass, field
+from .variant_permutation import VariantPermutation
 from typing import Any, Callable, Sequence
 import warnings
 import json
@@ -115,6 +116,7 @@ class Packet:
     is_parent: bool = False
     constructor_name: str | None = None
     replay: bool = False
+    permutation_values: tuple[str, ...] | None = None
 
     def __post_init__(self):
         if self.quantized is not None:
@@ -156,6 +158,12 @@ class Packet:
     @property
     def variant(self):
         return self.group_variant
+
+    def permutation(self):
+        if self.permutation_values is None:
+            return None
+        enabled = set(self.variant.split(",")) if self.variant else set()
+        return {value: value in enabled for value in self.permutation_values}
 
     def _record(self, record, context):
         if not self.schema or record is None:
@@ -427,7 +435,12 @@ class Packet:
             ):
                 raise ValueError("value count outside schema limits")
         result = self.finish_receive(values)
-        return {"variant": "", "payload": result} if self.is_parent else result
+        if self.is_parent:
+            event = {"variant": "", "payload": result}
+            if self.permutation() is not None:
+                event["permutation"] = self.permutation()
+            return event
+        return result
 
     def serialize(self) -> bytes:
         flags = [
@@ -446,6 +459,7 @@ class Packet:
                 "parent": self.group_parent,
                 "variant": self.group_variant or "",
                 "isParent": self.is_parent,
+                "permutation": self.permutation_values,
             }
 
         metadata = json.dumps(
@@ -574,6 +588,7 @@ class Packet:
                 group_parent=(metadata.get("group") or {}).get("parent"),
                 group_variant=(metadata.get("group") or {}).get("variant"),
                 is_parent=bool((metadata.get("group") or {}).get("isParent", False)),
+                permutation_values=tuple((metadata.get("group") or {}).get("permutation") or ()) or None,
                 constructor_name=metadata.get("constructor"),
                 replay=bool(metadata.get("replay", False)),
             ),
@@ -830,11 +845,42 @@ def create_packet_group(settings=None, **kwargs):
     s = _settings(settings, kwargs)
     tag = s.pop("tag")
     variants = s.pop("variants")
+    defaults = s.pop("defaults", None)
+    delegate = s.pop("delegate", None)
     _finish(s)
     if not tag or "$" in tag:
         raise ValueError("Packet group tag is required and cannot contain '$'")
     if not variants:
         raise ValueError(f'Packet group "{tag}" requires at least one variant')
+    if defaults is not None and delegate is not None:
+        raise ValueError(
+            f'Packet group "{tag}" cannot define both defaults and delegate'
+        )
+    defaults = defaults if defaults is not None else delegate
+    permutation = variants if isinstance(variants, VariantPermutation) else None
+    if permutation is not None:
+        if defaults is None:
+            raise ValueError(
+                f'Packet group "{tag}" permutation variants require defaults'
+            )
+        entries = [(variant, {}) for variant in permutation.generate()]
+    elif isinstance(variants, (list, tuple)):
+        if defaults is None:
+            raise ValueError(
+                f'Packet group "{tag}" array variants require defaults'
+            )
+        entries = [(variant, {}) for variant in variants]
+    elif isinstance(variants, dict):
+        entries = variants.items()
+    else:
+        raise TypeError("Packet group variants must be a mapping or a list of names")
+    entries = list(entries)
+    names = [variant for variant, _ in entries]
+    if any(not isinstance(variant, str) for variant in names):
+        raise TypeError("Packet variant names must be strings")
+    if len(set(names)) != len(names):
+        raise ValueError(f'Packet group "{tag}" contains duplicate variant names')
+    defaults = dict(defaults or {})
     packets = [
         create_packet(
             tag=tag,
@@ -846,12 +892,18 @@ def create_packet_group(settings=None, **kwargs):
     packets[0].group_parent = tag
     packets[0].group_variant = ""
     packets[0].is_parent = True
-    for variant, definition in variants.items():
-        if not variant or "$" in variant:
+    packets[0].permutation_values = permutation.values if permutation else None
+    for variant, definition in entries:
+        if not isinstance(variant, str) or not variant or "$" in variant:
             raise ValueError("Packet variant names cannot be empty or contain '$'")
-        child = create_packet({**definition, "tag": f"{tag}.{variant}"})
+        if not isinstance(definition, dict):
+            raise TypeError("Packet variant settings must be mappings")
+        child = create_packet(
+            {**defaults, **definition, "tag": f"{tag}.{variant}"}
+        )
         child.group_parent = tag
         child.group_variant = variant
+        child.permutation_values = permutation.values if permutation else None
         packets.append(child)
     return packets
 

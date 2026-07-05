@@ -54,6 +54,7 @@ from .packets import (
     RegisterPacketConstructor,
     UnregisterPacketConstructor,
 )
+from .variant_permutation import VariantPermutation
 from .connection import (
     Connection,
     PacketHolder,

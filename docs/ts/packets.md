@@ -136,6 +136,42 @@ socket.on("movement", event => console.log(event.variant, event.payload));
 
 The helper creates one `NONE` parent plus one normal dot-qualified packet per variant. For example, `movement` with `still` and `move` variants creates `movement`, `movement.still`, and `movement.move`. Receiving a child fires both its child-specific listener and the parent listener. Sending the parent directly represents the empty variant (`variant: ""`).
 
+Use `defaults` when variants share settings. A string array is accepted only when `defaults` is present:
+
+```ts
+CreatePacketGroup({
+  tag: "movement",
+  variants: ["W", "A", "S", "D"],
+  defaults: { type: PacketType.SHORTS },
+});
+
+CreatePacketGroup({
+  tag: "movement",
+  variants: { W: {}, A: { type: PacketType.SHORTS } },
+  defaults: { type: PacketType.USHORTS },
+});
+```
+
+Defaults are applied first, so each object variant can override them. `delegate` is accepted as a deprecated alias for `defaults`; do not provide both.
+
+`VariantPermutation` generates combination variants and negotiates its boolean keys with every peer:
+
+```ts
+const movement = CreatePacketGroup({
+  tag: "movement",
+  variants: VariantPermutation.WASD(),
+  defaults: { type: PacketType.SHORTS, dataMin: 1, dataMax: 1 },
+});
+
+await socket.sendPermutation(
+  "movement",
+  { W: true, A: true, S: false, D: false },
+  5,
+);
+```
+
+Boolean arrays use the declared key order. The call above selects `movement.W,A`. Invalid opposite combinations such as W+S are rejected. A parent listener receives `{ variant: "W,A", payload, permutation: { W: true, A: true, S: false, D: false } }`. `broadcastPermutation` provides the equivalent server-wide helper.
+
 ## Enums
 
 ```ts

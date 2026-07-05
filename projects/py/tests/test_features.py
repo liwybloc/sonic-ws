@@ -9,6 +9,8 @@ from sonic_ws import (
     LoadPacketManifest,
     ValidatePacketSchema,
     AssertPacketSchema,
+    VariantPermutation,
+    PacketHolder,
 )
 
 
@@ -160,6 +162,114 @@ class FeatureTests(unittest.TestCase):
         )
         self.assertEqual(group[2].parent, "movement")
         self.assertEqual(group[2].variant, "move")
+        directional = CreatePacketGroup(
+            tag="directional",
+            variants=["W", "A", "S", "D"],
+            defaults={"type": PacketType.SHORTS},
+        )
+        self.assertEqual(
+            [packet.tag for packet in directional],
+            [
+                "directional",
+                "directional.W",
+                "directional.A",
+                "directional.S",
+                "directional.D",
+            ],
+        )
+        self.assertTrue(
+            all(packet.type == PacketType.SHORTS for packet in directional[1:])
+        )
+        overridden = CreatePacketGroup(
+            tag="overridden",
+            variants={"W": {}, "A": {"type": PacketType.SHORTS}},
+            defaults={"type": PacketType.USHORTS},
+        )
+        self.assertEqual(overridden[1].type, PacketType.USHORTS)
+        self.assertEqual(overridden[2].type, PacketType.SHORTS)
+        delegated = CreatePacketGroup(
+            tag="delegated",
+            variants=["v1", "v2"],
+            delegate={"type": PacketType.UBYTES},
+        )
+        self.assertTrue(
+            all(packet.type == PacketType.UBYTES for packet in delegated[1:])
+        )
+        with self.assertRaisesRegex(ValueError, "require defaults"):
+            CreatePacketGroup(tag="missing-defaults", variants=["v1"])
+        with self.assertRaisesRegex(ValueError, "both defaults and delegate"):
+            CreatePacketGroup(
+                tag="conflicting-defaults",
+                variants=["v1"],
+                defaults={"type": PacketType.BYTES},
+                delegate={"type": PacketType.UBYTES},
+            )
+        with self.assertRaisesRegex(ValueError, "duplicate variant"):
+            CreatePacketGroup(
+                tag="duplicate-variants",
+                variants=["v1", "v1"],
+                defaults={"type": PacketType.BYTES},
+            )
+        permutation = VariantPermutation.WASD()
+        self.assertEqual(
+            permutation.generate(),
+            ["W", "A", "S", "D", "W,A", "W,D", "S,A", "S,D"],
+        )
+        self.assertEqual(
+            permutation.resolve({"W": True, "A": True, "S": False, "D": False}),
+            "W,A",
+        )
+        self.assertEqual(permutation.resolve([False, True, True, False]), "S,A")
+        self.assertEqual(
+            permutation.expand("W,A"),
+            {"W": True, "A": True, "S": False, "D": False},
+        )
+        with self.assertRaisesRegex(ValueError, "opposite"):
+            permutation.resolve([True, False, True, False])
+        permutation_group = CreatePacketGroup(
+            tag="permutation",
+            variants=permutation,
+            defaults={"type": PacketType.SHORTS, "dataMin": 1, "dataMax": 1},
+        )
+        self.assertEqual(
+            [packet.tag for packet in permutation_group],
+            [
+                "permutation",
+                "permutation.W",
+                "permutation.A",
+                "permutation.S",
+                "permutation.D",
+                "permutation.W,A",
+                "permutation.W,D",
+                "permutation.S,A",
+                "permutation.S,D",
+            ],
+        )
+        self.assertEqual(
+            permutation_group[5].permutation(),
+            {"W": True, "A": True, "S": False, "D": False},
+        )
+        restored_permutation = LoadPacketManifest(
+            CreatePacketManifest(
+                client_packets=permutation_group, server_packets=[]
+            )
+        )["client_packets"]
+        self.assertEqual(
+            restored_permutation[5].permutation(),
+            {"W": True, "A": True, "S": False, "D": False},
+        )
+        holder = PacketHolder(restored_permutation)
+        self.assertEqual(
+            holder.permutation_tag(
+                "permutation",
+                {"W": True, "A": True, "S": False, "D": False},
+            ),
+            "permutation.W,A",
+        )
+        self.assertEqual(
+            holder.permutation_tag("permutation", [False, False, True, True]),
+            "permutation.S,D",
+        )
         manifest = LoadPacketManifest(
             CreatePacketManifest(client_packets=[packet], server_packets=[group[2]])
         )

@@ -169,6 +169,9 @@ class SonicWSConnection(Connection):
     async def send_variant(self, parent, variant, *values):
         await self.send(self.host.server_packets.variant_tag(parent, variant), *values)
 
+    async def send_permutation(self, parent, selection, *values):
+        await self.send(self.host.server_packets.permutation_tag(parent, selection), *values)
+
     async def request(self, tag, *values, timeout=5.0):
         tag = self.host.server_packets.resolve(tag)
         packet = self.host.server_packets.packet(tag)
@@ -329,6 +332,7 @@ class SonicWSConnection(Connection):
     broadcastFiltered = broadcast_filtered
     togglePrint = toggle_print
     sendVariant = send_variant
+    sendPermutation = send_permutation
     sendSafe = send_safe
     sendVolatile = send_volatile
     sendReliable = send_reliable
@@ -712,6 +716,11 @@ class SonicWSServer:
     async def broadcast_variant(self, parent, variant, *values):
         await self.broadcast(self.server_packets.variant_tag(parent, variant), *values)
 
+    async def broadcast_permutation(self, parent, selection, *values):
+        await self.broadcast(
+            self.server_packets.permutation_tag(parent, selection), *values
+        )
+
     def handle_send_error(self, error, context):
         if self.on_send_error:
             self.on_send_error(error, context)
@@ -803,6 +812,7 @@ class SonicWSServer:
     broadcastRoomExcept = broadcast_room_except
     broadcastSafe = broadcast_safe
     broadcastVariant = broadcast_variant
+    broadcastPermutation = broadcast_permutation
     enablePacket = enable_packet
     disablePacket = disable_packet
     getConnected = get_connected

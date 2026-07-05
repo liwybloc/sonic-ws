@@ -23,6 +23,7 @@ pub struct Event {
     pub value: SonicValue,
     pub parent: Option<String>,
     pub variant: Option<String>,
+    pub permutation: Option<HashMap<String, bool>>,
 }
 
 /// An RPC request received through a SonicWS control frame.
@@ -280,6 +281,32 @@ impl Connection {
             }
         }
         self.send_frame(frame).await
+    }
+
+    pub async fn send_permutation_flags(
+        &self,
+        parent: &str,
+        flags: &[bool],
+        value: &SonicValue,
+    ) -> Result<()> {
+        let tag = self
+            .inner
+            .outbound_packets
+            .permutation_tag_flags(parent, flags)?;
+        self.send(&tag, value).await
+    }
+
+    pub async fn send_permutation_map(
+        &self,
+        parent: &str,
+        flags: &HashMap<String, bool>,
+        value: &SonicValue,
+    ) -> Result<()> {
+        let tag = self
+            .inner
+            .outbound_packets
+            .permutation_tag_map(parent, flags)?;
+        self.send(&tag, value).await
     }
 
     /// Encodes several values into one packet batch and sends one frame.
@@ -541,11 +568,21 @@ impl Connection {
 }
 
 fn event(packet: &crate::Packet, value: SonicValue) -> Event {
+    let permutation = packet.group.as_ref().and_then(|group| {
+        group.permutation.as_ref().map(|values| {
+            let enabled = group.variant.split(',').collect::<HashSet<_>>();
+            values
+                .iter()
+                .map(|value| (value.clone(), enabled.contains(value.as_str())))
+                .collect()
+        })
+    });
     Event {
         tag: packet.definition.tag.clone(),
         value,
         parent: packet.group.as_ref().map(|group| group.parent.clone()),
         variant: packet.group.as_ref().map(|group| group.variant.clone()),
+        permutation,
     }
 }
 

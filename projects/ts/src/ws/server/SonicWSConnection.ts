@@ -310,7 +310,8 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
         const packet = this.host.clientPackets.getPacket(tag);
         if (typeof data !== "string" && packet.parent && packet.variant) {
             for (const listener of this.listeners[packet.parent] ?? []) {
-                await listener({ variant: packet.variant, payload: data[0] });
+                const permutation = packet.permutation();
+                await listener({ variant: packet.variant, payload: data[0], ...(permutation && { permutation }) });
             }
         }
 
@@ -476,6 +477,14 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
 
     public sendVariant(parent: string, variant: string, ...values: any[]): Promise<void> {
         return this.send(this.host.serverPackets.getVariantTag(parent, variant), ...values);
+    }
+
+    public sendPermutation(
+        parent: string,
+        selection: readonly boolean[] | Record<string, boolean>,
+        ...values: any[]
+    ): Promise<void> {
+        return this.send(this.host.serverPackets.getPermutationVariant(parent, selection), ...values);
     }
 
     /** Sends a validated server packet as an RPC request to this client. */

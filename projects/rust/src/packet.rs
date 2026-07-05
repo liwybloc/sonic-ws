@@ -23,7 +23,9 @@ const fn default_true() -> bool {
     true
 }
 
-fn deserialize_bool_or_null<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<bool, D::Error> {
+fn deserialize_bool_or_null<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<bool, D::Error> {
     Ok(Option::<bool>::deserialize(d)?.unwrap_or(false))
 }
 
@@ -41,6 +43,8 @@ pub struct Group {
     pub parent: String,
     pub variant: String,
     pub is_parent: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permutation: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -58,7 +62,11 @@ pub(crate) struct Metadata {
     pub group: Option<Group>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub constructor: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_bool_or_null", skip_serializing_if = "std::ops::Not::not")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_bool_or_null",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
     pub replay: bool,
 }
 
@@ -446,6 +454,7 @@ pub fn packet_group(
             parent: tag.clone(),
             variant: String::new(),
             is_parent: true,
+            permutation: None,
         })
         .build()?;
     let mut packets = vec![parent];
@@ -455,6 +464,37 @@ pub fn packet_group(
             parent: tag.clone(),
             variant,
             is_parent: false,
+            permutation: None,
+        });
+        packets.push(packet);
+    }
+    Ok(packets)
+}
+
+/// Builds a NONE parent and one cloned packet for every valid permutation.
+pub fn permutation_packet_group(
+    tag: impl Into<String>,
+    permutation: &crate::VariantPermutation,
+    template: Packet,
+) -> Result<Vec<Packet>> {
+    let tag = tag.into();
+    let values = Some(permutation.values().to_vec());
+    let mut parent = Packet::builder(tag.clone(), PacketType::None).build()?;
+    parent.group = Some(Group {
+        parent: tag.clone(),
+        variant: String::new(),
+        is_parent: true,
+        permutation: values.clone(),
+    });
+    let mut packets = vec![parent];
+    for variant in permutation.generate() {
+        let mut packet = template.clone();
+        packet.definition.tag = format!("{tag}.{variant}");
+        packet.group = Some(Group {
+            parent: tag.clone(),
+            variant: variant.clone(),
+            is_parent: false,
+            permutation: values.clone(),
         });
         packets.push(packet);
     }

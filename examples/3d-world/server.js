@@ -4,9 +4,11 @@ import {
 	SonicWSServer,
 	CreatePacket,
 	CreatePacketGroup,
+	VariantPermutation,
 	PacketType,
 	PacketLogger
-} from "sonic-ws";
+} from "../../projects/ts/dist/index.js";
+import { FIXED_DT_SECONDS, stepPlayer } from "./public/physics.js";
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -18,61 +20,27 @@ const entities = new Map();
 const pendingInitialization = new WeakMap();
 const pendingRemoval = new Map();
 
-const movement = prefix => CreatePacketGroup({
-	tag: prefix,
-	variants: {
-		move: {
-			type: PacketType.VARINT,
-			schema: prefix === "movement" ? ["dx", "dy", "dz"] : ["id", "dx", "dy", "dz"],
-			dataMax: prefix === "movement" ? 3 : 4,
-			quantized: {
-				scale: 1000
-			},
-			...(prefix === "movement" ? {
-				min: -10,
-				max: 10
-			} : {})
-		},
-		look: {
-			type: PacketType.VARINT,
-			schema: prefix === "movement" ? ["dPitch", "dYaw"] : ["id", "dPitch", "dYaw"],
-			dataMax: prefix === "movement" ? 2 : 3,
-			quantized: {
-				scale: 1000
-			},
-			...(prefix === "movement" ? {
-				min: -Math.PI * 2,
-				max: Math.PI * 2
-			} : {})
-		},
-		both: {
-			type: PacketType.VARINT,
-			schema: prefix === "movement" ? ["dx", "dy", "dz", "dPitch", "dYaw"] : ["id", "dx", "dy", "dz", "dPitch", "dYaw"],
-			dataMax: prefix === "movement" ? 5 : 6,
-			quantized: {
-				scale: 1000
-			},
-			...(prefix === "movement" ? {
-				min: -10,
-				max: 10
-			} : {})
-		},
-		...(prefix === "entity" ? {
-			remove: {
-				type: PacketType.VARINT,
-				schema: ["id"],
-				dataMax: 1,
-				replay: true
-			}
-		} : {}),
-	}
-});
-
 const wss = new SonicWSServer({
-	clientPackets: [CreatePacket({
-		tag: "click",
-		type: PacketType.NONE
-	}), ...movement("movement")],
+	clientPackets: [
+		CreatePacket({
+			tag: "click",
+			type: PacketType.NONE
+		}),
+		...CreatePacketGroup({
+			tag: "movement",
+			variants: new VariantPermutation(
+				[ "W", "A", "S", "D", "LOOK" ],
+				[ [ 0, 2 ], [ 1, 3 ], [ 4, 0 ], [ 4, 1 ], [ 4, 2 ], [ 4, 3 ] ]
+			),
+			defaults: {
+				type: PacketType.VARINT,
+				dataMax: 2, dataMin: 0,
+				quantized: { scale: 1000 },
+				schema: [ "dPitch", "dYaw" ],
+				validator: (s, data) => data == null || (data.dPitch !== null && data.dYaw !== null), // verify that there is either no args or both args
+			},
+		})
+	],
 	serverPackets: [
 		CreatePacket({
 			tag: "pointsInfo",
@@ -85,13 +53,8 @@ const wss = new SonicWSServer({
 		}),
 		CreatePacket({
 			tag: "selfEntity",
-			type: PacketType.VARINT,
-			schema: ["id", "x", "y", "z", "pitch", "yaw", "lastSeen"],
-			dataMax: 7,
-			quantized: {
-				scale: 1000
-			},
-			replay: true
+			type: PacketType.UVARINT,
+			dataMax: 1
 		}),
 		CreatePacket({
 			tag: "entitySnapshot",
@@ -103,7 +66,41 @@ const wss = new SonicWSServer({
 			},
 			replay: true
 		}),
-		...movement("entity"),
+		...CreatePacketGroup({
+			tag: "entity",
+			variants: {
+				move: {
+					type: PacketType.VARINT,
+					schema: ["id", "dx", "dy", "dz"],
+					dataMax: 4,
+					quantized: {
+						scale: 1000
+					},
+				},
+				look: {
+					type: PacketType.VARINT,
+					schema: ["id", "dPitch", "dYaw"],
+					dataMax: 3,
+					quantized: {
+						scale: 1000
+					},
+				},
+				both: {
+					type: PacketType.VARINT,
+					schema: ["id", "dx", "dy", "dz", "dPitch", "dYaw"],
+					dataMax: 6,
+					quantized: {
+						scale: 1000
+					},
+				},
+				remove: {
+					type: PacketType.VARINT,
+					schema: ["id"],
+					dataMax: 1,
+					replay: true
+				},
+			}
+		})
 	],
 	websocketOptions: {
 		server: httpServer
@@ -119,9 +116,7 @@ const wss = new SonicWSServer({
 
 const snapshot = () => [...entities.values()].map(({
 	id,
-	x,
-	y,
-	z,
+	position: {x, y, z},
 	pitch,
 	yaw
 }) => ({
@@ -139,9 +134,11 @@ function createPlayer(ws) {
 	const spawn = nextEntityId - 1;
 	const entity = {
 		id: nextEntityId++,
-		x: Math.sin(spawn) * 3,
-		y: 1.7,
-		z: 5 + Math.cos(spawn) * 3,
+		position: {
+			x: Math.sin(spawn) * 3,
+			y: 1.7,
+			z: 5 + Math.cos(spawn) * 3,
+		},
 		pitch: 0,
 		yaw: 0,
 		lastSeen: Date.now()
@@ -154,31 +151,48 @@ function createPlayer(ws) {
 	return entity;
 }
 
-async function broadcastVolatileExcept(sender, tag, value) {
-	await Promise.all(wss.connections.filter(connection => connection !== sender).map(connection => connection.sendVolatile(tag, value)));
-}
-
 function configureConnection(ws, entity) {
 	ws.on("click", () => ws.sendReliable("pointsInfo", ++ws.state.clicks));
-	ws.on("movement", ({
-		variant,
-		payload
-	}) => {
+	ws.on("movement", ({ variant, payload, permutation }) => {
 		entity.lastSeen = Date.now();
-		if (!payload) return;
-		if (variant !== "look") {
-			entity.x += payload.dx;
-			entity.y += payload.dy;
-			entity.z += payload.dz;
+		if(!variant) return; // Ignore the 1s keepalive
+
+		const { W, A, S, D } = permutation;
+
+		const { dPitch = 0, dYaw = 0 } = payload ?? {};
+		if(dPitch || dYaw) {
+			entity.pitch += dPitch;
+			entity.yaw += dYaw;
 		}
-		if (variant !== "move") {
-			entity.pitch += payload.dPitch;
-			entity.yaw += payload.dYaw;
+
+		const { dx, dy, dz } = stepPlayer(entity, { keys: { W, A, S, D }, dt: FIXED_DT_SECONDS });
+
+		const moved = dx !== 0 || dy !== 0 || dz !== 0;
+		const looked = dPitch || dYaw;
+
+		if (moved && looked) {
+			ws.broadcast("entity.both", {
+				id: entity.id,
+				dx,
+				dy,
+				dz,
+				dPitch,
+				dYaw
+			});
+		} else if (moved) {
+			ws.broadcast("entity.move", {
+				id: entity.id,
+				dx,
+				dy,
+				dz
+			});
+		} else if (looked) {
+			ws.broadcast("entity.look", {
+				id: entity.id,
+				dPitch,
+				dYaw
+			});
 		}
-		void broadcastVolatileExcept(ws, `entity.${variant}`, {
-			id: entity.id,
-			...payload
-		});
 	});
 	ws.on_close(() => {
 		const id = ws.state.entityId;
@@ -195,7 +209,7 @@ function configureConnection(ws, entity) {
 
 function synchronize(ws, entity, recovered = false) {
 	configureConnection(ws, entity);
-	void ws.sendReliable("selfEntity", entity);
+	void ws.sendReliable("selfEntity", entity.id);
 	void ws.sendReliable("pointsInfo", ws.state.clicks);
 	void ws.sendReliable("notification", recovered ? "Session recovered" : "Welcome to the SonicWS 3D world");
 	void ws.sendReliable("entitySnapshot", snapshot());
@@ -214,6 +228,7 @@ wss.on_connect(ws => {
 });
 
 wss.on_recovered(ws => {
+	console.log("recovering", ws);
 	clearTimeout(pendingInitialization.get(ws));
 	pendingInitialization.delete(ws);
 	const entity = entities.get(ws.state.entityId);

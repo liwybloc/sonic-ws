@@ -1,7 +1,9 @@
 use serde_json::json;
 use sonic_ws::{
     Client, Incoming, Packet, PacketRegistry, PacketType, Server, ServerConfig, SonicValue,
+    VariantPermutation, permutation_packet_group,
 };
+use std::collections::HashMap;
 
 fn movement(x: i64, y: i64, z: i64) -> SonicValue {
     SonicValue::Object(vec![
@@ -338,4 +340,50 @@ async fn server_listener_api_dispatches_async_packet_handlers() {
         Some(Incoming::Event(_))
     ));
     running.abort();
+}
+
+#[tokio::test]
+async fn permutation_send_helpers_attach_decoded_boolean_maps() {
+    let permutation = VariantPermutation::wasd();
+    let packets = permutation_packet_group(
+        "movement",
+        &permutation,
+        Packet::builder("template", PacketType::Shorts)
+            .build()
+            .unwrap(),
+    )
+    .unwrap();
+    let server = Server::bind(
+        "127.0.0.1:0",
+        ServerConfig::new(
+            PacketRegistry::new(packets.clone()).unwrap(),
+            PacketRegistry::new(packets).unwrap(),
+        ),
+    )
+    .await
+    .unwrap();
+    let address = server.local_addr().unwrap();
+    let accepted = {
+        let server = server.clone();
+        tokio::spawn(async move { server.accept().await.unwrap() })
+    };
+    let client = Client::connect(format!("ws://{address}")).await.unwrap();
+    let connection = accepted.await.unwrap();
+    client
+        .send_permutation_flags("movement", &[true, true, false, false], &SonicValue::I64(5))
+        .await
+        .unwrap();
+    let Incoming::Event(event) = connection.recv().await.unwrap().unwrap() else {
+        panic!()
+    };
+    assert_eq!(event.variant.as_deref(), Some("W,A"));
+    assert_eq!(
+        event.permutation.unwrap(),
+        HashMap::from([
+            ("W".into(), true),
+            ("A".into(), true),
+            ("S".into(), false),
+            ("D".into(), false),
+        ])
+    );
 }
