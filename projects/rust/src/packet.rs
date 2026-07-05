@@ -23,6 +23,10 @@ const fn default_true() -> bool {
     true
 }
 
+fn deserialize_bool_or_null<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<bool, D::Error> {
+    Ok(Option::<bool>::deserialize(d)?.unwrap_or(false))
+}
+
 /// Inclusive application-level numeric limits.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ValueRange {
@@ -54,7 +58,7 @@ pub(crate) struct Metadata {
     pub group: Option<Group>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub constructor: Option<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, deserialize_with = "deserialize_bool_or_null", skip_serializing_if = "std::ops::Not::not")]
     pub replay: bool,
 }
 

@@ -1,13 +1,12 @@
-//! Cross-runtime wire compatibility coverage for the public Rust transport.
-//!
-//! TypeScript and Python use the same tags, values, enum ordering, and protocol
-//! version in their `test_compat` suites. This test exercises both Rust wire
-//! directions over a real WebSocket rather than only calling codec functions.
-
 use sonic_ws::{
     Client, EnumPackage, EnumValue, Incoming, Packet, PacketRegistry, PacketType, Server,
     ServerConfig, SonicValue,
 };
+use std::collections::HashMap;
+use tokio::time::{sleep, Duration};
+
+const PORT: u16 = 8963;
+const HOST: &str = "127.0.0.1";
 
 fn array(values: impl IntoIterator<Item = SonicValue>) -> SonicValue {
     SonicValue::Array(values.into_iter().collect())
@@ -22,35 +21,30 @@ fn unsigned(values: &[u64]) -> SonicValue {
 }
 
 fn strings(values: &[&str]) -> SonicValue {
-    array(
-        values
-            .iter()
-            .map(|value| SonicValue::String((*value).into())),
-    )
+    array(values.iter().map(|s| SonicValue::String((*s).into())))
 }
 
 fn assert_compatible(actual: &SonicValue, expected: &SonicValue) {
     match (actual, expected) {
-        (SonicValue::F64(actual), SonicValue::F64(expected))
-            if actual.is_finite() && expected.is_finite() =>
-        {
-            let tolerance = expected.abs().max(1.0) * f64::EPSILON * 4.0;
-            assert!(
-                (actual - expected).abs() <= tolerance,
-                "{actual} != {expected}"
-            );
+        (SonicValue::F64(a), SonicValue::F64(b)) if a.is_finite() && b.is_finite() => {
+            let tol = b.abs().max(1.0) * f64::EPSILON * 4.0;
+            assert!((a - b).abs() <= tol, "{a} != {b}");
         }
-        (SonicValue::Array(actual), SonicValue::Array(expected)) => {
-            assert_eq!(actual.len(), expected.len());
-            for (actual, expected) in actual.iter().zip(expected) {
-                assert_compatible(actual, expected);
+        (SonicValue::F32(a), SonicValue::F32(b)) if a.is_finite() && b.is_finite() => {
+            let tol = b.abs().max(1.0) * f32::EPSILON * 4.0;
+            assert!((a - b).abs() <= tol, "{a} != {b}");
+        }
+        (SonicValue::Array(a), SonicValue::Array(b)) => {
+            assert_eq!(a.len(), b.len(), "array length mismatch");
+            for (av, bv) in a.iter().zip(b) {
+                assert_compatible(av, bv);
             }
         }
-        (SonicValue::Object(actual), SonicValue::Object(expected)) => {
-            assert_eq!(actual.len(), expected.len());
-            for ((actual_key, actual), (expected_key, expected)) in actual.iter().zip(expected) {
-                assert_eq!(actual_key, expected_key);
-                assert_compatible(actual, expected);
+        (SonicValue::Object(a), SonicValue::Object(b)) => {
+            assert_eq!(a.len(), b.len(), "object length mismatch");
+            for ((ak, av), (bk, bv)) in a.iter().zip(b) {
+                assert_eq!(ak, bk);
+                assert_compatible(av, bv);
             }
         }
         _ => assert_eq!(actual, expected),
@@ -69,123 +63,96 @@ fn mixed_enum() -> EnumPackage {
     }
 }
 
-fn packet_definitions() -> Vec<Packet> {
+fn object_enum() -> EnumPackage {
+    EnumPackage {
+        name: "compat-object".into(),
+        values: vec![
+            EnumValue::String("left".into()),
+            EnumValue::String("right".into()),
+        ],
+    }
+}
+
+fn make_packets(prefix: &str) -> Vec<Packet> {
+    let tag = |name: &str| format!("{prefix}_{name}");
     vec![
-        Packet::builder("none", PacketType::None).build().unwrap(),
-        Packet::builder("raw", PacketType::Raw)
-            .data_range(4, 4)
-            .build()
-            .unwrap(),
-        Packet::builder("ascii", PacketType::StringsAscii)
-            .data_range(3, 3)
-            .build()
-            .unwrap(),
-        Packet::builder("utf16", PacketType::StringsUtf16)
-            .data_range(4, 4)
-            .build()
-            .unwrap(),
-        Packet::builder("enums", PacketType::Enums)
+        Packet::builder(tag("none"), PacketType::None).build().unwrap(),
+        Packet::builder(tag("raw"), PacketType::Raw).data_range(4, 4).build().unwrap(),
+        Packet::builder(tag("ascii"), PacketType::StringsAscii).data_range(3, 3).build().unwrap(),
+        Packet::builder(tag("utf16"), PacketType::StringsUtf16).data_range(4, 4).build().unwrap(),
+        Packet::builder(tag("enums"), PacketType::Enums)
             .data_range(4, 4)
             .enum_data(mixed_enum())
             .build()
             .unwrap(),
-        Packet::builder("bytes", PacketType::Bytes)
-            .data_range(5, 5)
-            .build()
-            .unwrap(),
-        Packet::builder("ubytes", PacketType::UBytes)
-            .data_range(4, 4)
-            .build()
-            .unwrap(),
-        Packet::builder("shorts", PacketType::Shorts)
-            .data_range(5, 5)
-            .build()
-            .unwrap(),
-        Packet::builder("ushorts", PacketType::UShorts)
-            .data_range(4, 4)
-            .build()
-            .unwrap(),
-        Packet::builder("varint", PacketType::VarInt)
-            .data_range(5, 5)
-            .build()
-            .unwrap(),
-        Packet::builder("uvarint", PacketType::UVarInt)
-            .data_range(7, 7)
-            .build()
-            .unwrap(),
-        Packet::builder("deltas", PacketType::Deltas)
-            .data_range(8, 8)
-            .build()
-            .unwrap(),
-        Packet::builder("floats", PacketType::Floats)
-            .data_range(5, 5)
-            .build()
-            .unwrap(),
-        Packet::builder("doubles", PacketType::Doubles)
-            .data_range(5, 5)
-            .build()
-            .unwrap(),
-        Packet::builder("booleans", PacketType::Booleans)
-            .data_range(9, 9)
-            .build()
-            .unwrap(),
-        Packet::builder("json", PacketType::Reserved16)
-            .data_range(0, 10)
-            .build()
-            .unwrap(),
-        Packet::builder("hex", PacketType::Hex)
-            .data_range(3, 3)
-            .build()
-            .unwrap(),
+        Packet::builder(tag("bytes"), PacketType::Bytes).data_range(5, 5).build().unwrap(),
+        Packet::builder(tag("ubytes"), PacketType::UBytes).data_range(4, 4).build().unwrap(),
+        Packet::builder(tag("shorts"), PacketType::Shorts).data_range(5, 5).build().unwrap(),
+        Packet::builder(tag("ushorts"), PacketType::UShorts).data_range(4, 4).build().unwrap(),
+        Packet::builder(tag("varint"), PacketType::VarInt).data_range(5, 5).build().unwrap(),
+        Packet::builder(tag("uvarint"), PacketType::UVarInt).data_range(7, 7).build().unwrap(),
+        Packet::builder(tag("deltas"), PacketType::Deltas).data_range(8, 8).build().unwrap(),
+        Packet::builder(tag("floats"), PacketType::Floats).data_range(5, 5).build().unwrap(),
+        Packet::builder(tag("doubles"), PacketType::Doubles).data_range(5, 5).build().unwrap(),
+        Packet::builder(tag("booleans"), PacketType::Booleans).data_range(9, 9).build().unwrap(),
+        Packet::builder(tag("json"), PacketType::Reserved16).data_range(1, 1).build().unwrap(),
+        Packet::builder(tag("hex"), PacketType::Hex).data_range(1, 3).build().unwrap(),
         Packet::object_builder(
-            "object",
+            tag("object"),
             [
-                PacketType::StringsUtf16,
+                PacketType::StringsAscii,
                 PacketType::Booleans,
-                PacketType::VarInt,
+                PacketType::Bytes,
+                PacketType::Enums,
+                PacketType::Reserved16,
             ],
         )
-        .ranges(vec![2, 3, 3], vec![2, 3, 3])
+        .ranges(vec![2, 3, 3, 2, 1], vec![2, 3, 3, 2, 1])
+        .enum_data(object_enum())
         .build()
         .unwrap(),
-        Packet::builder("compressed", PacketType::StringsUtf16)
-            .data_range(2, 2)
+        Packet::builder(tag("batch"), PacketType::UVarInt)
+            .data_range(3, 3)
+            .batching(10, 4)
             .compression(true)
             .build()
             .unwrap(),
-        Packet::builder("batch", PacketType::UVarInt)
-            .data_range(1, 1)
-            .batching(1, 10)
-            .build()
-            .unwrap(),
     ]
 }
 
-fn cases() -> Vec<(&'static str, SonicValue, SonicValue)> {
-    let json = SonicValue::Object(vec![
-        ("message".into(), SonicValue::String("compat".into())),
-        ("count".into(), SonicValue::I64(3)),
+fn cases(prefix: &str) -> Vec<(String, SonicValue, SonicValue)> {
+    let tag = |name: &str| format!("{prefix}_{name}");
+    let json_val = SonicValue::Object(vec![
         ("ok".into(), SonicValue::Bool(true)),
+        (
+            "nested".into(),
+            array([
+                SonicValue::I64(1),
+                SonicValue::String("two".into()),
+                SonicValue::Bool(false),
+                SonicValue::Null,
+            ]),
+        ),
     ]);
     vec![
-        ("none", SonicValue::Null, SonicValue::Undefined),
+        (tag("none"), SonicValue::Null, SonicValue::Undefined),
         (
-            "raw",
+            tag("raw"),
             SonicValue::Bytes(vec![0, 1, 128, 255]),
             SonicValue::Bytes(vec![0, 1, 128, 255]),
         ),
         (
-            "ascii",
+            tag("ascii"),
             strings(&["hello world", "SonicWS", ""]),
             strings(&["hello world", "SonicWS", ""]),
         ),
         (
-            "utf16",
+            tag("utf16"),
             strings(&["another😂", "𐍈", "𝄞", "🧪"]),
             strings(&["another😂", "𐍈", "𝄞", "🧪"]),
         ),
         (
-            "enums",
+            tag("enums"),
             array([
                 SonicValue::String("alpha".into()),
                 SonicValue::F64(7.0),
@@ -200,135 +167,186 @@ fn cases() -> Vec<(&'static str, SonicValue, SonicValue)> {
             ]),
         ),
         (
-            "bytes",
+            tag("bytes"),
             signed(&[-128, -1, 0, 1, 127]),
             signed(&[-128, -1, 0, 1, 127]),
         ),
         (
-            "ubytes",
+            tag("ubytes"),
             unsigned(&[0, 1, 254, 255]),
             unsigned(&[0, 1, 254, 255]),
         ),
         (
-            "shorts",
+            tag("shorts"),
             signed(&[-32768, -1, 0, 1, 32767]),
             signed(&[-32768, -1, 0, 1, 32767]),
         ),
         (
-            "ushorts",
+            tag("ushorts"),
             unsigned(&[0, 1, 65534, 65535]),
             unsigned(&[0, 1, 65534, 65535]),
         ),
         (
-            "varint",
+            tag("varint"),
             signed(&[-2147483648, -1, 0, 1, 2147483647]),
             signed(&[-2147483648, -1, 0, 1, 2147483647]),
         ),
         (
-            "uvarint",
+            tag("uvarint"),
             unsigned(&[0, 1, 127, 128, 255, 16384, 4294967295]),
             unsigned(&[0, 1, 127, 128, 255, 16384, 4294967295]),
         ),
         (
-            "deltas",
+            tag("deltas"),
             signed(&[-50, -25, 1, 2, 1000, 1004, 1004, -5]),
             signed(&[-50, -25, 1, 2, 1000, 1004, 1004, -5]),
         ),
         (
-            "floats",
+            tag("floats"),
             array([0.0_f32, 1.5, -1.5, 958412.1, 1e-10].map(SonicValue::F32)),
             array([0.0_f32, 1.5, -1.5, 958412.1, 1e-10].map(SonicValue::F32)),
         ),
         (
-            "doubles",
+            tag("doubles"),
             array([0.0_f64, 1.5, -1.5, 958412.128498, f64::INFINITY].map(SonicValue::F64)),
             array([0.0_f64, 1.5, -1.5, 958412.128498, f64::INFINITY].map(SonicValue::F64)),
         ),
         (
-            "booleans",
+            tag("booleans"),
             array([true, false, true, false, true, false, true, false, true].map(SonicValue::Bool)),
             array([true, false, true, false, true, false, true, false, true].map(SonicValue::Bool)),
         ),
-        ("json", json.clone(), array([json])),
         (
-            "hex",
+            tag("json"),
+            array([json_val.clone()]),
+            array([json_val]),
+        ),
+        (
+            tag("hex"),
             SonicValue::String("00abff".into()),
             SonicValue::String("00abff".into()),
         ),
         (
-            "object",
+            tag("object"),
             array([
                 strings(&["hello", "world"]),
                 array([true, false, true].map(SonicValue::Bool)),
                 signed(&[-1, 0, 1]),
+                strings(&["right", "left"]),
+                array([SonicValue::Object(vec![("json".into(), SonicValue::Bool(true))])]),
             ]),
             array([
                 strings(&["hello", "world"]),
                 array([true, false, true].map(SonicValue::Bool)),
                 signed(&[-1, 0, 1]),
+                strings(&["right", "left"]),
+                array([SonicValue::Object(vec![("json".into(), SonicValue::Bool(true))])]),
             ]),
-        ),
-        (
-            "compressed",
-            strings(&["compressed", "packet"]),
-            strings(&["compressed", "packet"]),
         ),
     ]
 }
 
-#[tokio::test]
-async fn all_packet_modes_are_compatible_in_both_directions() {
-    let packets = packet_definitions();
+async fn send_all(label: &str, sender: &sonic_ws::Connection, prefix: &str) {
+    let data = cases(prefix);
+    for (tag, value, _) in &data {
+        println!("[{label}] sending {tag}");
+        sender.send(tag, value).await.unwrap();
+    }
+    let batch_tag = format!("{prefix}_batch");
+    let batch_item = array([SonicValue::U64(7), SonicValue::U64(128), SonicValue::U64(16384)]);
+    println!("[{label}] sending {batch_tag}");
+    sender.send_batch(&batch_tag, &[batch_item]).await.unwrap();
+    sleep(Duration::from_millis(100)).await;
+}
+
+async fn wait_all(label: &str, receiver: &sonic_ws::Connection, prefix: &str) {
+    let data = cases(prefix);
+    let mut expected: HashMap<String, SonicValue> = data
+        .into_iter()
+        .map(|(tag, _, exp)| (tag, exp))
+        .collect();
+    let batch_tag = format!("{prefix}_batch");
+    expected.insert(
+        batch_tag,
+        array([SonicValue::U64(7), SonicValue::U64(128), SonicValue::U64(16384)]),
+    );
+
+    let total = expected.len();
+    let mut received = 0;
+
+    while received < total {
+        let incoming = receiver.recv().await.unwrap().unwrap();
+        let Incoming::Event(event) = incoming else {
+            continue;
+        };
+        let tag = &event.tag;
+        if let Some(exp) = expected.get(tag) {
+            println!("[{label}] received {tag}");
+            assert_compatible(&event.value, exp);
+            received += 1;
+        } else {
+            panic!("[{label}] unexpected tag: {tag}");
+        }
+    }
+}
+
+async fn run_host() {
+    let server_packets = make_packets("server");
+    let client_packets = make_packets("client");
+
     let server = Server::bind(
-        "127.0.0.1:0",
+        format!("{HOST}:{PORT}"),
         ServerConfig::new(
-            PacketRegistry::new(packets.clone()).unwrap(),
-            PacketRegistry::new(packets).unwrap(),
+            PacketRegistry::new(client_packets).unwrap(),
+            PacketRegistry::new(server_packets).unwrap(),
         ),
     )
     .await
     .unwrap();
-    let address = server.local_addr().unwrap();
-    let accepted = {
-        let server = server.clone();
-        tokio::spawn(async move { server.accept().await.unwrap() })
-    };
-    let client = Client::connect(format!("ws://{address}")).await.unwrap();
-    let connection = accepted.await.unwrap();
 
-    for (tag, sent, expected) in cases() {
-        client.send(tag, &sent).await.unwrap();
-        let Incoming::Event(event) = connection.recv().await.unwrap().unwrap() else {
-            panic!("event")
-        };
-        assert_eq!(event.tag, tag);
-        assert_compatible(&event.value, &expected);
+    println!("Host listening on {HOST}:{PORT}");
+    let connection = server.accept().await.unwrap();
+    println!("Client connected");
 
-        connection.send(tag, &sent).await.unwrap();
-        let Incoming::Event(event) = client.recv().await.unwrap().unwrap() else {
-            panic!("event")
-        };
-        assert_eq!(event.tag, tag);
-        assert_compatible(&event.value, &expected);
-    }
+    let conn_recv = connection.clone();
+    let recv_task = tokio::spawn(async move {
+        wait_all("Host", &conn_recv, "client").await;
+    });
 
-    let batches = vec![
-        SonicValue::U64(7),
-        SonicValue::U64(128),
-        SonicValue::U64(16_384),
-    ];
-    client.send_batch("batch", &batches).await.unwrap();
-    for expected in &batches {
-        let Incoming::Event(event) = connection.recv().await.unwrap().unwrap() else {
-            panic!("batch")
-        };
-        assert_eq!(event.value, SonicValue::Array(vec![expected.clone()]));
-    }
-    connection.send_batch("batch", &batches).await.unwrap();
-    for expected in &batches {
-        let Incoming::Event(event) = client.recv().await.unwrap().unwrap() else {
-            panic!("batch")
-        };
-        assert_eq!(event.value, SonicValue::Array(vec![expected.clone()]));
+    sleep(Duration::from_millis(250)).await;
+    send_all("Host", &connection, "server").await;
+
+    recv_task.await.unwrap();
+    println!("Host done");
+}
+
+async fn run_client() {
+    let url = format!("ws://{HOST}:{PORT}");
+    let client = Client::connect(&url).await.unwrap();
+    println!("Connected to {url}");
+
+    let client_recv = client.clone();
+    let recv_task = tokio::spawn(async move {
+        wait_all("Client", &client_recv, "server").await;
+    });
+
+    sleep(Duration::from_millis(500)).await;
+    send_all("Client", &client, "client").await;
+
+    recv_task.await.unwrap();
+    println!("Client done");
+}
+
+#[tokio::main]
+async fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let mode = args.get(1).map(String::as_str);
+    match mode {
+        Some("--host") => run_host().await,
+        Some("--client") => run_client().await,
+        _ => {
+            eprintln!("Usage: test_compat --host | --client");
+            std::process::exit(1);
+        }
     }
 }

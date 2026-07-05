@@ -20,5 +20,9 @@ tokio = { version = "=1.43.0", features = ["macros", "net", "rt-multi-thread", "
 tokio-tungstenite = "=0.20.1"
 uuid = { version = "=1.23.1", features = ["v4"] }
 
+[[bin]]
+name = "test_compat"
+path = "tests/test_compat.rs"
+
 [dev-dependencies]
 tokio = { version = "=1.43.0", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
