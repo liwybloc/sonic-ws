@@ -11,6 +11,7 @@ pub const RESUMED: u8 = 5;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Control {
+    Heartbeat,
     Request {
         id: u64,
         packet_key: u8,
@@ -38,6 +39,7 @@ pub enum Control {
 pub fn encode(control: &Control) -> Result<Vec<u8>> {
     let mut output = vec![KEY];
     match control {
+        Control::Heartbeat => return Ok(output),
         Control::Request {
             id,
             packet_key,
@@ -81,6 +83,9 @@ pub fn encode(control: &Control) -> Result<Vec<u8>> {
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Control> {
+    if bytes == [KEY] {
+        return Ok(Control::Heartbeat);
+    }
     if bytes.first() != Some(&KEY) || bytes.len() < 3 {
         return Err(Error::Protocol("invalid control frame".into()));
     }
@@ -200,5 +205,11 @@ mod tests {
             value: json!({"ok": true}),
         };
         assert_eq!(decode(&encode(&value).unwrap()).unwrap(), value);
+    }
+
+    #[test]
+    fn heartbeat_is_the_single_control_key() {
+        assert_eq!(encode(&Control::Heartbeat).unwrap(), vec![KEY]);
+        assert_eq!(decode(&[KEY]).unwrap(), Control::Heartbeat);
     }
 }

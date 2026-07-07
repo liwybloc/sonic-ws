@@ -157,12 +157,22 @@ Full API documentation:
 - [TypeScript / Node / browser](docs/ts/README.md)
 - [Python](docs/py/README.md)
 - [Native Rust](projects/rust/README.md)
-- [Protocol version 24](docs/protocol.md)
+- [Protocol version 25](docs/protocol.md)
 - [Production defaults](docs/defaults.md)
 - [Authentication and recovery](docs/authentication.md)
 - [Inspector, generated types, conformance, and benchmarks](docs/tooling.md)
 - [Backpressure and delivery](docs/backpressure.md)
 - [Runnable examples](examples/README.md)
+
+Cross-language compatibility peers can be selected from the root build script. Run one host and one client in separate terminals:
+
+```sh
+./build.sh test_compat typescript --host
+./build.sh test_compat python --client
+
+# Rust can be either side too
+./build.sh test_compat rust --client
+```
 
 Packet schemas can now map the existing single-type wire format directly to application objects:
 
@@ -180,6 +190,12 @@ await ws.send("entitySnapshot", [...entities.values()]);
 This remains a homogeneous `VARINT` packet. Schema mapping, row-major `autoFlatten`, object-packet `autoTranspose`, quantization, bounds, and packet groups are application-layer conveniences and do not turn the codec into a mixed-type serializer. See the packet documentation above for TypeScript and Python examples.
 
 Clients can opt into capped exponential-backoff reconnect. Packets marked `replay: true` are retained in a bounded per-session buffer; successful recovery also restores server-side `state` and room membership. RPC request payloads use ordinary packet definitions, so validation and compact encoding still apply. Room broadcasts work locally and can be forwarded across processes through an adapter. Long-polling fallback is intentionally outside SonicWS's scope.
+
+## WHERE SONICWS FITS
+
+SonicWS is strongest for schema-known realtime traffic: numeric movement updates, repeated entity snapshots, compact enums, bounded RPC payloads, and other messages where validation and wire size matter. Positional sends are available as the lowest-allocation hot path, while schema mapping trades some CPU for cleaner application objects.
+
+Arbitrary chat strings and already-compressed or highly dynamic JSON may see little or no size improvement over ordinary JSON WebSockets. SonicWS should be selected for its explicit packet contract, validation, lifecycle behavior, and compact structured traffic—not because every possible payload encodes faster or smaller than JSON.
 
 ## KNOWN ISSUES
 

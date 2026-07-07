@@ -18,7 +18,7 @@ import { EnumPackage } from "../enums/EnumType";
 import { EMPTY_UINT8, MAX_USHORT } from "./CompressionUtil";
 import { SendQueue } from "../../PacketProcessor";
 import { hashValue } from "./HashUtil";
-import { PacketConstructor, RegisterPacketConstructor } from "./ConstructorRegistry";
+import { PacketConstructor, RegisterPacketConstructor } from "./metadata/ConstructorRegistry";
 import { VariantPermutation } from "./VariantPermutation";
 
 export type ProcessedPacket = [code: number, data: Uint8Array, packet: Packet<any>];

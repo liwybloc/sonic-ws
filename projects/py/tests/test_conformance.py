@@ -8,7 +8,7 @@ def main():
     corpus = json.loads(
         (Path(__file__).parents[3] / "protocol" / "golden-vectors.json").read_text()
     )
-    assert corpus["protocolVersion"] == 24
+    assert corpus["protocolVersion"] == 25
     for vector in corpus["vectors"]:
         values = vector["values"]
         count = (

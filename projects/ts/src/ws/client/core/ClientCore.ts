@@ -22,7 +22,13 @@ import { toPacketBuffer } from "../../util/BufferUtil";
 import { CloseCodes, Connection } from "../../Connection";
 import { AsyncPQ, ClientPQ, PacketQueue, SendQueue } from "../../PacketProcessor";
 import { as8String } from "../../util/StringUtil";
-import { ControlType, decodeControl, encodeControlRequest, encodeControlResponse, encodeResume } from "../../util/packets/ControlProtocol";
+import {
+    ControlType,
+    decodeControl,
+    encodeControlRequest,
+    encodeControlResponse,
+    encodeResume,
+} from "../../util/packets/ControlProtocol";
 
 export type ReconnectOptions = {
     enabled?: boolean;
@@ -223,6 +229,12 @@ export abstract class SonicWSCore<T extends ClientTransport, K> extends Connecti
 
         this.reading = true;
         const compressedData = await this.bufferHandler(event);
+
+        if (compressedData.length === 1 && compressedData[0] === 0) {
+            this.raw_send(Uint8Array.of(0));
+            this.reading = false;
+            return;
+        }
 
         if (compressedData.length < 3 || as8String(compressedData.slice(0, 3)) !== SERVER_SUFFIX) {
             this.close(1000);
@@ -434,6 +446,12 @@ export abstract class SonicWSCore<T extends ClientTransport, K> extends Connecti
     }
 
     private async handleControl(data: Uint8Array): Promise<void> {
+        // a single CONTROL key is a heartbeat; reply with the same minimal frame
+        if (data.length === 1) {
+            this.raw_send(Uint8Array.of(0));
+            return;
+        }
+
         let message;
         try {
             message = decodeControl(data);
@@ -443,6 +461,11 @@ export abstract class SonicWSCore<T extends ClientTransport, K> extends Connecti
         }
 
         switch (message.type) {
+            case ControlType.HEARTBEAT: {
+                this.raw_send(Uint8Array.of(0));
+                return;
+            }
+
             case ControlType.REPLAY: {
                 if (message.sequence <= this.lastReplaySequence) return;
 

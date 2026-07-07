@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 
 from sonic_ws import (
@@ -11,6 +12,9 @@ from sonic_ws import (
     AssertPacketSchema,
     VariantPermutation,
     PacketHolder,
+    SonicWS,
+    SonicWSServer,
+    SonicMetrics,
 )
 
 
@@ -35,6 +39,27 @@ class FeatureTests(unittest.TestCase):
         self.assertIsInstance(
             restored.decode(restored.encode(({"x": 4, "y": 5, "z": 6},))), MovementValue
         )
+
+    def test_metrics_collect_and_reset(self):
+        metrics = SonicMetrics()
+
+        metrics.onSend_post("move", b"\x01\x02", 2)
+        metrics.onReceive_pre("move", b"\x01", 1)
+        metrics.onPacketBroadcast_post("snapshot", {"type": "all"}, b"\x01\x02\x03", 3)
+        metrics.onClientDisconnect(None, 4003)
+        metrics.record_send_error("bad")
+        metrics.recordVolatileDrop("move")
+
+        snapshot = metrics.snapshot()
+        self.assertEqual(snapshot["sent"]["move"], {"packets": 1, "bytes": 3})
+        self.assertEqual(snapshot["received"]["move"], {"packets": 1, "bytes": 2})
+        self.assertEqual(snapshot["broadcasts"]["snapshot"], {"packets": 1, "bytes": 4})
+        self.assertEqual(snapshot["closes"]["4003"], 1)
+        self.assertEqual(snapshot["sendErrors"]["bad"], 1)
+        self.assertEqual(snapshot["volatileDrops"]["move"], 1)
+
+        metrics.reset()
+        self.assertEqual(metrics.snapshot()["sent"], {})
 
     def test_schema_object_matches_positional_wire(self):
         packet = CreatePacket(
@@ -280,6 +305,65 @@ class FeatureTests(unittest.TestCase):
         self.assertFalse(ValidatePacketSchema([packet])["errors"])
         with self.assertRaisesRegex(ValueError, "duplicate packet tag"):
             AssertPacketSchema([packet, packet])
+
+
+class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_configurable_control_heartbeat_keeps_idle_connection_alive(self):
+        connected = asyncio.get_running_loop().create_future()
+        server = SonicWSServer(
+            {
+                "clientPackets": [],
+                "serverPackets": [],
+                "websocketOptions": {"host": "127.0.0.1", "port": 0},
+                "sonicServerSettings": {
+                    "heartbeat": True,
+                    "heartbeatIntervalMs": 1_000,
+                    "heartbeatTimeoutMs": 500,
+                },
+            }
+        )
+        server.on_connect(lambda connection: connected.set_result(connection))
+        await server.start()
+        client = await SonicWS.connect(f"ws://127.0.0.1:{server.port}")
+        await connected
+        acknowledged = asyncio.Event()
+        client.raw_onsend(
+            lambda data: acknowledged.set() if bytes(data) == bytes([0]) else None
+        )
+
+        try:
+            await asyncio.wait_for(acknowledged.wait(), 2.5)
+            self.assertFalse(client._closed)
+        finally:
+            await client.close()
+            await server.shutdown()
+
+    async def test_unresponsive_peer_closes_with_heartbeat_code(self):
+        from websockets.asyncio.client import connect
+        from websockets.exceptions import ConnectionClosed
+
+        server = SonicWSServer(
+            {
+                "websocketOptions": {"host": "127.0.0.1", "port": 0},
+                "sonicServerSettings": {
+                    "heartbeatIntervalMs": 50,
+                    "heartbeatTimeoutMs": 50,
+                },
+            }
+        )
+        await server.start()
+        socket = await connect(f"ws://127.0.0.1:{server.port}", ping_interval=None)
+        await socket.recv()
+
+        try:
+            self.assertEqual(await socket.recv(), bytes([0]))
+            with self.assertRaises(ConnectionClosed) as closed:
+                await asyncio.wait_for(socket.recv(), 1)
+            self.assertIsNotNone(closed.exception.rcvd)
+            self.assertEqual(closed.exception.rcvd.code, 4010)
+        finally:
+            await socket.close()
+            await server.shutdown()
 
 
 if __name__ == "__main__":

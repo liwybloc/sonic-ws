@@ -6,7 +6,7 @@
 | Rust raw-DEFLATE expansion | 16 MiB global ceiling, tighter schema-derived bounds | All codec paths |
 | Client schema-handshake timeout | 10 seconds | Node, browser, Python |
 | Required application-handshake timeout | 10 seconds | Node and Python servers |
-| Ping/pong timeout | Node: 30-second ping / 10-second pong; Python websockets: 20/20 | Servers |
+| CONTROL heartbeat | Enabled; 30-second idle interval / 10-second reply timeout | Servers |
 | Global packet rate | 500 messages/second/direction/connection | Servers |
 | Packet rate | Unlimited unless configured | Individual packet |
 | Default batch maximum | 10 items | Received client batches |

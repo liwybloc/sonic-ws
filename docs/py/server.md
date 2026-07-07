@@ -41,6 +41,8 @@ CamelCase aliases exist for the corresponding TypeScript methods.
 
 An optional adapter follows the same method contract as TypeScript: `start`, `publish`, `join`, `leave`, `disconnect`, and `close`; methods may be synchronous or awaitable. Recovery defaults to 120 seconds and 1,000 frames. Declare `replay=True` only for idempotent server packets that are safe to deliver after reconnect.
 
+`sonicServerSettings` accepts `heartbeat` (default `True`), `heartbeatIntervalMs` (default `30_000`), and `heartbeatTimeoutMs` (default `10_000`). Idle connections use the one-byte CONTROL frame `[0]`; every received packet counts as proof of life. Set `heartbeat` to `False` or the interval to zero to disable it. Snake-case timing names are also accepted.
+
 `toggle_print` / `togglePrint` toggles the connection diagnostic flag. Python applications should normally use middleware or standard logging for structured packet diagnostics.
 
 ## Rate limits and packet state

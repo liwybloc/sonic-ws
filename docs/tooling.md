@@ -31,6 +31,28 @@ connection.add_middleware(PacketLogger())
 
 Logs contain direction, tag, decoded values, frame size, and timestamp. Pass a custom logger and `includeValues: false` / `include_values=False` when packet values may contain secrets.
 
+## Metrics middleware
+
+```ts
+const metrics = new SonicMetrics();
+
+wss.addMiddleware(metrics);
+connection.addMiddleware(metrics);
+
+const snapshot = metrics.snapshot();
+```
+
+```py
+metrics = SonicMetrics()
+
+wss.add_middleware(metrics)
+connection.add_middleware(metrics)
+
+snapshot = metrics.snapshot()
+```
+
+Metrics are in-memory counters for packets, bytes, broadcasts, close codes, send errors, and volatile drops. They are meant for exporting to your own logger, Prometheus client, OpenTelemetry bridge, or game/admin dashboard. They do not change packet behavior.
+
 ## Golden corpus and fuzzing
 
 Run `./build.sh conformance` to execute the shared golden vectors in Node/WASM and Python; `cargo test` consumes the same primitive vectors in Rust. Rust libFuzzer targets exercise every primitive decoder/validator and object-sector framing.

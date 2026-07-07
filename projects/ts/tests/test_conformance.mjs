@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { CreatePacket, PacketType } from "../dist/index.js";
 
 const corpus = JSON.parse(await readFile(new URL("../../../protocol/golden-vectors.json", import.meta.url)));
-assert.equal(corpus.protocolVersion, 24);
+assert.equal(corpus.protocolVersion, 25);
 
 for (const vector of corpus.vectors) {
     const count = vector.type === "HEX" ? vector.values[0].length / 2 : Array.isArray(vector.values) ? vector.values.length : vector.schema?.length ?? 1;

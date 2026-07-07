@@ -1,6 +1,6 @@
 # SonicWS for Rust
 
-The Rust package is a native Tokio client and server for SonicWS protocol 24. It uses `sonic-ws-core` directly, so it does not require WebAssembly or a platform-specific shared library.
+The Rust package is a native Tokio client and server for SonicWS protocol 25. It uses `sonic-ws-core` directly, so it does not require WebAssembly or a platform-specific shared library.
 
 ## Current API
 
@@ -17,6 +17,8 @@ The Rust package is a native Tokio client and server for SonicWS protocol 24. It
 - Per-connection packet gating, global/per-packet rate limits, and message-size limits
 - Bounded replay storage, reconnect backoff, state/room restoration, and replay checkpoints
 - Bounded raw-DEFLATE decompression inherited from the shared codec
+
+`ServerConfig` enables portable CONTROL heartbeats by default with a 30-second idle interval and 10-second reply timeout. Set `heartbeat_enabled = false` or use a zero interval to disable them. Every inbound packet refreshes liveness; idle clients answer the one-byte `[0]` heartbeat automatically while `recv()` is being driven.
 
 Rust deliberately uses `Result`-returning sends rather than adding a separate `sendSafe` method. The caller decides whether to propagate, log, or ignore each failure.
 

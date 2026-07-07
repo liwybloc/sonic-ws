@@ -21,7 +21,12 @@ import { RateHandler } from "../util/packets/RateHandler";
 import { stringifyBuffer, toPacketBuffer } from "../util/BufferUtil";
 import { CloseCodes, Connection } from "../Connection";
 import { AsyncPQ, PacketQueue, SendQueue, ServerPQ } from "../PacketProcessor";
-import { ControlType, decodeControl, encodeControlRequest, encodeControlResponse } from "../util/packets/ControlProtocol";
+import {
+    ControlType,
+    decodeControl,
+    encodeControlRequest,
+    encodeControlResponse,
+} from "../util/packets/ControlProtocol";
 
 const CLIENT_RATELIMIT_TAG = "C";
 const SERVER_RATELIMIT_TAG = "S";
@@ -195,6 +200,9 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
     }
 
     private async handleControl(data: Uint8Array): Promise<void> {
+        // a single CONTROL key is an acknowledgement to a server heartbeat
+        if (data.length === 1) return;
+
         if (this.rater.trigger(CLIENT_RATELIMIT_TAG)) return;
 
         let message;
@@ -204,6 +212,8 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
             this.close(CloseCodes.INVALID_DATA, "Malformed SonicWS control frame");
             return;
         }
+
+        if (message.type === ControlType.HEARTBEAT) return;
 
         if (message.type === ControlType.RESUME) {
             await this.host.resumeSession(this, message.sessionId, message.lastSequence);
@@ -262,6 +272,7 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
             ));
         }
     }
+
 
     private handshakeHandler(data: WS.MessageEvent): void {
         if (this.isControl(data)) {

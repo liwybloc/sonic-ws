@@ -1,6 +1,6 @@
 [package]
 name = "sonic-ws"
-version = "2.3.0"
+version = "2.4.0"
 edition = "2024"
 description = "Native Rust client and server runtime for the SonicWS protocol"
 license-file = "../../LICENSE"
@@ -19,10 +19,6 @@ thiserror = "=2.0.11"
 tokio = { version = "=1.43.0", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = "=0.20.1"
 uuid = { version = "=1.23.1", features = ["v4"] }
-
-[[bin]]
-name = "test_compat"
-path = "tests/test_compat.rs"
 
 [dev-dependencies]
 tokio = { version = "=1.43.0", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }

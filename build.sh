@@ -8,6 +8,41 @@ RUST="$ROOT/projects/rust"
 TS="$ROOT/projects/ts"
 PY="$ROOT/projects/py"
 
+python_for_tests() {
+    local candidate
+
+    if [[ -n "${SONICWS_PYTHON:-}" ]]; then
+        if ! "$SONICWS_PYTHON" -c 'import wasmtime, websockets' >/dev/null 2>&1; then
+            printf 'SONICWS_PYTHON does not provide wasmtime and websockets: %s\n' "$SONICWS_PYTHON" >&2
+            exit 1
+        fi
+        printf '%s\n' "$SONICWS_PYTHON"
+        return
+    fi
+
+    for candidate in \
+        "${VIRTUAL_ENV:+$VIRTUAL_ENV/bin/python}" \
+        "$PY/venv-sonic-ws/bin/python" \
+        "$(command -v python3 2>/dev/null || true)"
+    do
+        if [[ -n "$candidate" && -x "$candidate" ]] \
+            && "$candidate" -c 'import wasmtime, websockets' >/dev/null 2>&1
+        then
+            printf '%s\n' "$candidate"
+            return
+        fi
+    done
+
+    cat >&2 <<EOF
+Python test dependencies are unavailable.
+Create/install the project environment with:
+  python3 -m venv "$PY/venv-sonic-ws"
+  "$PY/venv-sonic-ws/bin/python" -m pip install -e "$PY"
+Or set SONICWS_PYTHON to an interpreter containing wasmtime and websockets.
+EOF
+    exit 1
+}
+
 usage() {
     cat <<'EOF'
 Usage: ./build.sh <command>
@@ -30,6 +65,7 @@ Test and packaging commands:
   test-node    Run the Node end-to-end suite
   test-web     Run the browser/WASM end-to-end suite
   test-py      Run Python codec, parity, integration, and runtime tests
+  test_compat  Run one compatibility peer (language plus --host or --client)
   conformance  Run the shared Node and Python golden-vector corpus
   pack-node    Build and create the npm tarball
   benchmark    Build and run the reproducible codec benchmark suite
@@ -89,20 +125,54 @@ test_web() {
 }
 
 test_python() {
+    local python
+    python="$(python_for_tests)"
     export PYTHONPATH="$PY/src${PYTHONPATH:+:$PYTHONPATH}"
-    python3 "$PY/tests/test_codec.py"
-    python3 "$PY/tests/test_parity.py"
-    python3 "$PY/tests/test_conformance.py"
-    python3 -m unittest "$PY/tests/test_features.py" -v
-    python3 -m unittest "$PY/tests/test_security.py" -v
-    python3 -u "$PY/tests/test_integration.py"
-    python3 -u "$PY/tests/test_runtime.py"
+    "$python" "$PY/tests/test_codec.py"
+    "$python" "$PY/tests/test_parity.py"
+    "$python" "$PY/tests/test_conformance.py"
+    "$python" -m unittest "$PY/tests/test_features.py" -v
+    "$python" -m unittest "$PY/tests/test_security.py" -v
+    "$python" -u "$PY/tests/test_integration.py"
+    "$python" -u "$PY/tests/test_runtime.py"
 }
 
 test_conformance() {
+    local python
+    python="$(python_for_tests)"
     (cd "$TS" && npm run test_conformance)
     export PYTHONPATH="$PY/src${PYTHONPATH:+:$PYTHONPATH}"
-    python3 "$PY/tests/test_conformance.py"
+    "$python" "$PY/tests/test_conformance.py"
+}
+
+test_compat() {
+    local language="${1:-}"
+    if [[ -z "$language" ]]; then
+        printf 'Usage: ./build.sh test_compat <python|rust|typescript> <--host|--client>\n' >&2
+        exit 2
+    fi
+    shift
+
+    case "$language" in
+        python|py)
+            local python
+            python="$(python_for_tests)"
+            export PYTHONPATH="$PY/src${PYTHONPATH:+:$PYTHONPATH}"
+            "$python" -u "$PY/tests/test_compat.py" "$@"
+            ;;
+        rust|rs)
+            cargo run --manifest-path "$RUST/Cargo.toml" --bin test_compat -- "$@"
+            ;;
+        typescript|ts|node)
+            build_node
+            node "$TS/tests/test_compat.mjs" "$@"
+            ;;
+        *)
+            printf 'Unknown compatibility implementation: %s\n' "$language" >&2
+            printf 'Expected python, rust, or typescript.\n' >&2
+            exit 2
+            ;;
+    esac
 }
 
 static_checks() {
@@ -164,6 +234,10 @@ case "$command" in
         ;;
     test-py)
         test_python
+        ;;
+    test_compat|test-compat)
+        shift
+        test_compat "$@"
         ;;
     conformance)
         test_conformance

@@ -29,6 +29,7 @@ const {
     ValidatePacketSchema,
     AssertPacketSchema,
     PacketLogger,
+    SonicMetrics,
 } = await import("../dist/index.js");
 const { encodeNative, encodeNativeBatch, loadNativeCore } = await import("../dist/native/wrapper.js");
 
@@ -179,6 +180,7 @@ let server;
 let client;
 const sendErrors = [];
 const adapterEvents = [];
+const metrics = new SonicMetrics();
 const adapter = {
     start(serverId, receiver) { this.serverId = serverId; this.receiver = receiver; },
     publish(message) { adapterEvents.push(["publish", message]); },
@@ -192,10 +194,19 @@ try {
         clientPackets: makePackets("client"),
         serverPackets: makePackets("server"),
         websocketOptions: { port: 0, host: "127.0.0.1" },
-        sonicServerSettings: { checkForUpdates: false },
-        onSendError: (error, context) => sendErrors.push({ error, context }),
+        sonicServerSettings: {
+            checkForUpdates: false,
+            heartbeat: true,
+            heartbeatIntervalMs: 1_000,
+            heartbeatTimeoutMs: 500,
+        },
+        onSendError: (error, context) => {
+            sendErrors.push({ error, context });
+            metrics.recordSendError(context.packetTag);
+        },
         adapter,
     });
+    server.addMiddleware(metrics);
 
     await withTimeout(new Promise(resolve => server.on_ready(resolve)), 5_000, "server listen");
     const address = server.wss.address();
@@ -219,6 +230,8 @@ try {
     const packetLogs = [];
     client.addMiddleware(new PacketLogger({ logger: entry => packetLogs.push(entry) }));
     connection.addMiddleware(new PacketLogger({ logger: entry => packetLogs.push(entry) }));
+    client.addMiddleware(metrics);
+    connection.addMiddleware(metrics);
     connection.state.player = { id: 7 };
     assert.deepEqual(connection.state.player, { id: 7 });
     connection.respond("client_schema", ({ dx, dy, dz }) => ({ sum: dx + dy + dz }));
@@ -232,6 +245,13 @@ try {
     const serverRawSends = [];
     client.raw_onsend(data => clientRawSends.push(Uint8Array.from(data)));
     connection.raw_onsend(data => serverRawSends.push(Uint8Array.from(data)));
+    await withTimeout(new Promise(resolve => {
+        const inspect = data => {
+            if (data.length === 1 && data[0] === 0) resolve();
+        };
+        client.raw_onsend(inspect);
+    }), 2_500, "CONTROL heartbeat acknowledgement");
+    assert(!client.isClosed(), "heartbeat acknowledgement keeps the connection alive");
     const serverReceives = cases.map(testCase => expectPacket(
         (tag, listener) => connection.on(tag, listener),
         `client_${testCase.name}`,
@@ -417,9 +437,16 @@ try {
     assert.equal(await client.sendVolatile("client_none"), true);
     client.setBackpressureLimits({ volatileAtBytes: 0, closeAtBytes: 16 * 1024 * 1024 });
     assert.equal(await client.sendVolatile("client_none"), false, "volatile send was not dropped under configured pressure");
+    metrics.recordVolatileDrop("client_none");
     client.setBackpressureLimits({ volatileAtBytes: 1024 * 1024, closeAtBytes: 16 * 1024 * 1024 });
     assert(packetLogs.some(entry => entry.direction === "send" && entry.bytes > 0));
     assert(packetLogs.some(entry => entry.direction === "receive" && entry.bytes > 0));
+    const metricsSnapshot = metrics.snapshot();
+    assert(metricsSnapshot.sent.client_none.packets >= 1);
+    assert(metricsSnapshot.received.client_none.packets >= 1);
+    assert(metricsSnapshot.broadcasts.server_schema.packets >= 1);
+    assert.equal(metricsSnapshot.sendErrors["not-a-packet"], 2);
+    assert.equal(metricsSnapshot.volatileDrops.client_none, 1);
     console.log(`passed ${cases.length * 2} packet roundtrips across ${cases.length} packet definitions`);
 } finally {
     if (client && !client.isClosed()) {

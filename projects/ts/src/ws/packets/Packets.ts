@@ -30,8 +30,8 @@ import {
     validateNative,
     validateNativeObject,
 } from "../../native/wrapper";
-import { compressJSON, decompressJSON } from "../util/packets/JSONUtil";
-import { resolvePacketConstructor } from "../util/packets/ConstructorRegistry";
+import { compressJSON, decompressJSON } from "../util/JSONUtil";
+import { resolvePacketConstructor } from "../util/packets/metadata/ConstructorRegistry";
 
 export type ValidatorFunction = ((socket: SonicWSConnection, values: any) => boolean) | null;
 

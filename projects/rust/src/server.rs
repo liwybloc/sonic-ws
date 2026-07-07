@@ -16,7 +16,7 @@ use sonic_ws_core::SonicValue;
 
 use crate::{
     Connection, Error, Listeners, PROTOCOL_VERSION, PacketRegistry, Result,
-    connection::{bridge, write_varint},
+    connection::{ConnectionOptions, bridge, write_varint},
 };
 
 /// Packet tables and resource limits for a server.
@@ -29,6 +29,9 @@ pub struct ServerConfig {
     pub max_message_size: usize,
     pub recovery_duration: Duration,
     pub max_replay_packets: usize,
+    pub heartbeat_enabled: bool,
+    pub heartbeat_interval: Duration,
+    pub heartbeat_timeout: Duration,
 }
 
 impl ServerConfig {
@@ -41,6 +44,9 @@ impl ServerConfig {
             max_message_size: 8 * 1024 * 1024,
             recovery_duration: Duration::from_secs(120),
             max_replay_packets: 1_000,
+            heartbeat_enabled: true,
+            heartbeat_interval: Duration::from_secs(30),
+            heartbeat_timeout: Duration::from_secs(10),
         }
     }
 }
@@ -64,7 +70,7 @@ struct RecoverySession {
     expires: Instant,
 }
 
-/// A Tokio WebSocket server using the SonicWS v24 handshake and packet model.
+/// A Tokio WebSocket server using the SonicWS v25 handshake and packet model.
 #[derive(Clone)]
 pub struct Server {
     inner: Arc<ServerInner>,
@@ -80,6 +86,14 @@ impl Server {
         }
         if config.max_message_size == 0 {
             return Err(Error::Protocol("max_message_size must be positive".into()));
+        }
+        if config.heartbeat_enabled
+            && !config.heartbeat_interval.is_zero()
+            && config.heartbeat_timeout.is_zero()
+        {
+            return Err(Error::Protocol(
+                "heartbeat timeout must be positive when heartbeats are enabled".into(),
+            ));
         }
         let listener = TcpListener::bind(address).await?;
         Ok(Self {
@@ -129,8 +143,11 @@ impl Server {
             self.inner.config.client_packets.clone(),
             self.inner.config.server_packets.clone(),
             transport,
-            self.inner.config.inbound_rate_limit,
-            self.inner.config.max_replay_packets,
+            ConnectionOptions {
+                inbound_rate_limit: self.inner.config.inbound_rate_limit,
+                max_replay_packets: self.inner.config.max_replay_packets,
+                heartbeat_responder: false,
+            },
         );
         self.inner
             .connections
@@ -143,6 +160,36 @@ impl Server {
             monitored.wait_closed().await;
             server.remove(id).await;
         });
+        if self.inner.config.heartbeat_enabled && !self.inner.config.heartbeat_interval.is_zero() {
+            let monitored = connection.clone();
+            let interval = self.inner.config.heartbeat_interval;
+            let timeout = self.inner.config.heartbeat_timeout;
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(interval).await;
+                    if monitored.is_closed() {
+                        return;
+                    }
+                    if monitored.last_activity().await.elapsed() < interval {
+                        continue;
+                    }
+
+                    let sent_at = Instant::now();
+                    if monitored
+                        .send_frame(vec![crate::control::KEY])
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                    tokio::time::sleep(timeout).await;
+                    if monitored.last_activity().await < sent_at {
+                        let _ = monitored.close().await;
+                        return;
+                    }
+                }
+            });
+        }
         Ok(connection)
     }
 

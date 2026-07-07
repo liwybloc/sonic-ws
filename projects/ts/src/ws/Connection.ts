@@ -267,6 +267,7 @@ export enum CloseCodes {
     MIDDLEWARE         = 4007,
     MANUAL_SHUTDOWN    = 4008,
     BACKPRESSURE       = 4009,
+    HEARTBEAT_TIMEOUT  = 4010,
 }
 
 export function getClosureCause(id: number): string {

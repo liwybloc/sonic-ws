@@ -1,6 +1,6 @@
-import { VERSION } from "../../../version";
-import { Packet } from "../../packets/Packets";
-import { convertVarInt, readVarInt } from "./CompressionUtil";
+import { VERSION } from "../../../../version";
+import { Packet } from "../../../packets/Packets";
+import { convertVarInt, readVarInt } from "../CompressionUtil";
 
 const MAGIC = [0x53, 0x57, 0x53, 0x4d]; // SWSM
 

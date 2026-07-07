@@ -1,15 +1,25 @@
 import { convertVarInt, readVarInt } from "./CompressionUtil";
-import { compressJSON, decompressJSON } from "./JSONUtil";
+import { compressJSON, decompressJSON } from "../JSONUtil";
 
 export const CONTROL_KEY = 0;
-export enum ControlType { REQUEST = 1, RESPONSE = 2, REPLAY = 3, RESUME = 4, RESUMED = 5 }
+export enum ControlType { HEARTBEAT = 0, REQUEST = 1, RESPONSE = 2, REPLAY = 3, RESUME = 4, RESUMED = 5 }
 
 export type ControlRequest = { type: ControlType.REQUEST; id: number; packetKey: number; payload: Uint8Array };
 export type ControlResponse = { type: ControlType.RESPONSE; id: number; ok: boolean; value: any };
 export type ControlReplay = { type: ControlType.REPLAY; sequence: number; payload: Uint8Array };
 export type ControlResume = { type: ControlType.RESUME; sessionId: string; lastSequence: number };
 export type ControlResumed = { type: ControlType.RESUMED; recovered: boolean; replayed: number };
-export type ControlMessage = ControlRequest | ControlResponse | ControlReplay | ControlResume | ControlResumed;
+export type ControlHeartbeat = { type: ControlType.HEARTBEAT };
+export type ControlMessage =
+    | ControlHeartbeat
+    | ControlRequest
+    | ControlResponse
+    | ControlReplay
+    | ControlResume
+    | ControlResumed;
+
+/** Encodes the minimal heartbeat CONTROL frame. */
+export const encodeHeartbeat = () => Uint8Array.of(CONTROL_KEY);
 
 export function encodeControlRequest(id: number, packetKey: number, payload: Uint8Array): Uint8Array {
     return Uint8Array.from([CONTROL_KEY, ControlType.REQUEST, ...convertVarInt(id), packetKey, ...payload]);
@@ -31,6 +41,9 @@ export const encodeResumed = (recovered: boolean, replayed: number) =>
     Uint8Array.from([CONTROL_KEY, ControlType.RESUMED, Number(recovered), ...convertVarInt(replayed)]);
 
 export function decodeControl(data: Uint8Array): ControlMessage {
+    if (data.length === 1 && data[0] === CONTROL_KEY) {
+        return { type: ControlType.HEARTBEAT };
+    }
     if (data[0] !== CONTROL_KEY || data.length < 3) {
         throw new Error("Invalid SonicWS control frame");
     }

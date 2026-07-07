@@ -6,7 +6,7 @@
   },
   "dependencies": {
     "express": "^5.1.0",
-    "sonic-ws": "^2.3.0",
+    "sonic-ws": "^2.4.0",
     "three": "^0.185.1"
   }
 }

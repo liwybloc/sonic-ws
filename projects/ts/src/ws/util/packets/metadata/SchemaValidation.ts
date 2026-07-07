@@ -1,5 +1,5 @@
-import { Packet } from "../../packets/Packets";
-import { PacketType } from "../../packets/PacketType";
+import { Packet } from "../../../packets/Packets";
+import { PacketType } from "../../../packets/PacketType";
 
 export type SchemaValidationResult = { errors: string[]; warnings: string[] };
 

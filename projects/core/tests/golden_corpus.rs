@@ -56,7 +56,15 @@ fn bytes(hex: &str) -> Vec<u8> {
 #[test]
 fn shared_golden_vectors_encode_and_decode() {
     let corpus = include_str!("../../../protocol/golden-vectors.json");
-    assert!(corpus.contains("\"protocolVersion\": 24"));
+    let protocol_version: u8 = corpus
+        .lines()
+        .find(|line| line.contains("\"protocolVersion\""))
+        .and_then(|line| line.split_once(':'))
+        .map(|(_, value)| value.trim().trim_end_matches(','))
+        .expect("golden corpus must declare protocolVersion")
+        .parse()
+        .expect("golden corpus protocolVersion must be an integer");
+    assert_eq!(protocol_version, 25);
     for line in corpus
         .lines()
         .filter(|line| line.contains("{ \"name\":") && !line.contains("\"schema\""))

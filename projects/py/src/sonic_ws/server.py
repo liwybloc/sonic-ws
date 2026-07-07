@@ -21,6 +21,7 @@ from .codec import deflate
 from .packets import varint, flatten_data
 from .middleware import BCInfo
 from .control import (
+    HEARTBEAT,
     REQUEST,
     RESPONSE,
     REPLAY,
@@ -60,6 +61,7 @@ class SonicWSConnection(Connection):
         self._pending_requests = {}
         self._responders = {}
         self.upgrade_request = getattr(socket, "request", None)
+        self.last_activity = time.monotonic()
 
     async def run(self):
         handshake_timer = None
@@ -76,6 +78,7 @@ class SonicWSConnection(Connection):
         try:
             async for message in self.socket:
                 raw = bytes(message)
+                self.last_activity = time.monotonic()
                 await self._emit("__raw_message__", raw, False)
                 if not raw:
                     await self.close(CloseCodes.SMALL, "empty packet")
@@ -205,6 +208,8 @@ class SonicWSConnection(Connection):
             message = decode_control(raw)
         except ValueError:
             await self.close(CloseCodes.INVALID_DATA, "malformed SonicWS control frame")
+            return
+        if message[0] == HEARTBEAT:
             return
         if message[0] == RESUME:
             await self.host.resume_session(self, message[1], message[2])
@@ -388,6 +393,28 @@ class SonicWSServer:
         )
         if self.handshake_timeout <= 0:
             raise ValueError("handshake timeout must be positive")
+        self.heartbeat_enabled = bool(sonic_settings.get("heartbeat", True))
+        self.heartbeat_interval = (
+            sonic_settings.get(
+                "heartbeatIntervalMs",
+                sonic_settings.get("heartbeat_interval_ms", 30_000),
+            )
+            / 1000
+        )
+        self.heartbeat_timeout = (
+            sonic_settings.get(
+                "heartbeatTimeoutMs",
+                sonic_settings.get("heartbeat_timeout_ms", 10_000),
+            )
+            / 1000
+        )
+        if self.heartbeat_interval < 0 or self.heartbeat_timeout <= 0:
+            raise ValueError("invalid heartbeat timing options")
+        if not self.heartbeat_enabled:
+            self.heartbeat_interval = 0
+
+        # sonicws uses portable CONTROL heartbeats instead of transport-specific pings
+        kwargs.setdefault("ping_interval", None)
         self.connections = []
         self.connection_map = {}
         self.connect_listeners = []
@@ -522,7 +549,30 @@ class SonicWSServer:
             result = callback(connection)
             if asyncio.iscoroutine(result):
                 await result
-        await connection.run()
+        heartbeat = (
+            asyncio.create_task(self._heartbeat(connection))
+            if self.heartbeat_interval > 0
+            else None
+        )
+        try:
+            await connection.run()
+        finally:
+            if heartbeat:
+                heartbeat.cancel()
+
+    async def _heartbeat(self, connection):
+        while not connection._closed:
+            await asyncio.sleep(self.heartbeat_interval)
+            if time.monotonic() - connection.last_activity < self.heartbeat_interval:
+                continue
+
+            sent_at = time.monotonic()
+            await connection.raw_send(bytes([0]))
+            await asyncio.sleep(self.heartbeat_timeout)
+
+            if connection.last_activity < sent_at and not connection._closed:
+                await connection.close(CloseCodes.HEARTBEAT_TIMEOUT, "heartbeat timeout")
+                return
 
     def _remove(self, connection):
         session = self.sessions.get(connection.session_id)

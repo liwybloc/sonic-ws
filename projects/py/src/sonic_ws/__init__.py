@@ -67,5 +67,6 @@ from .server import SonicWSServer, SonicWSConnection
 from .jsonutil import compress_json, decompress_json
 from .middleware import BasicMiddleware, ConnectionMiddleware, ServerMiddleware, BCInfo
 from .debug import DebugServer
+from .metrics import PacketMetric, SonicMetrics
 
 __all__ = [name for name in globals() if not name.startswith("_")]

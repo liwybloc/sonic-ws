@@ -12,7 +12,10 @@
 - `bit64Hash` (default true) for rereference hashes
 - `serveBrowserClient` (default true) to install `/SonicWS/bundle.js` and `/SonicWS/bundle.wasm` routes when an HTTP server is available
 - `handshakeTimeoutMs` (default 10,000) for a required application handshake
-- `heartbeatIntervalMs` / `heartbeatTimeoutMs` (defaults 30,000 / 10,000); set interval to zero to disable
+- `heartbeat` (default `true`) enables portable application-level heartbeats
+- `heartbeatIntervalMs` / `heartbeatTimeoutMs` (defaults 30,000 / 10,000); set `heartbeat` to false or the interval to zero to disable
+
+An idle server sends the one-byte CONTROL frame `[0]`. The client answers with `[0]`, while any other inbound packet also proves that the peer is alive and postpones the next probe. Tests can use a short interval such as `1_000` without changing protocol behavior.
 
 ## Server methods
 
@@ -37,4 +40,4 @@ Server connection methods include `on`, `send`, `sendSafe`, `sendVolatile`, `sen
 
 An adapter implements `start(serverId, receiver)`, `publish(message)`, `join(connectionId, room)`, `leave`, `disconnect`, and optional `close`. SonicWS handles local membership and calls the adapter for cross-process room events. Adapter messages carry `{ origin, room, packetTag, values, exceptConnectionId? }`; implementations must transport these values safely and should not echo messages back to their origin.
 
-Close codes 4000–4009 represent rate limit, undersized input, invalid key, invalid packet, invalid data, repeated handshake, disabled packet, middleware rejection, manual shutdown, and backpressure. `getClosureCause(code)` converts known standard/private codes to names.
+Close codes 4000–4010 represent rate limit, undersized input, invalid key, invalid packet, invalid data, repeated handshake, disabled packet, middleware rejection, manual shutdown, backpressure, and heartbeat timeout. `getClosureCause(code)` converts known standard/private codes to names.

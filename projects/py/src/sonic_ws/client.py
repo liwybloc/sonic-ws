@@ -18,6 +18,7 @@ from .codec import inflate
 from .packets import Packet, read_varint, flatten_data, unflatten_data
 from .enums import wrap_enum, dewrap_enum
 from .control import (
+    HEARTBEAT,
     REQUEST,
     RESPONSE,
     REPLAY,
@@ -292,6 +293,9 @@ class SonicWS(Connection):
                 raise ValueError("invalid replayed packet")
             tag = self.server_packets.tag(payload[0])
             await dispatch_packet(self, self.server_packets.packet(tag), payload[1:])
+            return
+        if message[0] == HEARTBEAT:
+            await self.raw_send(bytes([0]))
             return
         if message[0] == RESUMED:
             _, recovered, replayed = message

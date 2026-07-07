@@ -73,12 +73,20 @@ pub(crate) struct ConnectionInner {
     replay_frames: Mutex<VecDeque<(u64, Vec<u8>)>>,
     max_replay_packets: usize,
     last_replay_sequence: AtomicU64,
+    last_activity: Mutex<Instant>,
+    heartbeat_responder: bool,
 }
 
 pub(crate) struct TransportParts {
     writer: mpsc::Sender<Message>,
     reader: mpsc::Receiver<Result<Vec<u8>>>,
     closed: watch::Receiver<bool>,
+}
+
+pub(crate) struct ConnectionOptions {
+    pub inbound_rate_limit: u32,
+    pub max_replay_packets: usize,
+    pub heartbeat_responder: bool,
 }
 
 struct RateState {
@@ -132,8 +140,7 @@ impl Connection {
         inbound_packets: PacketRegistry,
         outbound_packets: PacketRegistry,
         transport: TransportParts,
-        inbound_rate_limit: u32,
-        max_replay_packets: usize,
+        options: ConnectionOptions,
     ) -> Self {
         let enabled_packets = inbound_packets
             .packets()
@@ -155,12 +162,14 @@ impl Connection {
                 state: RwLock::new(serde_json::Map::new()),
                 closed: transport.closed,
                 enabled_packets: RwLock::new(enabled_packets),
-                inbound_rate_limit,
+                inbound_rate_limit: options.inbound_rate_limit,
                 rate_state: Mutex::new(RateState::new()),
                 replay_sequence: AtomicU64::new(0),
                 replay_frames: Mutex::new(VecDeque::new()),
-                max_replay_packets,
+                max_replay_packets: options.max_replay_packets,
                 last_replay_sequence: AtomicU64::new(0),
+                last_activity: Mutex::new(Instant::now()),
+                heartbeat_responder: options.heartbeat_responder,
             }),
         }
     }
@@ -192,6 +201,9 @@ impl Connection {
         if !*closed.borrow() {
             let _ = closed.changed().await;
         }
+    }
+    pub(crate) async fn last_activity(&self) -> Instant {
+        *self.inner.last_activity.lock().await
     }
     pub fn recovery_checkpoint(&self) -> u64 {
         self.inner.last_replay_sequence.load(Ordering::Relaxed)
@@ -396,6 +408,7 @@ impl Connection {
                 return Ok(None);
             };
             let frame = frame?;
+            *self.inner.last_activity.lock().await = Instant::now();
             if frame.is_empty() {
                 return Err(Error::Protocol("empty WebSocket message".into()));
             }
@@ -508,6 +521,15 @@ impl Connection {
 
     fn decode_control(&self, frame: &[u8]) -> Result<Option<Incoming>> {
         Ok(Some(match control::decode(frame)? {
+            control::Control::Heartbeat => {
+                if self.inner.heartbeat_responder {
+                    self.inner
+                        .writer
+                        .try_send(Message::Binary(vec![control::KEY]))
+                        .map_err(|_| Error::Protocol("connection writer stopped".into()))?;
+                }
+                return Ok(None);
+            }
             control::Control::Request {
                 id,
                 packet_key,
@@ -622,7 +644,7 @@ impl Default for ClientConfig {
 }
 
 impl Client {
-    /// Connects, verifies protocol v24, and completes schema negotiation.
+    /// Connects, verifies protocol v25, and completes schema negotiation.
     pub async fn connect(url: impl AsRef<str>) -> Result<Connection> {
         Self::connect_with_config(url, ClientConfig::default()).await
     }
@@ -656,8 +678,11 @@ impl Client {
             inbound,
             outbound,
             transport,
-            config.inbound_rate_limit,
-            0,
+            ConnectionOptions {
+                inbound_rate_limit: config.inbound_rate_limit,
+                max_replay_packets: 0,
+                heartbeat_responder: true,
+            },
         ))
     }
 

@@ -2,6 +2,7 @@ from .jsonutil import compress_json, decompress_json
 from .packets import varint, read_varint
 
 CONTROL_KEY = 0
+HEARTBEAT = 0
 REQUEST = 1
 RESPONSE = 2
 REPLAY = 3
@@ -47,6 +48,8 @@ def encode_resumed(recovered, replayed):
 
 def decode_control(data):
     data = bytes(data)
+    if data == bytes([CONTROL_KEY]):
+        return (HEARTBEAT,)
     if len(data) < 3 or data[0] != CONTROL_KEY:
         raise ValueError("invalid SonicWS control frame")
     kind = data[1]

@@ -36,6 +36,7 @@ class CloseCodes(IntEnum):
     MIDDLEWARE = 4007
     MANUAL_SHUTDOWN = 4008
     BACKPRESSURE = 4009
+    HEARTBEAT_TIMEOUT = 4010
 
 
 def get_closure_cause(code):

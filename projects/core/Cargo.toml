@@ -4,7 +4,8 @@ name = "sonic-ws-core"
 version = "0.1.0"
 edition = "2024"
 description = "Language-neutral SonicWS packet codec core"
-license = "LicenseRef-Lily-Personal-NonCommercial-2026"
+license-file = "../../LICENSE"
+repository = "https://github.com/liwybloc/sonic-ws"
 
 [lib]
 crate-type = ["rlib", "cdylib", "staticlib"]

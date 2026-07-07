@@ -284,7 +284,10 @@ const sonicServer = new SonicWSServer({
 		server: httpServer
 	},
 	sonicServerSettings: {
-		checkForUpdates: false
+		checkForUpdates: false,
+		heartbeat: true,
+		heartbeatIntervalMs: 1_000,
+		heartbeatTimeoutMs: 500
 	}
 });
 let browser;
@@ -399,11 +402,15 @@ try {
 				[7, 128, 16384]
 			],
 		];
+		const heartbeat = new Promise(resolve => socket.raw_onsend(data => {
+			if (data.length === 1 && data[0] === 0) resolve();
+		}));
 		const received = cases.map(([name, , expected]) => new Promise((resolve, reject) => socket.on(`server_${name}`, (...actual) => equal(actual, expected) ? resolve(name) : reject(new Error(`${name}: ${JSON.stringify(normalize(actual))}`)))));
 		await new Promise(resolve => socket.on_ready(resolve));
 		console.log("SonicWS handshake ready");
 		for (const [name, send] of cases) await socket.send(`client_${name}`, ...send);
 		await Promise.all(received);
+		await heartbeat;
 		return cases.length;
 	}, address.port);
 	const {
@@ -418,7 +425,7 @@ try {
 	const wasmFixture = await readFile(new URL("../../../bundled/bundle.wasm", import.meta.url));
 	const fallbackPage = await browser.newPage();
 	await fallbackPage.route("**/SonicWS/bundle.wasm", route => route.fulfill({ status: 404, body: "missing" }));
-	await fallbackPage.route("https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/version", route => route.fulfill({ status: 200, body: "24" }));
+	await fallbackPage.route("https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/version", route => route.fulfill({ status: 200, body: "25" }));
 	await fallbackPage.route("https://cdn.jsdelivr.net/gh/liwybloc/sonic-ws/release/bundle.wasm", route => route.fulfill({ status: 200, contentType: "application/wasm", body: wasmFixture }));
 	await fallbackPage.goto(`http://127.0.0.1:${address.port}/`);
 	assert.equal(await fallbackPage.evaluate(async () => {
@@ -440,7 +447,7 @@ try {
 			return error instanceof Error ? error.message : String(error);
 		}
 	});
-	assert.match(mismatch, /CDN protocol mismatch: expected 24, received 999/);
+	assert.match(mismatch, /CDN protocol mismatch: expected 25, received 999/);
 	await mismatchPage.close();
 	console.log("browser: mismatched CDN protocol was rejected");
 } finally {

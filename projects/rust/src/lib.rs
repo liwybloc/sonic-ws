@@ -1,4 +1,4 @@
-//! Native Rust runtime for SonicWS protocol version 24.
+//! Native Rust runtime for SonicWS protocol version 25.
 //!
 //! [`Packet`] and [`PacketRegistry`] are transport-independent. [`Client`] and
 //! [`Server`] add an asynchronous WebSocket transport using Tokio.
@@ -27,4 +27,4 @@ pub use sonic_ws_core::{PacketType, SonicValue};
 pub use variant_permutation::VariantPermutation;
 
 /// SonicWS wire protocol version supported by this crate.
-pub const PROTOCOL_VERSION: u8 = 24;
+pub const PROTOCOL_VERSION: u8 = 25;

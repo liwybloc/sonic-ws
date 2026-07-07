@@ -11,7 +11,7 @@
  * License-Identifier: LicenseRef-Lily-Personal-NonCommercial-2026
  */
 
-import { splitArray } from "../BufferUtil";
+import { splitArray } from "./BufferUtil";
 
 // json remains a TypeScript-only compatibility codec and these helpers are kept
 // private here so the shared compression utility only contains schema framing.

@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 24,
+  "protocolVersion": 25,
   "vectors": [
     { "name": "bytes.boundaries", "type": "BYTES", "values": [-128, -1, 0, 1, 127], "hex": "ff010002fe" },
     { "name": "ubytes.boundaries", "type": "UBYTES", "values": [0, 1, 254, 255], "hex": "0001feff" },

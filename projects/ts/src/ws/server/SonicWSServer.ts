@@ -54,9 +54,11 @@ export type SonicServerSettings = {
     readonly serveBrowserClient?: boolean;
     /** Limits a required application handshake. Defaults to 10 seconds. */
     readonly handshakeTimeoutMs?: number;
-    /** Controls the WebSocket ping interval. Zero disables it. */
+    /** Enables portable CONTROL heartbeats. Defaults to true. */
+    readonly heartbeat?: boolean;
+    /** Controls the heartbeat interval. Zero disables it. */
     readonly heartbeatIntervalMs?: number;
-    /** Limits how long the server waits for pong before terminating. */
+    /** Limits how long the server waits for any reply before terminating. */
     readonly heartbeatTimeoutMs?: number;
 };
 
@@ -157,7 +159,9 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
         }
 
         const handshakeTimeout = settings.sonicServerSettings?.handshakeTimeoutMs ?? 10_000;
-        const heartbeatInterval = settings.sonicServerSettings?.heartbeatIntervalMs ?? 30_000;
+        const heartbeatInterval = (settings.sonicServerSettings?.heartbeat ?? true)
+            ? settings.sonicServerSettings?.heartbeatIntervalMs ?? 30_000
+            : 0;
         const heartbeatTimeout = settings.sonicServerSettings?.heartbeatTimeoutMs ?? 10_000;
 
         if (!Number.isFinite(handshakeTimeout) || handshakeTimeout <= 0) {
@@ -200,22 +204,17 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
         setHashFunc(settings.sonicServerSettings?.bit64Hash ?? true);
 
         this.wss.on('connection', async (socket, request) => {
-            const heartbeatIntervalMs = settings.sonicServerSettings?.heartbeatIntervalMs ?? 30_000;
+            const heartbeatIntervalMs = (settings.sonicServerSettings?.heartbeat ?? true)
+                ? settings.sonicServerSettings?.heartbeatIntervalMs ?? 30_000
+                : 0;
             const heartbeatTimeoutMs = settings.sonicServerSettings?.heartbeatTimeoutMs ?? 10_000;
             let heartbeatTimeout: ReturnType<typeof setTimeout> | undefined;
+            let heartbeat: ReturnType<typeof setInterval> | undefined;
+            let lastActivity = Date.now();
 
-            const heartbeat = heartbeatIntervalMs > 0 ? setInterval(() => {
-                if (socket.readyState !== WS.WebSocket.OPEN) return;
-
-                socket.ping();
-                if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
-
-                heartbeatTimeout = setTimeout(() => socket.terminate(), heartbeatTimeoutMs);
-                heartbeatTimeout.unref?.();
-            }, heartbeatIntervalMs) : undefined;
-
-            heartbeat?.unref?.();
-            socket.on("pong", () => {
+            // every inbound frame proves that the peer is alive
+            socket.on("message", () => {
+                lastActivity = Date.now();
                 if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
                 heartbeatTimeout = undefined;
             });
@@ -242,6 +241,25 @@ export class SonicWSServer extends MiddlewareHolder<ServerMiddleware> {
                 settings.sonicServerSettings?.handshakeTimeoutMs ?? 10_000,
                 request,
             );
+
+            if (heartbeatIntervalMs > 0) {
+                heartbeat = setInterval(() => {
+                    if (socket.readyState !== WS.WebSocket.OPEN) return;
+                    if (Date.now() - lastActivity < heartbeatIntervalMs) return;
+
+                    socket.send(Uint8Array.of(0));
+                    const sentAt = Date.now();
+                    heartbeatTimeout = setTimeout(() => {
+                        if (lastActivity >= sentAt) return;
+
+                        socket.close(CloseCodes.HEARTBEAT_TIMEOUT, "Heartbeat timeout");
+                        const forceClose = setTimeout(() => socket.terminate(), 250);
+                        forceClose.unref?.();
+                    }, heartbeatTimeoutMs);
+                    heartbeatTimeout.unref?.();
+                }, heartbeatIntervalMs);
+                heartbeat.unref?.();
+            }
 
             if (await this.callMiddleware("onClientConnect", sonicConnection)) {
                 const reason = "Connection blocked by middleware";

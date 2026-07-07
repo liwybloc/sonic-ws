@@ -1,4 +1,6 @@
-# SonicWS protocol version 24
+# SonicWS protocol version 25
+
+Version 25 assigns the previously invalid single-byte CONTROL frame `[0]` to portable idle heartbeats. Because version 24 peers reject that frame, heartbeat-capable runtimes negotiate version 25 and fail clearly instead of attempting mixed-version operation.
 
 All integers described as varints use unsigned base-128 little-endian groups. Packet keys are one byte. Key `0` is reserved for control frames; user packet tables are indexed from `1` through `254`.
 
@@ -34,6 +36,8 @@ The packet table determines the payload codec and validation limits. Invalid, di
 ```text
 0x00 | CONTROL_TYPE_U8 | CONTROL_PAYLOAD
 ```
+
+The single-byte frame `0x00` has no control type or payload and is a heartbeat. Servers send it only after the configured idle interval, clients answer with the same frame, and every ordinary or control packet also counts as proof of life. This keeps active connections from generating separate heartbeat traffic.
 
 | Type | Name | Payload |
 |---:|---|---|
@@ -121,6 +125,7 @@ Only idempotent state updates should be replayable. Inputs, payments, destructiv
 | 4007 | middleware rejection |
 | 4008 | server shutdown |
 | 4009 | outbound backpressure limit |
+| 4010 | heartbeat timeout |
 
 ## Conformance
 

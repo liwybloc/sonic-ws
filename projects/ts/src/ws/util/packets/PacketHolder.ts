@@ -14,7 +14,7 @@
 import { Packet } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
 import { PacketTypings } from "../../server/SonicWSServer";
-import { AssertPacketSchema } from "./SchemaValidation";
+import { AssertPacketSchema } from "./metadata/SchemaValidation";
 
 /**
  * Holds and maps packets to indexed keys and tags for serialization and lookup

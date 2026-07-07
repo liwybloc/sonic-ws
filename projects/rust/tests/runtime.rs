@@ -47,6 +47,59 @@ async fn pair() -> (Server, sonic_ws::Connection, sonic_ws::Connection) {
 }
 
 #[tokio::test]
+async fn configurable_control_heartbeat_keeps_an_idle_client_alive() {
+    let mut config = ServerConfig::new(
+        PacketRegistry::new([]).unwrap(),
+        PacketRegistry::new([]).unwrap(),
+    );
+    config.heartbeat_interval = std::time::Duration::from_millis(50);
+    config.heartbeat_timeout = std::time::Duration::from_millis(50);
+    let server = Server::bind("127.0.0.1:0", config).await.unwrap();
+    let address = server.local_addr().unwrap();
+    let accept = {
+        let server = server.clone();
+        tokio::spawn(async move { server.accept().await.unwrap() })
+    };
+    let client = Client::connect(format!("ws://{address}")).await.unwrap();
+    let server_connection = accept.await.unwrap();
+
+    let _ = tokio::join!(
+        tokio::time::timeout(std::time::Duration::from_millis(180), client.recv()),
+        tokio::time::timeout(
+            std::time::Duration::from_millis(180),
+            server_connection.recv()
+        ),
+    );
+
+    assert!(!client.is_closed());
+    assert!(!server_connection.is_closed());
+}
+
+#[tokio::test]
+async fn heartbeat_closes_a_client_that_does_not_drive_receives() {
+    let mut config = ServerConfig::new(
+        PacketRegistry::new([]).unwrap(),
+        PacketRegistry::new([]).unwrap(),
+    );
+    config.heartbeat_interval = std::time::Duration::from_millis(40);
+    config.heartbeat_timeout = std::time::Duration::from_millis(40);
+    let server = Server::bind("127.0.0.1:0", config).await.unwrap();
+    let address = server.local_addr().unwrap();
+    let accept = {
+        let server = server.clone();
+        tokio::spawn(async move { server.accept().await.unwrap() })
+    };
+    let client = Client::connect(format!("ws://{address}")).await.unwrap();
+    let server_connection = accept.await.unwrap();
+
+    tokio::time::timeout(std::time::Duration::from_secs(1), client.wait_closed())
+        .await
+        .expect("unresponsive client should be closed");
+    assert!(client.is_closed());
+    let _ = server_connection.close().await;
+}
+
+#[tokio::test]
 async fn negotiates_schemas_and_exchanges_validated_packets() {
     let (_server, server_connection, client) = pair().await;
     client.send("movement", &movement(1, 2, 3)).await.unwrap();
