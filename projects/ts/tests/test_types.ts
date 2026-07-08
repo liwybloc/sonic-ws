@@ -1,3 +1,5 @@
+/** Not to be ran* */
+
 import {
     CreatePacket,
     DefinePackets,
@@ -11,7 +13,7 @@ type Assert<T extends true> = T;
 
 const clientPackets = DefinePackets([
     CreatePacket({ tag: "none", type: PacketType.NONE }),
-    CreatePacket({ tag: "floats", type: PacketType.FLOATS }),
+    CreatePacket({ tag: "floats", type: PacketType.FLOATS, dataMax: 2 }),
     CreatePacket({ tag: "bools", type: PacketType.BOOLEANS }),
     CreatePacket({ tag: "message", type: PacketType.STRINGS_UTF16 }),
     CreatePacket({
@@ -43,7 +45,7 @@ const serverPackets = DefinePackets([
 const server = new SonicWSServer({ clientPackets, serverPackets });
 
 server.on_connect(ws => {
-    ws.on("floats", value => {
+    ws.on("floats", (value, value2) => {
         value.toFixed();
 
         // @ts-expect-error FLOATS listeners receive numbers, not strings.
