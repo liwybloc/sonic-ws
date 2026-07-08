@@ -13,10 +13,11 @@
 
 import { CloseCodes } from "../../Connection";
 import { SonicWSConnection } from "../../server/SonicWSConnection";
+import type { PacketArray } from "./PacketUtils";
 import { PacketHolder } from "./PacketHolder";
 
 /** @internal */
-export class RateHandler<T extends SonicWSConnection> {
+export class RateHandler<CT extends PacketArray, ST extends PacketArray, T extends SonicWSConnection<CT, ST>> {
 
     private rates: Record<string, number> = {};
     private limits: Record<string, number> = {};

@@ -43,6 +43,78 @@ Required: `tag`. `type` defaults to `NONE`. Settings:
 
 `CreatePacketManifest({ clientPackets, serverPackets })` serializes both packet tables into a protocol-versioned binary artifact. `LoadPacketManifest(bytes)` loads an artifact produced by TypeScript or Python. Validators and local constructors remain application code and must be registered in each runtime.
 
+## Typed packet arrays and browser client types
+
+Use `DefinePackets` when you store packet definitions before passing them to a server. It preserves literal tags and schema fields for TypeScript inference:
+
+```ts
+const clientPackets = DefinePackets([
+  CreatePacket({
+    tag: "movement.move",
+    type: PacketType.VARINT,
+    schema: ["dx", "dy", "dz"],
+    dataMax: 3,
+  }),
+] as const);
+
+const serverPackets = DefinePackets([
+  CreatePacket({
+    tag: "entity.remove",
+    type: PacketType.VARINT,
+    schema: ["id"],
+    dataMax: 1,
+  }),
+] as const);
+
+const wss = new SonicWSServer({ clientPackets, serverPackets });
+
+wss.on_connect(socket => {
+  socket.on("movement.move", packet => {
+    packet.dx;
+    packet.dy;
+    packet.dz;
+  });
+
+  socket.send("entity.remove", { id: 7 });
+});
+```
+
+The browser client cannot infer packet types from the runtime handshake or from a binary manifest. TypeScript and JSDoc run before the socket connects. Generate a type file beside the binary manifest instead:
+
+```ts
+await wss.serializePackets({
+  path: "./public/serialized.bin",
+  typesPath: "./public/serialized.d.ts",
+});
+```
+
+Then use the generated type in browser TypeScript:
+
+```ts
+import type { SonicWSPacketTypes } from "./serialized";
+
+const ws = await SonicWS.connect<SonicWSPacketTypes>(`ws://${location.host}`);
+
+ws.on("entity.remove", packet => {
+  packet.id;
+});
+```
+
+Or in browser JavaScript with JSDoc:
+
+```js
+/** @typedef {import("./serialized").SonicWSPacketTypes} SonicWSPacketTypes */
+
+/** @type {import("sonic-ws").SonicWS<SonicWSPacketTypes>} */
+const ws = await SonicWS.connect(`ws://${location.host}`);
+
+ws.on("entity.remove", packet => {
+  console.log(packet.id);
+});
+```
+
+`serialized.bin` is still useful for tools and non-TypeScript consumers. `serialized.d.ts` is the compile-time type source.
+
 ## Schemas, repeated records, and quantization
 
 `schema` maps positional payloads to objects without changing their wire bytes:

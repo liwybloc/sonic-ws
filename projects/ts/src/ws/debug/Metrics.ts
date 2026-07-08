@@ -82,7 +82,7 @@ export class SonicMetrics implements ConnectionMiddleware, ServerMiddleware {
         addMetric(this.broadcasts, tag, size + 1);
     };
 
-    onClientDisconnect = (_connection: SonicWSConnection, code: number): void => {
+    onClientDisconnect = (_connection: SonicWSConnection<any, any>, code: number): void => {
         addCount(this.closes, String(code));
     };
 
@@ -118,4 +118,3 @@ export class SonicMetrics implements ConnectionMiddleware, ServerMiddleware {
         this.volatileDrops.clear();
     }
 }
-

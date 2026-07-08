@@ -33,12 +33,15 @@ import {
 import { compressJSON, decompressJSON } from "../util/JSONUtil";
 import { resolvePacketConstructor } from "../util/packets/metadata/ConstructorRegistry";
 
-export type ValidatorFunction = ((socket: SonicWSConnection, values: any) => boolean) | null;
+export type ValidatorFunction<Packet = unknown> = ((socket: SonicWSConnection<any, any>, ...values: any) => boolean) | null;
 
 export type ConvertType<T> = T extends EnumPackage ? PacketType.ENUMS : T;
 type ImpactType<T extends (PacketType | readonly PacketType[]), K> = T extends readonly PacketType[] ? K[] : K;
 
-export class Packet<T extends (PacketType | readonly PacketType[])> {
+export class Packet<
+    T extends (PacketType | readonly PacketType[]),
+    PS extends PacketSchema<T> = PacketSchema<T>,
+> {
     public defaultEnabled: boolean;
 
     public readonly tag: string;
@@ -80,13 +83,13 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
     public processReceive: (data: Uint8Array, validationResult: any) => any;
     public processSend: (data: any[]) => Uint8Array | Promise<Uint8Array>;
     public validate: (data: Uint8Array) => Promise<[Uint8Array, boolean]>;
-    public customValidator: ((socket: SonicWSConnection, ...values: any[]) => boolean) | null;
+    public customValidator: ValidatorFunction<this>;
     lastReceived: Record<number, any> = {};
     lastSent: Record<number, number | bigint> = {};
     private quantizationErrors: Record<number, number> = {};
     private readonly recordValues?: (record: Record<string, any>) => any[];
 
-    constructor(tag: string, schema: PacketSchema<T>, customValidator: ValidatorFunction, enabled: boolean, client: boolean) {
+    constructor(tag: string, schema: PS, customValidator: ValidatorFunction<PS>, enabled: boolean, client: boolean) {
         this.tag = tag;
         this.defaultEnabled = enabled;
         this.client = client;
@@ -160,7 +163,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
                 });
                 return [data, true];
             };
-        } else if (((_: any): _ is Packet<PacketType> => true)(this)) {
+        } else if (((_: any): _ is Packet<PacketType, PacketSchema<PacketType>> => true)(this)) {
             this.maxSize = this.dataMax;
             this.minSize = this.dataMin;
 
@@ -385,7 +388,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         return decoded;
     }
 
-    public async listen(value: Uint8Array, socket: SonicWSConnection | null): Promise<[processed: any, flatten: boolean] | string> {
+    public async listen(value: Uint8Array, socket: SonicWSConnection<any, any> | null): Promise<[processed: any, flatten: boolean] | string> {
         try {
             const [dcData, validationResult] = await this.validate(value);
             // strict comparison matters because validation metadata may be non-boolean
@@ -476,7 +479,7 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         return [values, offset];
     }
 
-    public static deserialize(data: Uint8Array, offset: number, client: boolean): [packet: Packet<any>, offset: number] {
+    public static deserialize(data: Uint8Array, offset: number, client: boolean): [packet: Packet<any, any>, offset: number] {
         const beginningOffset = offset;
 
         const tagLength = data[offset++];
@@ -606,8 +609,8 @@ export class Packet<T extends (PacketType | readonly PacketType[])> {
         ];
     }
     
-    public static deserializeAll(data: Uint8Array, client: boolean): Packet<any>[] {
-        const packets: Packet<any>[] = [];
+    public static deserializeAll(data: Uint8Array, client: boolean): Packet<any, any>[] {
+        const packets: Packet<any, any>[] = [];
 
         let offset = 0;
         while (offset < data.length) {
@@ -702,7 +705,7 @@ export class PacketSchema<T extends (PacketType | readonly PacketType[])> {
         ) as ImpactType<T, PacketType>;
     }
 
-    testObject(packet: Packet<PacketType | readonly PacketType[]>): packet is Packet<PacketType[]> {
+    testObject<PST extends PacketSchema<T>>(packet: Packet<PacketType | readonly PacketType[], PST>): packet is Packet<PacketType[], PacketSchema<PacketType[]>> {
         return this.object;
     }
 }

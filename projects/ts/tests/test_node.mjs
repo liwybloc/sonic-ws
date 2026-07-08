@@ -12,6 +12,9 @@
  */
 
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 const {
     SonicWS,
     SonicWSServer,
@@ -447,6 +450,23 @@ try {
     assert(metricsSnapshot.broadcasts.server_schema.packets >= 1);
     assert.equal(metricsSnapshot.sendErrors["not-a-packet"], 2);
     assert.equal(metricsSnapshot.volatileDrops.client_none, 1);
+    const manifestDir = await mkdtemp(join(tmpdir(), "sonic-ws-manifest-"));
+    try {
+        const manifestPath = join(manifestDir, "serialized.bin");
+        const typesPath = join(manifestDir, "serialized.d.ts");
+        await server.serializePackets({ path: manifestPath, typesPath });
+        const manifestBytes = await readFile(manifestPath);
+        const generatedTypes = await readFile(typesPath, "utf8");
+        assert.deepEqual(
+            LoadPacketManifest(new Uint8Array(manifestBytes)).serverPackets.map(packet => packet.tag),
+            server.serverPackets.getPackets().map(packet => packet.tag),
+        );
+        assert(generatedTypes.includes("export type SonicWSPacketTypes"));
+        assert(generatedTypes.includes('"server_schema"'));
+        assert(generatedTypes.includes('"dx": number'));
+    } finally {
+        await rm(manifestDir, { recursive: true, force: true });
+    }
     console.log(`passed ${cases.length * 2} packet roundtrips across ${cases.length} packet definitions`);
 } finally {
     if (client && !client.isClosed()) {

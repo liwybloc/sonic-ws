@@ -29,6 +29,12 @@ import {
     encodeControlResponse,
     encodeResume,
 } from "../../util/packets/ControlProtocol";
+import type {
+    ProtocolListenerArgs,
+    ProtocolPacketTags,
+    ProtocolSendArgs,
+    SonicProtocolTypes,
+} from "../../util/packets/PacketUtils";
 
 export type ReconnectOptions = {
     enabled?: boolean;
@@ -51,9 +57,13 @@ type ClientTransport = {
     close: (code: number, reason: string | undefined) => void;
 };
 
-export abstract class SonicWSCore<T extends ClientTransport, K> extends Connection<T, K> {
+export abstract class SonicWSCore<
+    T extends ClientTransport,
+    K,
+    Protocol extends SonicProtocolTypes = SonicProtocolTypes,
+> extends Connection<T, K> {
 
-    protected preListen: { [key: string]: Array<(data: any[]) => void> } | null;
+    protected preListen: { [key: string]: Array<(...data: any[]) => void | Promise<void>> } | null;
     clientPackets: PacketHolder = new PacketHolder();
     serverPackets: PacketHolder = new PacketHolder();
 
@@ -555,7 +565,7 @@ export abstract class SonicWSCore<T extends ClientTransport, K> extends Connecti
         await this.dataHandler(data);
     }
 
-    protected listen(tag: string, listener: (data: any[]) => void): void {
+    protected listen(tag: string, listener: (...data: any[]) => void): void {
         if (!this.serverPackets.hasTag(tag)) {
             console.warn(`Packet tag "${tag}" is not available on the server`);
             return;
@@ -572,10 +582,15 @@ export abstract class SonicWSCore<T extends ClientTransport, K> extends Connecti
      * @param tag The tag of the packet
      * @param values The values to send
      */
-    public async send(tag: string, ...values: any[]): Promise<void> {
-        if (await this.callMiddleware('onSend_pre', tag, values, Date.now(), performance.now())) return;
+    public async send<Tag extends ProtocolPacketTags<Protocol, "client">>(
+        tag: Tag,
+        ...values: ProtocolSendArgs<Protocol, "client", Tag>
+    ): Promise<void> {
+        const sendValues = [...values];
 
-        const [code, data, packet] = await processPacket(this.clientPackets, tag, values, this.sendQueue, 0);
+        if (await this.callMiddleware('onSend_pre', tag, sendValues, Date.now(), performance.now())) return;
+
+        const [code, data, packet] = await processPacket(this.clientPackets, tag, sendValues, this.sendQueue, 0);
 
         if (packet.dataBatching === 0) {
             this.raw_send(toPacketBuffer(code, data));
@@ -587,7 +602,7 @@ export abstract class SonicWSCore<T extends ClientTransport, K> extends Connecti
     }
 
     public sendVariant(parent: string, variant: string, ...values: any[]): Promise<void> {
-        return this.send(this.clientPackets.getVariantTag(parent, variant), ...values);
+        return this.send(this.clientPackets.getVariantTag(parent, variant) as ProtocolPacketTags<Protocol, "client">, ...values as any);
     }
 
     public sendPermutation(
@@ -595,11 +610,14 @@ export abstract class SonicWSCore<T extends ClientTransport, K> extends Connecti
         selection: readonly boolean[] | Record<string, boolean>,
         ...values: any[]
     ): Promise<void> {
-        return this.send(this.clientPackets.getPermutationVariant(parent, selection), ...values);
+        return this.send(this.clientPackets.getPermutationVariant(parent, selection) as ProtocolPacketTags<Protocol, "client">, ...values as any);
     }
 
     /** Sends a validated packet as an RPC request and waits for its response. */
-    public async request(tag: string, ...valuesAndOptions: any[]): Promise<any> {
+    public async request<Tag extends ProtocolPacketTags<Protocol, "client">>(
+        tag: Tag,
+        ...valuesAndOptions: [...ProtocolSendArgs<Protocol, "client", Tag>, { timeoutMs?: number }?]
+    ): Promise<any> {
         const possibleOptions = valuesAndOptions.at(-1);
         const options = valuesAndOptions.length > 1
             && possibleOptions
@@ -612,7 +630,7 @@ export abstract class SonicWSCore<T extends ClientTransport, K> extends Connecti
         const [packetKey, payload] = await processPacket(
             this.clientPackets,
             tag,
-            valuesAndOptions,
+            [...valuesAndOptions],
             this.sendQueue,
             0,
         );
@@ -631,12 +649,18 @@ export abstract class SonicWSCore<T extends ClientTransport, K> extends Connecti
     }
 
     /** Registers the client-side responder for server requests using this packet tag. */
-    public respond(tag: string, handler: (...values: any[]) => any): void {
+    public respond<Tag extends ProtocolPacketTags<Protocol, "server">>(
+        tag: Tag,
+        handler: (...values: ProtocolListenerArgs<Protocol, "server", Tag>) => any,
+    ): void {
         const resolved = this.serverPackets.resolveTag(tag);
         this.responders.set(resolved, handler);
     }
 
-    public async sendSafe(tag: string, ...values: any[]): Promise<boolean> {
+    public async sendSafe<Tag extends ProtocolPacketTags<Protocol, "client">>(
+        tag: Tag,
+        ...values: ProtocolSendArgs<Protocol, "client", Tag>
+    ): Promise<boolean> {
         try {
             await this.send(tag, ...values);
             return true;
@@ -647,14 +671,20 @@ export abstract class SonicWSCore<T extends ClientTransport, K> extends Connecti
     }
 
     /** Drops this update before encoding when the transport is backpressured. */
-    public async sendVolatile(tag: string, ...values: any[]): Promise<boolean> {
+    public async sendVolatile<Tag extends ProtocolPacketTags<Protocol, "client">>(
+        tag: Tag,
+        ...values: ProtocolSendArgs<Protocol, "client", Tag>
+    ): Promise<boolean> {
         if (!this.canSendVolatile()) return false;
         await this.send(tag, ...values);
         return true;
     }
 
     /** Sends a packet without applying the volatile backpressure drop policy. */
-    public sendReliable(tag: string, ...values: any[]): Promise<void> {
+    public sendReliable<Tag extends ProtocolPacketTags<Protocol, "client">>(
+        tag: Tag,
+        ...values: ProtocolSendArgs<Protocol, "client", Tag>
+    ): Promise<void> {
         return this.send(tag, ...values);
     }
 
@@ -709,7 +739,10 @@ export abstract class SonicWSCore<T extends ClientTransport, K> extends Connecti
      * @param tag The tag to listen for
      * @param listener The callback with the values
      */
-    public on(tag: string, listener: (value: any[]) => void): void {
+    public on<Tag extends ProtocolPacketTags<Protocol, "server">>(
+        tag: Tag,
+        listener: (...value: ProtocolListenerArgs<Protocol, "server", Tag>) => void | Promise<void>,
+    ): void {
         if (this.socket.readyState !== WebSocket.OPEN) {
             const pending = this.preListen ??= {};
             pending[tag] ??= [];

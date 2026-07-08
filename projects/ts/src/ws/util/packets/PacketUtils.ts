@@ -23,6 +23,203 @@ import { VariantPermutation } from "./VariantPermutation";
 
 export type ProcessedPacket = [code: number, data: Uint8Array, packet: Packet<any>];
 
+export type AnyPacket = Packet<any, any>;
+
+export type PacketArray = readonly AnyPacket[];
+
+type PrimitiveReceive<T> =
+    T extends PacketType.NONE ? undefined :
+    T extends PacketType.RAW ? Uint8Array :
+    T extends PacketType.JSON ? any :
+    T extends PacketType.STRINGS_ASCII | PacketType.STRINGS_UTF16 ? string :
+    T extends PacketType.BOOLEANS ? boolean :
+    T extends PacketType.HEX ? string :
+    T extends PacketType.ENUMS ? any :
+    T extends PacketType ? number :
+    T extends EnumPackage ? any :
+    any;
+
+type PrimitiveSend<T> =
+    T extends PacketType.NONE ? never :
+    T extends PacketType.RAW ? number | Uint8Array :
+    T extends PacketType.JSON ? any :
+    T extends PacketType.STRINGS_ASCII | PacketType.STRINGS_UTF16 ? string :
+    T extends PacketType.BOOLEANS ? boolean :
+    T extends PacketType.HEX ? string :
+    T extends PacketType.ENUMS ? any :
+    T extends PacketType ? number :
+    T extends EnumPackage ? any :
+    any;
+
+type FieldObject<Fields extends readonly string[], Value> = {
+    [K in Fields[number]]: Value;
+};
+
+type SettingPacketType<S> = S extends { type: infer T extends ArguableType } ? T : PacketType.NONE;
+type SettingFields<S> = S extends { schema: infer Fields extends readonly string[] } ? Fields : never;
+type SettingAutoFlatten<S> = S extends { autoFlatten: true } ? true : false;
+type SettingDontSpread<S> = S extends { dontSpread: true } ? true : false;
+
+type SingleReceive<S> =
+    S extends { _group: infer G extends GroupMetadata }
+        ? G["isParent"] extends true
+            ? { variant: ""; payload: undefined; permutation?: Record<string, boolean> }
+            : SingleReceivePayload<S>
+        : SingleReceivePayload<S>;
+
+type SingleReceivePayload<S> =
+    [SettingFields<S>] extends [never]
+        ? PrimitiveReceive<SettingPacketType<S>>
+        : SettingAutoFlatten<S> extends true
+            ? Array<FieldObject<SettingFields<S>, PrimitiveReceive<SettingPacketType<S>>>>
+            : FieldObject<SettingFields<S>, PrimitiveReceive<SettingPacketType<S>>>;
+
+type SingleSendArgs<S> =
+    SettingPacketType<S> extends PacketType.NONE
+        ? []
+        : [SettingFields<S>] extends [never]
+            ? PrimitiveSend<SettingPacketType<S>>[]
+            : SettingAutoFlatten<S> extends true
+                ? [Array<FieldObject<SettingFields<S>, PrimitiveSend<SettingPacketType<S>>>>]
+                : [FieldObject<SettingFields<S>, PrimitiveSend<SettingPacketType<S>>>];
+
+type SingleListenerArgs<S> =
+    SettingDontSpread<S> extends true
+        ? [SingleReceive<S>]
+        : [SettingFields<S>] extends [never]
+            ? SettingPacketType<S> extends PacketType.NONE
+                ? [undefined]
+                : PrimitiveReceive<SettingPacketType<S>>[]
+            : [SingleReceive<S>];
+
+type ObjFields<S> = S extends { schema: infer Fields extends readonly string[] } ? Fields : never;
+type ObjReceive<S> =
+    [ObjFields<S>] extends [never]
+        ? any[]
+        : S extends { autoTranspose: true } | { autoFlatten: true }
+            ? Array<FieldObject<ObjFields<S>, any>>
+            : FieldObject<ObjFields<S>, any>;
+type ObjSendArgs<S> =
+    [ObjFields<S>] extends [never]
+        ? any[]
+        : S extends { autoTranspose: true } | { autoFlatten: true }
+            ? [Array<FieldObject<ObjFields<S>, any>>]
+            : [FieldObject<ObjFields<S>, any>];
+type ObjListenerArgs<S> = [ObjReceive<S>];
+
+export type TypedPacket<
+    Tag extends string,
+    Receive,
+    SendArgs extends readonly any[],
+    ListenerArgs extends readonly any[],
+    Parent extends string | undefined = undefined,
+    Variant extends string | undefined = undefined,
+> = AnyPacket & {
+    readonly tag: Tag;
+    readonly __sonicTypes: {
+        readonly receive: Receive;
+        readonly sendArgs: SendArgs;
+        readonly listenerArgs: ListenerArgs;
+        readonly parent: Parent;
+        readonly variant: Variant;
+    };
+};
+
+export type TypedSinglePacket<S extends {
+    tag: string;
+    type?: ArguableType;
+    schema?: readonly string[] | undefined;
+    autoFlatten?: boolean | undefined;
+    dontSpread?: boolean | undefined;
+    _group?: GroupMetadata;
+}> = TypedPacket<
+    S["tag"],
+    SingleReceive<S>,
+    SingleSendArgs<S>,
+    SingleListenerArgs<S>,
+    S extends { _group: infer G extends GroupMetadata } ? G["parent"] : undefined,
+    S extends { _group: infer G extends GroupMetadata } ? G["variant"] : undefined
+>;
+
+export type TypedObjPacket<S extends MultiPacketSettings> = TypedPacket<
+    S["tag"],
+    ObjReceive<S>,
+    ObjSendArgs<S>,
+    ObjListenerArgs<S>
+>;
+
+export type PacketTags<Packets extends readonly AnyPacket[]> = Extract<Packets[number]["tag"], string>;
+
+export type PacketByTag<
+    Packets extends readonly AnyPacket[],
+    Tag extends string,
+> = Extract<Packets[number], { readonly tag: Tag }>;
+
+export type PacketReceive<P> = P extends { readonly __sonicTypes: { readonly receive: infer T } } ? T : any;
+export type PacketSendArgs<P> = P extends { readonly __sonicTypes: { readonly sendArgs: infer T extends readonly any[] } } ? T : any[];
+export type PacketListenerArgs<P> = P extends { readonly __sonicTypes: { readonly listenerArgs: infer T extends readonly any[] } } ? T : any[];
+
+export type PacketGroupEvent<
+    Packets extends readonly AnyPacket[],
+    Parent extends string,
+> = Packets[number] extends infer P
+    ? P extends { readonly __sonicTypes: { readonly parent: Parent; readonly variant: infer V extends string } }
+        ? { variant: V; payload: PacketReceive<P>; permutation?: Record<string, boolean> }
+        : never
+    : never;
+
+export type PacketListener<
+    Packets extends readonly AnyPacket[],
+    Tag extends PacketTags<Packets>,
+> = (...values: PacketListenerArgs<PacketByTag<Packets, Tag>>) => void | Promise<void>;
+
+export type PacketSendValues<
+    Packets extends readonly AnyPacket[],
+    Tag extends PacketTags<Packets>,
+> = PacketSendArgs<PacketByTag<Packets, Tag>>;
+
+export type SonicPacketTypeEntry = {
+    readonly sendArgs: readonly any[];
+    readonly listenerArgs: readonly any[];
+    readonly receive: any;
+};
+
+export type SonicPacketTypeMap = Record<string, SonicPacketTypeEntry>;
+
+export type SonicProtocolTypes = {
+    readonly client: SonicPacketTypeMap;
+    readonly server: SonicPacketTypeMap;
+};
+
+export type ProtocolPacketTags<
+    Protocol extends SonicProtocolTypes,
+    Direction extends keyof SonicProtocolTypes,
+> = Extract<keyof Protocol[Direction], string>;
+
+export type ProtocolSendArgs<
+    Protocol extends SonicProtocolTypes,
+    Direction extends keyof SonicProtocolTypes,
+    Tag extends ProtocolPacketTags<Protocol, Direction>,
+> = Protocol[Direction][Tag] extends { readonly sendArgs: infer Args extends readonly any[] }
+    ? Args
+    : any[];
+
+export type ProtocolListenerArgs<
+    Protocol extends SonicProtocolTypes,
+    Direction extends keyof SonicProtocolTypes,
+    Tag extends ProtocolPacketTags<Protocol, Direction>,
+> = Protocol[Direction][Tag] extends { readonly listenerArgs: infer Args extends readonly any[] }
+    ? Args
+    : any[];
+
+/**
+ * Preserves literal packet tags and schemas when a packet list is stored in a
+ * variable before being passed to a server or client.
+ */
+export function DefinePackets<const T extends readonly AnyPacket[]>(packets: T): Readonly<T> {
+    return packets;
+}
+
 /**
  * Processes and verifies values into a sendable format.
  * @param packets packet holder
@@ -367,9 +564,96 @@ export type EnumPacketSettings = SharedPacketSettings & {
  * @returns The constructed packet structure data.
  * @throws {Error} If the `type` is invalid.
  */
-export function CreatePacket<T extends ArguableType>(
-    settings: SinglePacketSettings & { type?: T; _group?: GroupMetadata },
-): Packet<ConvertType<T>> {
+type InferredSingleSettings<
+    Tag extends string,
+    T extends ArguableType,
+    Fields extends readonly string[] | undefined,
+    AutoFlatten extends boolean | undefined,
+    DontSpread extends boolean | undefined,
+> = {
+    tag: Tag;
+    type: T;
+    schema: Fields;
+    autoFlatten: AutoFlatten;
+    dontSpread: DontSpread;
+    _group?: GroupMetadata;
+};
+
+type PacketOverloadSettings<
+    Tag extends string,
+    T extends ArguableType,
+    Fields extends readonly string[] | undefined,
+    AutoFlatten extends boolean | undefined,
+    DontSpread extends boolean | undefined,
+> = Omit<SinglePacketSettings, "tag" | "type" | "schema" | "autoFlatten" | "dontSpread"> & {
+    tag: Tag;
+    type: T;
+    schema?: Fields;
+    autoFlatten?: AutoFlatten;
+    dontSpread?: DontSpread;
+    _group?: GroupMetadata;
+};
+
+type PacketOverload<
+    Tag extends string,
+    T extends ArguableType,
+    Fields extends readonly string[] | undefined,
+    AutoFlatten extends boolean | undefined,
+    DontSpread extends boolean | undefined,
+> = TypedSinglePacket<InferredSingleSettings<Tag, T, Fields, AutoFlatten, DontSpread>>;
+
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.NONE, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.NONE, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.RAW, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.RAW, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.STRINGS_ASCII, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.STRINGS_ASCII, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.STRINGS_UTF16, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.STRINGS_UTF16, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.ENUMS, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.ENUMS, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.BYTES, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.BYTES, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.UBYTES, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.UBYTES, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.SHORTS, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.SHORTS, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.USHORTS, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.USHORTS, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.VARINT, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.VARINT, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.UVARINT, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.UVARINT, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.DELTAS, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.DELTAS, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.FLOATS, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.FLOATS, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.DOUBLES, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.DOUBLES, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.BOOLEANS, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.BOOLEANS, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.JSON, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.JSON, Fields, AutoFlatten, DontSpread>;
+export function CreatePacket<const Tag extends string, const Fields extends readonly string[] | undefined = undefined, const AutoFlatten extends boolean | undefined = undefined, const DontSpread extends boolean | undefined = undefined>(settings: PacketOverloadSettings<Tag, PacketType.HEX, Fields, AutoFlatten, DontSpread>): PacketOverload<Tag, PacketType.HEX, Fields, AutoFlatten, DontSpread>;
+
+export function CreatePacket<
+    const Tag extends string,
+    const T extends ArguableType,
+    const Fields extends readonly string[] | undefined = undefined,
+    const AutoFlatten extends boolean | undefined = undefined,
+    const DontSpread extends boolean | undefined = undefined,
+>(
+    settings: Omit<SinglePacketSettings, "tag" | "type" | "schema" | "autoFlatten" | "dontSpread"> & {
+        tag: Tag;
+        type: T;
+        schema?: Fields;
+        autoFlatten?: AutoFlatten;
+        dontSpread?: DontSpread;
+        _group?: GroupMetadata;
+    },
+): TypedSinglePacket<InferredSingleSettings<Tag, T, Fields, AutoFlatten, DontSpread>>;
+export function CreatePacket<
+    const Tag extends string,
+    const Fields extends readonly string[] | undefined = undefined,
+    const AutoFlatten extends boolean | undefined = undefined,
+    const DontSpread extends boolean | undefined = undefined,
+>(
+    settings: Omit<SinglePacketSettings, "tag" | "type" | "schema" | "autoFlatten" | "dontSpread"> & {
+        tag: Tag;
+        type?: undefined;
+        schema?: Fields;
+        autoFlatten?: AutoFlatten;
+        dontSpread?: DontSpread;
+        _group?: GroupMetadata;
+    },
+): TypedSinglePacket<InferredSingleSettings<Tag, PacketType.NONE, Fields, AutoFlatten, DontSpread>>;
+export function CreatePacket(
+    settings: SinglePacketSettings & { _group?: GroupMetadata },
+): AnyPacket {
     const repeatedDefaultRange = settings.autoFlatten === true
         && settings.dataMax === undefined
         && settings.dataMin === undefined;
@@ -457,7 +741,7 @@ export function CreatePacket<T extends ArguableType>(
         settings.replay ?? false,
     );
 
-    return new Packet<ConvertType<T>>(tag, schema, validator, enabled, false);
+    return new Packet(tag, schema, validator, enabled, false) as AnyPacket;
 }
 
 /**
@@ -468,11 +752,12 @@ export function CreatePacket<T extends ArguableType>(
  * @throws {Error} If any type in `types` is invalid.
  */
 export function CreateObjPacket<
-    T extends readonly ArguableType[],
+    const S extends MultiPacketSettings,
+    T extends readonly ArguableType[] = S["types"],
     V extends readonly PacketType[] = { [K in keyof T]: ConvertType<T[K]> },
 >(
-    settings: MultiPacketSettings & { readonly types: T },
-): Packet<V> {
+    settings: S & { readonly types: T },
+): TypedObjPacket<S & { readonly types: T }> {
     const packetConstructor = Object.prototype.hasOwnProperty.call(settings, "constructor")
         ? settings.constructor as PacketConstructor
         : undefined;
@@ -560,7 +845,7 @@ export function CreateObjPacket<
         settings.replay ?? false,
     );
 
-    return new Packet<V>(tag, schema, validator, enabled, false);
+    return new Packet<V>(tag, schema, validator, enabled, false) as TypedObjPacket<S & { readonly types: T }>;
 }
 
 /**
@@ -578,7 +863,7 @@ export function CreateObjPacket<
  * require `defaults`, for example `{ variants: ["W", "A"], defaults: { type:
  * PacketType.SHORTS } }`. `delegate` remains accepted as a deprecated alias.
  */
-export function CreatePacketGroup(settings: PacketGroupSettings): Packet<any>[] {
+export function CreatePacketGroup<const S extends PacketGroupSettings>(settings: S): Packet<any>[] {
     if (!settings.tag || settings.tag.includes("$")) {
         throw new Error("Packet group tag is required and cannot contain '$'");
     }
@@ -618,7 +903,7 @@ export function CreatePacketGroup(settings: PacketGroupSettings): Packet<any>[] 
             throw new Error("Packet variant names cannot be empty or contain '$'");
         }
 
-        return CreatePacket({
+        return (CreatePacket as (settings: SinglePacketSettings & { _group: GroupMetadata }) => AnyPacket)({
             ...defaults,
             ...definition,
             tag: `${settings.tag}.${variant}`,

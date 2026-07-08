@@ -27,6 +27,7 @@
 
     "test_web": "npm run build && node tests/test_web.mjs",
     "test_node": "npm run build_node && node tests/test_node.mjs",
+    "test_types": "npm run build_node && tsc --strict --target es2024 --module nodenext --moduleResolution nodenext --esModuleInterop --skipLibCheck --noEmit tests/test_types.ts",
     "test_conformance": "npm run build_node && node tests/test_conformance.mjs",
     "benchmark": "npm run build_node && node ../../benchmarks/run.mjs && node ../../benchmarks/transport.mjs",
     "prepack": "npm run build",

@@ -13,6 +13,7 @@
 
 import WS from 'ws';
 import { ReconnectOptions, SonicWSCore } from "../core/ClientCore";
+import type { SonicProtocolTypes } from "../../util/packets/PacketUtils";
 
 export type SonicConnectOptions = WS.ClientOptions & {
     reconnect?: ReconnectOptions;
@@ -20,7 +21,8 @@ export type SonicConnectOptions = WS.ClientOptions & {
 };
 
 /** Connects a Node.js process to a SonicWS server. */
-export class SonicWS extends SonicWSCore<WS.WebSocket, Buffer> {
+export class SonicWS<Protocol extends SonicProtocolTypes = SonicProtocolTypes>
+    extends SonicWSCore<WS.WebSocket, Buffer, Protocol> {
     /**
      * Creates a connection to the url
      * @param url The url to connect to
@@ -54,9 +56,12 @@ export class SonicWS extends SonicWSCore<WS.WebSocket, Buffer> {
     }
 
     /** Creates a client and resolves after WASM loading and schema negotiation. */
-    static async connect(url: string, options: SonicConnectOptions = {}): Promise<SonicWS> {
+    static async connect<Protocol extends SonicProtocolTypes = SonicProtocolTypes>(
+        url: string,
+        options: SonicConnectOptions = {},
+    ): Promise<SonicWS<Protocol>> {
         const { reconnect, readyTimeoutMs, ...websocketOptions } = options;
-        const client = new SonicWS(url, websocketOptions, reconnect, readyTimeoutMs);
+        const client = new SonicWS<Protocol>(url, websocketOptions, reconnect, readyTimeoutMs);
         await new Promise<void>((resolve, reject) => {
             client.on_ready(resolve);
             client.on_close((code: number, reason: Buffer) => {

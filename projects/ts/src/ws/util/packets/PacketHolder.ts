@@ -13,7 +13,7 @@
 
 import { Packet } from "../../packets/Packets";
 import { PacketType } from "../../packets/PacketType";
-import { PacketTypings } from "../../server/SonicWSServer";
+import type { PacketArray } from "./PacketUtils";
 import { AssertPacketSchema } from "./metadata/SchemaValidation";
 
 /**
@@ -29,9 +29,9 @@ export class PacketHolder {
     /** Maps keys to tags */
     private tags: Record<number, string>;
     /** Maps tags to packet instances */
-    private packetMap: Record<string, Packet<PacketType | readonly PacketType[]>>;
+    private packetMap: Record<string, Packet<PacketType | readonly PacketType[], any>>;
     /** List of all packet instances */
-    private packets!: PacketTypings;
+    private packets!: PacketArray;
     private variants: Record<string, string> = {};
     private parents = new Set<string>();
 
@@ -39,7 +39,7 @@ export class PacketHolder {
      * Creates a new PacketHolder with an array of packets
      * @param packets Array of packets to register
      */
-    constructor(packets?: PacketTypings) {
+    constructor(packets?: PacketArray) {
 
         // reserves:
         // 0 - enum update
@@ -65,7 +65,7 @@ export class PacketHolder {
      * Registers an array of packets and assigns them keys
      * @param packets Array of packets to register
      */
-    public holdPackets(packets: PacketTypings): void {
+    public holdPackets(packets: PacketArray): void {
         AssertPacketSchema(packets);
         this.packets = packets;
         for (const packet of packets) {
@@ -181,7 +181,7 @@ export class PacketHolder {
     }
 
     /** Returns the list of all registered packets */
-    public getPackets(): PacketTypings {
+    public getPackets(): PacketArray {
         return this.packets;
     }
 

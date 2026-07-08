@@ -16,11 +16,13 @@ import { WrapEnum, DeWrapEnum } from "../../util/enums/EnumHandler";
 import { FlattenData, UnFlattenData } from "../../util/packets/PacketUtils";
 import { ReconnectOptions, SonicWSCore } from "../core/ClientCore";
 import { initializeWasmCore } from "../../../native/wrapper";
+import type { SonicProtocolTypes } from "../../util/packets/PacketUtils";
 
 // defines the SonicWS browser class and delegates transport-specific functions
 // types are here so you can do /** @type */
 
-export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
+export class SonicWS<Protocol extends SonicProtocolTypes = SonicProtocolTypes>
+    extends SonicWSCore<WebSocket, MessageEvent, Protocol> {
 
     /** Initializes the Rust WASM codec. Call this once before constructing a browser client. */
     static initialize(): Promise<unknown> {
@@ -28,7 +30,7 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
     }
 
     /** Initializes WASM, connects, and resolves after schema negotiation. */
-    static async connect(
+    static async connect<Protocol extends SonicProtocolTypes = SonicProtocolTypes>(
         url: string,
         options: {
             protocols?: string | string[];
@@ -36,10 +38,10 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
             reconnect?: ReconnectOptions;
             readyTimeoutMs?: number;
         } = {},
-    ): Promise<SonicWS> {
+    ): Promise<SonicWS<Protocol>> {
         await SonicWS.initialize();
 
-        const client = new SonicWS(
+        const client = new SonicWS<Protocol>(
             url,
             options.protocols,
             options.antiTamper ?? false,
@@ -105,9 +107,9 @@ export class SonicWS extends SonicWSCore<WebSocket, MessageEvent> {
             const originalSonicSend = this.send.bind(this);
             let lastSend: number;
 
-            this.send = async (tag: string, ...values: any[]) => {
+            this.send = async (tag: any, ...values: any[]) => {
                 lastSend = client.clientPackets.getKey(tag);
-                await originalSonicSend(tag, ...values);
+                await (originalSonicSend as (tag: string, ...values: any[]) => Promise<void>)(tag, ...values);
             };
 
             ws.send = data => {

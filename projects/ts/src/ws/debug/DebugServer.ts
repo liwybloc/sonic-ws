@@ -487,7 +487,7 @@ export class DebugServer {
         wss.on_connect(ws => {
             let authenticated = false;
 
-            const ogs = ws.send.bind(ws);
+            const ogs = ws.send.bind(ws) as (tag: string, ...values: any[]) => Promise<void>;
             let queue: [string, any[]][] = [];
             ws.send = async (tag: string, ...values: any[]) => {
                 console.log(authenticated, tag, values);
@@ -495,7 +495,7 @@ export class DebugServer {
                 else ogs(tag, ...values);
             };
 
-            ws.send("stats", ...Object.values(globalStats));
+            ws.send("stats", ...Object.values(globalStats) as number[]);
             host.connections.forEach(conn => {
                 ws.send("connection", conn.id);
                 ws.send("nameChange", conn.id, conn.getName());

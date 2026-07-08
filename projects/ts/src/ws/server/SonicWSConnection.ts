@@ -21,6 +21,7 @@ import { RateHandler } from "../util/packets/RateHandler";
 import { stringifyBuffer, toPacketBuffer } from "../util/BufferUtil";
 import { CloseCodes, Connection } from "../Connection";
 import { AsyncPQ, PacketQueue, SendQueue, ServerPQ } from "../PacketProcessor";
+import type { PacketArray, PacketListener, PacketSendValues, PacketTags } from "../util/packets/PacketUtils";
 import {
     ControlType,
     decodeControl,
@@ -31,9 +32,12 @@ import {
 const CLIENT_RATELIMIT_TAG = "C";
 const SERVER_RATELIMIT_TAG = "S";
 
-export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
+export class SonicWSConnection<
+    CT extends PacketArray = PacketArray,
+    ST extends PacketArray = PacketArray,
+> extends Connection<WS.WebSocket, Buffer> {
 
-    private host: SonicWSServer;
+    private host: SonicWSServer<CT, ST>;
 
     private print: boolean = false;
     
@@ -49,7 +53,7 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
         void this.messageHandler(parsed);
     };
 
-    private rater: RateHandler<this>;
+    private rater: RateHandler<CT, ST, this>;
 
     private enabledPackets: Record<string, boolean> = {};
 
@@ -71,7 +75,7 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
 
     constructor(
         socket: WS.WebSocket,
-        host: SonicWSServer,
+        host: SonicWSServer<CT, ST>,
         id: number,
         handshakePacket: string | null,
         clientRateLimit: number,
@@ -446,7 +450,7 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
      * @param tag The tag of the key to listen for
      * @param listener A function to listen for it 
      */
-    public on(tag: string, listener: (...values: any) => void): void {
+    public on<Tag extends PacketTags<CT>>(tag: Tag, listener: PacketListener<CT, Tag>): void {
         if (!this.host.clientPackets.hasTag(tag)) {
             throw new Error(`Packet tag "${tag}" has not been created`);
         }
@@ -459,7 +463,7 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
     /**
      * For internal use.
      */
-    public send_processed(code: number, data: Uint8Array, packet: Packet<any>): void {
+    public send_processed(code: number, data: Uint8Array, packet: Packet<any, any>): void {
         if (this.rater.trigger(`server${code}`)) return;
 
         if (packet.dataBatching === 0) {
@@ -477,7 +481,7 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
      * @param tag The tag to send
      * @param values The values to send
      */
-    public async send(tag: string, ...values: any[]): Promise<void> {
+    public async send<Tag extends PacketTags<ST>>(tag: Tag, ...values: PacketSendValues<ST, Tag>): Promise<void> {
         if (await this.callMiddleware('onSend_pre', tag, values, Date.now(), performance.now())) return;
 
         const [code, data, packet] = await processPacket(this.host.serverPackets, tag, values, this.sendQueue, this.id);
@@ -487,7 +491,7 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
     }
 
     public sendVariant(parent: string, variant: string, ...values: any[]): Promise<void> {
-        return this.send(this.host.serverPackets.getVariantTag(parent, variant), ...values);
+        return this.send(this.host.serverPackets.getVariantTag(parent, variant) as PacketTags<ST>, ...values as any);
     }
 
     public sendPermutation(
@@ -495,11 +499,14 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
         selection: readonly boolean[] | Record<string, boolean>,
         ...values: any[]
     ): Promise<void> {
-        return this.send(this.host.serverPackets.getPermutationVariant(parent, selection), ...values);
+        return this.send(this.host.serverPackets.getPermutationVariant(parent, selection) as PacketTags<ST>, ...values as any);
     }
 
     /** Sends a validated server packet as an RPC request to this client. */
-    public async request(tag: string, ...valuesAndOptions: any[]): Promise<any> {
+    public async request<Tag extends PacketTags<ST>>(
+        tag: Tag,
+        ...valuesAndOptions: [...PacketSendValues<ST, Tag>, { timeoutMs?: number }?]
+    ): Promise<any> {
         const possibleOptions = valuesAndOptions.at(-1);
         const options = valuesAndOptions.length > 1
             && possibleOptions
@@ -535,11 +542,11 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
     }
 
     /** Registers the server-side responder for client requests using this packet tag. */
-    public respond(tag: string, handler: (...values: any[]) => any): void {
+    public respond<Tag extends PacketTags<CT>>(tag: Tag, handler: PacketListener<CT, Tag>): void {
         this.responders.set(this.host.clientPackets.resolveTag(tag), handler);
     }
 
-    public async sendSafe(tag: string, ...values: any[]): Promise<boolean> {
+    public async sendSafe<Tag extends PacketTags<ST>>(tag: Tag, ...values: PacketSendValues<ST, Tag>): Promise<boolean> {
         try {
             await this.send(tag, ...values);
             return true;
@@ -550,14 +557,14 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
     }
 
     /** Drops this update before encoding when the transport is backpressured. */
-    public async sendVolatile(tag: string, ...values: any[]): Promise<boolean> {
+    public async sendVolatile<Tag extends PacketTags<ST>>(tag: Tag, ...values: PacketSendValues<ST, Tag>): Promise<boolean> {
         if (!this.canSendVolatile()) return false;
         await this.send(tag, ...values);
         return true;
     }
 
     /** Sends a packet without applying the volatile backpressure drop policy. */
-    public sendReliable(tag: string, ...values: any[]): Promise<void> {
+    public sendReliable<Tag extends PacketTags<ST>>(tag: Tag, ...values: PacketSendValues<ST, Tag>): Promise<void> {
         return this.send(tag, ...values);
     }
 
@@ -566,10 +573,10 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
      * @param tag The tag to send
      * @param values The values to send
      */
-    public broadcastFiltered(
-        tag: string,
-        filter: (socket: SonicWSConnection) => boolean,
-        ...values: any[]
+    public broadcastFiltered<Tag extends PacketTags<ST>>(
+        tag: Tag,
+        filter: (socket: SonicWSConnection<CT, ST>) => boolean,
+        ...values: PacketSendValues<ST, Tag>
     ): void {
         void this.host.broadcastFiltered(tag, socket => socket !== this && filter(socket), ...values);
     }
@@ -579,7 +586,7 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
      * @param tag The tag to send
      * @param values The values to send
      */
-    public broadcast(tag: string, ...values: any[]): void {
+    public broadcast<Tag extends PacketTags<ST>>(tag: Tag, ...values: PacketSendValues<ST, Tag>): void {
         this.broadcastFiltered(tag, () => true, ...values);
     }
 
@@ -598,7 +605,7 @@ export class SonicWSConnection extends Connection<WS.WebSocket, Buffer> {
         return this.host.rooms(this);
     }
 
-    public broadcastRoom(room: string, tag: string, ...values: any[]): Promise<void> {
+    public broadcastRoom<Tag extends PacketTags<ST>>(room: string, tag: Tag, ...values: PacketSendValues<ST, Tag>): Promise<void> {
         return this.host.broadcastRoomExcept(this, room, tag, ...values);
     }
 
