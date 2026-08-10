@@ -56,7 +56,11 @@ type FieldObject<Fields extends readonly string[], Value> = {
 };
 
 type SettingPacketType<S> = S extends { type: infer T extends ArguableType } ? T : PacketType.NONE;
-type SettingFields<S> = S extends { schema: infer Fields extends readonly string[] } ? Fields : never;
+type SettingFields<S> = S extends { schema: infer Fields }
+    ? [Fields] extends [undefined]
+        ? never
+        : Fields extends readonly string[] ? Fields : never
+    : never;
 type SettingAutoFlatten<S> = S extends { autoFlatten: true } ? true : false;
 type SettingDontSpread<S> = S extends { dontSpread: true } ? true : false;
 
@@ -92,7 +96,11 @@ type SingleListenerArgs<S> =
                 : PrimitiveReceive<SettingPacketType<S>>[]
             : [SingleReceive<S>];
 
-type ObjFields<S> = S extends { schema: infer Fields extends readonly string[] } ? Fields : never;
+type ObjFields<S> = S extends { schema: infer Fields }
+    ? [Fields] extends [undefined]
+        ? never
+        : Fields extends readonly string[] ? Fields : never
+    : never;
 type ObjReceive<S> =
     [ObjFields<S>] extends [never]
         ? any[]
@@ -573,11 +581,10 @@ type InferredSingleSettings<
 > = {
     tag: Tag;
     type: T;
-    schema: Fields;
-    autoFlatten: AutoFlatten;
-    dontSpread: DontSpread;
     _group?: GroupMetadata;
-};
+} & ([Fields] extends [undefined] ? {} : Fields extends readonly string[] ? { schema: Fields } : {})
+  & ([AutoFlatten] extends [undefined] ? {} : AutoFlatten extends boolean ? { autoFlatten: AutoFlatten } : {})
+  & ([DontSpread] extends [undefined] ? {} : DontSpread extends boolean ? { dontSpread: DontSpread } : {});
 
 type PacketOverloadSettings<
     Tag extends string,
