@@ -608,13 +608,19 @@ export class SonicWSServer<
         this.wss.close(callback);
     }
 
-    private async receiveAdapterBroadcast(message: AdapterBroadcast): Promise<void> {
+    private async receiveAdapterBroadcast(
+        message: AdapterBroadcast
+    ): Promise<void> {
         if (message.origin === this.serverId) return;
-        await this.broadcastInternal(message.packetTag, {
-            type: "filter",
-            filter: socket => this.tags.get(socket)?.has(message.room) === true
-                && socket.id !== message.exceptConnectionId,
-        }, message.values);
+
+        await this.broadcastInternal(
+            message.packetTag,
+            {
+                type: "tagged",
+                tag: message.room,
+            },
+            message.values
+        );
     }
 
     /** Wraps and stores an opted-in packet for bounded replay. */
@@ -745,7 +751,6 @@ export class SonicWSServer<
             room,
             packetTag,
             values,
-            exceptConnectionId: connection.id,
         });
     }
 

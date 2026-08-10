@@ -1,0 +1,42 @@
+{
+  "name": "@sonic-ws/redis-adapter",
+  "version": "0.1.0",
+  "description": "Redis scaling adapter for SonicWS",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run clean && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liwybloc/sonic-ws.git",
+    "directory": "projects/adapters-ts/redis"
+  },
+  "license": "LicenseRef-Lily-Personal-NonCommercial-2026",
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "redis": ">=5",
+    "sonic-ws": ">=2.4.0"
+  },
+  "devDependencies": {
+    "redis": "^5.8.2",
+    "rimraf": "^6.0.1",
+    "sonic-ws": "file:../../ts",
+    "typescript": "^5.8.3"
+  }
+}

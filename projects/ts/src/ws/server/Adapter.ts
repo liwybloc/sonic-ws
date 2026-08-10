@@ -3,7 +3,6 @@ export type AdapterBroadcast = {
     room: string;
     packetTag: string;
     values: any[];
-    exceptConnectionId?: number;
 };
 
 /** Cross-process room membership and broadcast contract. */

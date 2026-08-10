@@ -1,0 +1,37 @@
+{
+  "name": "@sonic-ws/postgres-adapter",
+  "version": "0.1.0",
+  "description": "PostgreSQL scaling adapter for SonicWS",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run clean && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liwybloc/sonic-ws.git",
+    "directory": "projects/adapters-ts/postgres"
+  },
+  "license": "LicenseRef-Lily-Personal-NonCommercial-2026",
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "pg": ">=8",
+    "sonic-ws": ">=2.4.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "pg": "^8.16.3",
+    "rimraf": "^6.0.1",
+    "sonic-ws": "file:../../ts",
+    "typescript": "^5.8.3"
+  }
+}
