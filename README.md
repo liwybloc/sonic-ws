@@ -169,8 +169,6 @@ Cross-language compatibility peers can be selected from the root build script. R
 ```sh
 ./build.sh test_compat typescript --host
 ./build.sh test_compat python --client
-
-# Rust can be either side too
 ./build.sh test_compat rust --client
 ```
 
@@ -193,9 +191,9 @@ Clients can opt into capped exponential-backoff reconnect. Packets marked `repla
 
 ## WHERE SONICWS FITS
 
-SonicWS is strongest for schema-known realtime traffic: numeric movement updates, repeated entity snapshots, compact enums, bounded RPC payloads, and other messages where validation and wire size matter. Positional sends are available as the lowest-allocation hot path, while schema mapping trades some CPU for cleaner application objects.
+SonicWS is strongest for traffic that is schema-known: numeric movement updates, repeated entity snapshots, compact enums, bounded RPC payloads, and other messages where validation and wire size matter. Positional sends are available as the lowest-allocation hot path, while schema mapping trades some CPU for cleaner application objects.
 
-Arbitrary chat strings and already-compressed or highly dynamic JSON may see little or no size improvement over ordinary JSON WebSockets. SonicWS should be selected for its explicit packet contract, validation, lifecycle behavior, and compact structured traffic—not because every possible payload encodes faster or smaller than JSON.
+Arbitrary chat strings and already-compressed or highly dynamic JSON may see little or no size improvement over ordinary JSON WebSockets. SonicWS should be selected for its explicit packet contract, validation, lifecycle behavior, and compact structured traffic.
 
 ## KNOWN ISSUES
 
