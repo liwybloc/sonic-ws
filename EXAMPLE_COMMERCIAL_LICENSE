@@ -1,0 +1,280 @@
+This document is a public template. Identifying information, pricing, signatures, and other transaction-specific information will be provided in the executed commercial license agreement.
+
+Copyright (c) 2026 Lily (liwybloc)
+
+Commercial Software License
+
+This Commercial Software License Agreement (the "Agreement") is entered into between [COMPANY NAME] (the "Licensor"), an authorized commercial licensor of Sonic-WS, and [LICENSEE NAME] (the "Licensee") and becomes effective on [EFFECTIVE DATE].
+
+Sonic-WS was created by Lily (liwybloc) (the "Copyright Owner"), who retains ownership of the Software and has authorized the Licensor to commercially license the Software.
+
+This Agreement governs the commercial use of Sonic-WS and its associated source code, documentation, and related materials (the "Software").
+
+For purposes of this Agreement, User Base (the "User Base") means the number of monthly active users of the product, service, or application in which the Software is commercially used, as reasonably determined using data from any thirty (30) day period during the sixty (60) days immediately preceding the beginning of the applicable License Term.
+
+1. License Grant
+
+Subject to payment of the applicable license fees and compliance with this Agreement, the Licensor grants the Licensee a limited, non-exclusive, non-transferable, non-sublicensable license to use, copy, install, operate, and modify the Software for commercial purposes during the License Term.
+
+The Licensee may permit its employees and contractors to use the Software solely on behalf of the Licensee and subject to this Agreement.
+
+The Software is licensed, not sold.
+
+2. License Term
+
+The license begins on [EFFECTIVE DATE] and continues for twelve (12) months unless otherwise agreed in writing (the "License Term").
+
+The license may be renewed for additional twelve-month periods upon payment of the applicable renewal fee.
+
+Unless otherwise agreed in writing, renewal is not automatic.
+
+3. License Fees
+
+The annual commercial license fee is based on the Licensee's User Base.
+
+The applicable commercial license fee shall be determined in writing between the Licensor and Licensee before the beginning of each License Term.
+
+The Licensee's current annual license fee is $[AMOUNT] USD.
+
+4. User Base Changes
+
+The license fee for each License Term is determined using the Licensee's User Base as calculated in accordance with the User Base definition in this Agreement.
+
+The applicable fee for each License Term may vary based on the Licensee's User Base and other factors agreed upon in writing before the beginning of that License Term.
+
+Increases or decreases in the Licensee's User Base during an active License Term do not change the license fee already agreed upon and paid for that License Term.
+
+At renewal, the Licensee's then-current User Base may be used by the Licensor to determine the applicable license fee for the next License Term.
+
+For example, if the Licensee begins a License Term with [10,000] users and grows to [25,000] users during that year, the Licensee may continue using the Software under the existing license for the remainder of that License Term without paying an additional license fee solely because of that growth.
+
+The Licensee's User Base of [25,000] users may then be considered when determining the license fee for the next License Term.
+
+The Licensee is not entitled to a refund or credit if its User Base decreases during an active License Term.
+
+The Licensor will not require a mid-term license upgrade or additional license fee solely because the Licensee's User Base increases during an active License Term. Any increase in the Licensee's User Base may instead be considered when determining the license fee for the next License Term.
+
+5. Renewal Pricing
+
+Before renewal, the Licensee shall provide its current User Base upon reasonable request from the Licensor.
+
+The renewal fee will be based on:
+
+(a) the Licensee's User Base at the time of renewal; and
+
+(b) the Licensor's then-current commercial pricing.
+
+The Licensor may change commercial pricing for future License Terms by providing at least thirty (30) days' notice before renewal.
+
+Any proposed renewal fee must be communicated to the Licensee before renewal.
+
+Changes to pricing will not retroactively affect a License Term that has already been paid for.
+
+The Licensee is not required to renew the license if the Licensee does not agree to the applicable renewal fee or does not wish to continue using the Software for any reason.
+
+6. Permitted Commercial Use
+
+Subject to this Agreement, the Licensee may use the Software:
+
+* for internal business purposes;
+* as part of the Licensee's commercial operations;
+* within commercial applications or services operated by the Licensee;
+* within a hosted or Software-as-a-Service product operated by the Licensee, if permitted under the applicable license information; and
+* in modified form for the Licensee's own commercial purposes.
+
+7. Restrictions
+
+The Licensee may not, without prior written permission from the Licensor:
+
+* sell, sublicense, rent, lease, or transfer the Software;
+* distribute the Software or its source code to the public;
+* publish the Software or modified versions of the Software;
+* provide the Software as a standalone product for use by third parties;
+* resell the Software substantially unchanged;
+* sublicense the Software to customers for their independent use;
+* permit unrelated third parties to copy or use the Software;
+* remove or alter copyright, license, attribution, or ownership notices; or
+* represent that the Licensee owns the original Software.
+
+8. Customer-Facing Products and Services
+
+The Licensee may use the Software as part of a commercial product, application, website, hosted service, or Software-as-a-Service offering only if such use is permitted under the Licensee's commercial license.
+
+Permitted customer-facing use:
+
+[YES / NO / SUBJECT TO ADDITIONAL TERMS]
+
+Permission to use the Software in a customer-facing product does not permit the Licensee to distribute the Software's source code or provide the Software itself to customers as a reusable or independently licensed product.
+
+Customers or end users of the Licensee's product or service do not receive any ownership interest or independent license to the Software solely by using the Licensee's product or service.
+
+9. Modifications
+
+The Licensee may modify the Software for purposes permitted under this Agreement.
+
+The Licensee retains ownership of original code independently created by the Licensee, but no modification transfers ownership of the original Software or the Copyright Owner's intellectual property to the Licensee.
+
+The Licensee is not required to provide private modifications to the Copyright Owner or Licensor.
+
+If the Licensee voluntarily submits a modification, patch, pull request, or other contribution to the Licensor, Copyright Owner, or the original Software project, the Licensee grants the Licensor and Copyright Owner a non-exclusive, worldwide, royalty-free, perpetual, irrevocable license to use, copy, modify, merge, publish, distribute, sublicense, and otherwise incorporate that contribution into the Software.
+
+10. Ownership
+
+Copyright (c) 2026 Lily (liwybloc)
+
+The Software and all associated copyrights and intellectual property rights remain the property of the Copyright Owner.
+
+This Agreement grants the Licensee permission to use the Software but does not transfer ownership of the Software.
+
+All rights not expressly granted under this Agreement are reserved by the Copyright Owner.
+
+11. License Verification
+
+Upon reasonable written request, the Licensee shall provide information reasonably sufficient to verify the Licensee's User Base and compliance with the applicable commercial license.
+
+The Licensor may request such verification no more than once per License Term unless the Licensor reasonably believes the Licensee is materially exceeding or otherwise violating the scope of its license.
+
+The Licensee is not required to disclose information unrelated to verification of the applicable license.
+
+12. Payment
+
+License fees shall be paid annually in advance unless otherwise agreed in writing.
+
+Invoices are payable within thirty (30) days of the invoice date unless otherwise stated in writing.
+
+The Licensee is responsible for applicable sales, use, VAT, GST, or similar taxes, except taxes imposed on the Licensor's income.
+
+Failure to pay an undisputed license fee when due may result in suspension or termination of the commercial license after reasonable written notice.
+
+13. Support and Updates
+
+During an active License Term, the commercial license includes the following services, which may be provided by the Licensor, the Copyright Owner, or their authorized representatives:
+
+* reasonable technical support relating to the Software;
+* maintenance releases made generally available for the Software;
+* software updates made generally available for the Software; and
+* access to new versions of the Software that are made generally available to commercial licensees during the active License Term.
+
+Updates, maintenance releases, or other improvements to the Software may incorporate contributions submitted by third-party contributors.
+
+The commercial license does not require the Licensor to create any particular update, feature, release, or future version of the Software.
+
+Unless otherwise agreed in writing, the commercial license does not include:
+
+* custom development;
+* development of features specifically requested by the Licensee;
+* guaranteed response or resolution times;
+* uptime guarantees; or
+* service-level agreements.
+
+The Licensor does not guarantee that development, maintenance, updates, or future versions of the Software will continue indefinitely.
+
+Additional services may be provided under a separate written agreement.
+
+14. Termination
+
+The Licensor may terminate this Agreement if the Licensee materially breaches its terms and fails to correct the breach within thirty (30) days after receiving written notice describing the breach.
+
+The Licensor may terminate the license immediately if the Licensee intentionally:
+
+* distributes the Software in violation of this Agreement;
+* sublicenses or resells the Software without authorization;
+* materially infringes the Copyright Owner's intellectual property rights; or
+* continues commercial use of the Software without paying an applicable license fee after payment has become due.
+
+Upon expiration or termination of the commercial license, the Licensee must cease commercial use of the Software unless a new license or other written authorization is obtained.
+
+If this Agreement is terminated because of a breach by the Licensee, license fees already paid are non-refundable, including fees attributable to any unused portion of the License Term.
+
+Termination does not relieve the Licensee of any payment obligations that became due before termination.
+
+15. Disclaimer of Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
+
+THE LICENSOR DOES NOT WARRANT THAT THE SOFTWARE WILL BE ERROR-FREE, SECURE, UNINTERRUPTED, OR SUITABLE FOR ANY PARTICULAR PURPOSE.
+
+16. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, INCLUDING LOSS OF PROFITS, REVENUE, DATA, BUSINESS, OR GOODWILL, ARISING OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THIS AGREEMENT.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR'S TOTAL AGGREGATE LIABILITY ARISING OUT OF OR RELATING TO THIS AGREEMENT SHALL NOT EXCEED THE TOTAL COMMERCIAL LICENSE FEES PAID BY THE LICENSEE DURING THE TWELVE (12) MONTHS PRECEDING THE EVENT GIVING RISE TO THE CLAIM.
+
+17. Governing Law
+
+This Agreement shall be governed by the laws of [STATE / PROVINCE / COUNTRY], without regard to conflict-of-law principles.
+
+Any legal dispute arising from this Agreement shall be brought in the courts located in [CITY, STATE / COUNTRY], unless otherwise agreed in writing.
+
+18. Entire Agreement
+
+This Agreement and any associated license information, invoice, or written amendment constitute the entire agreement between the Licensor and Licensee regarding commercial use of the Software.
+
+Any modification to this Agreement must be made in writing and agreed to by both parties.
+
+Any additional terms agreed to in writing by both the Licensor and Licensee may override, replace, or modify specific terms of this Agreement to the extent expressly stated in those additional terms.
+
+19. Commercial License Information
+
+Licensor:
+[COMPANY NAME], authorized for the commercial licensing of the Software
+
+Licensee:
+[LICENSEE LEGAL NAME]
+
+Software:
+Sonic-WS
+
+Effective Date:
+[DATE]
+
+License Expiration Date:
+[DATE]
+
+User Base Definition:
+Monthly Active Users
+
+Licensed User Base for License Term:
+[USER COUNT]
+
+Annual License Fee:
+$[AMOUNT] USD
+
+Permitted Customer-Facing Use:
+[YES / NO]
+
+Additional Terms:
+[ADDITIONAL TERMS OR NONE]
+
+20. Contact
+
+Commercial licensing inquiries:
+
+Lily (liwybloc)
+yinuwu12@gmail.com
+
+21. Signatures
+
+Licensor:
+
+[COMPANY NAME]
+
+Signature: ______________________________
+
+Name: ____________________________
+
+Title: _____________________________
+
+Date: _____________________________
+
+Licensee:
+
+[LICENSEE LEGAL NAME]
+
+Signature: ______________________________
+
+Name: ____________________________
+
+Title: _____________________________
+
+Date: _____________________________
