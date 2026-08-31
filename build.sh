@@ -7,6 +7,7 @@ CORE="$ROOT/projects/core"
 RUST="$ROOT/projects/rust"
 TS="$ROOT/projects/ts"
 PY="$ROOT/projects/py"
+GO="$ROOT/projects/go"
 
 python_for_tests() {
     local candidate
@@ -48,7 +49,7 @@ usage() {
 Usage: ./build.sh <command>
 
 Build commands:
-  all          Build Rust, TypeScript/Node/browser, and Python artifacts
+  all          Build Rust, TypeScript/Node/browser, Python, and Go artifacts
   rust         Build the Rust codec core and native Rust runtime
   core         Build only the shared Rust codec core
   rust-runtime Build only the native Rust client/server package
@@ -58,13 +59,15 @@ Build commands:
   py           Build the Python wheel and source distribution
   py-wheel     Build only the Python wheel
   py-sdist     Build only the self-contained Python source distribution
+  go           Build the Go package
 
 Test and packaging commands:
-  test         Run Rust, Node, browser, and Python tests
+  test         Run Rust, Node, browser, Python, and Go tests
   test-rust    Run the Rust test suite
   test-node    Run the Node end-to-end suite
   test-web     Run the browser/WASM end-to-end suite
   test-py      Run Python codec, parity, integration, and runtime tests
+  test-go      Run the Go tests
   test_compat  Run one compatibility peer (language plus --host or --client)
   conformance  Run the shared Node and Python golden-vector corpus
   pack-node    Build and create the npm tarball
@@ -111,6 +114,10 @@ build_python_sdist() {
     python3 -m build --no-isolation --sdist "$PY"
 }
 
+build_go() {
+    (cd "$GO" && go build ./...)
+}
+
 test_rust() {
     cargo test --manifest-path "$CORE/Cargo.toml"
     cargo test --manifest-path "$RUST/Cargo.toml"
@@ -122,6 +129,10 @@ test_node() {
 
 test_web() {
     (cd "$TS" && npm run test_web)
+}
+
+test_go() {
+    (cd "$GO" && go test ./...)
 }
 
 test_python() {
@@ -180,6 +191,7 @@ static_checks() {
     cargo check --manifest-path "$RUST/Cargo.toml"
     (cd "$TS" && npx tsc --noEmit)
     python3 -m compileall -q "$PY/src" "$PY/tests"
+    (cd "$GO" && go vet ./...)
 }
 
 command="${1:-help}"
@@ -189,6 +201,7 @@ case "$command" in
         build_rust
         build_ts
         build_python
+        build_go
         ;;
     rust)
         build_rust
@@ -217,11 +230,15 @@ case "$command" in
     py-sdist)
         build_python_sdist
         ;;
+    go)
+        build_go
+        ;;
     test)
         test_rust
         test_node
         test_web
         test_python
+        test_go
         ;;
     test-rust)
         test_rust
@@ -234,6 +251,9 @@ case "$command" in
         ;;
     test-py)
         test_python
+        ;;
+    test-go)
+        test_go
         ;;
     test_compat|test-compat)
         shift
