@@ -308,7 +308,7 @@ func (s *Server) BroadcastRoom(ctx context.Context, room, tag string, values ...
 	return errors.Join(errs...)
 }
 
-func (s *Server) storeReplay(conn *Conn, frame []byte) []byte {
+func (s *Server) writeReplay(ctx context.Context, conn *Conn, frame []byte) error {
 	conn.mu.RLock()
 	sess := conn.session
 	conn.mu.RUnlock()
@@ -316,11 +316,15 @@ func (s *Server) storeReplay(conn *Conn, frame []byte) []byte {
 	defer sess.mu.Unlock()
 	sess.sequence++
 	encoded := encodeReplay(sess.sequence, frame)
+	if err := conn.write(ctx, encoded); err != nil {
+		sess.sequence--
+		return err
+	}
 	sess.frames = append(sess.frames, replayFrame{sequence: sess.sequence, frame: encoded})
 	if len(sess.frames) > s.config.MaxReplayPackets {
 		sess.frames = append([]replayFrame(nil), sess.frames[len(sess.frames)-s.config.MaxReplayPackets:]...)
 	}
-	return encoded
+	return nil
 }
 
 func (s *Server) resume(ctx context.Context, conn *Conn, request resumeRequest) error {

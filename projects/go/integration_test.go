@@ -231,6 +231,50 @@ func TestRecovery(t *testing.T) {
 	}
 }
 
+func TestFailedReplaySendIsNotRetained(t *testing.T) {
+	packet, _ := NewPacket(PacketConfig{Tag: "snapshot", Fields: []Field{{Type: VarInt}}, Replay: true})
+	packets, _ := NewRegistry(packet)
+	type replayState struct {
+		err      error
+		sequence uint64
+		frames   int
+	}
+	result := make(chan replayState, 1)
+	server, err := NewServer(ServerConfig{
+		ServerPackets: packets, DisableHeartbeat: true,
+		Handler: func(_ context.Context, conn *Conn) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			sendErr := conn.Send(ctx, "snapshot", 7)
+			conn.mu.RLock()
+			sess := conn.session
+			conn.mu.RUnlock()
+			sess.mu.RLock()
+			result <- replayState{err: sendErr, sequence: sess.sequence, frames: len(sess.frames)}
+			sess.mu.RUnlock()
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, err := Dial(ctx, websocketURL(httpServer.URL), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+	state := <-result
+	if state.err == nil {
+		t.Fatal("replay send unexpectedly succeeded with a canceled context")
+	}
+	if state.sequence != 0 || state.frames != 0 {
+		t.Fatalf("failed replay send was retained: sequence=%d frames=%d", state.sequence, state.frames)
+	}
+}
+
 func TestDialRejectsTruncatedHandshake(t *testing.T) {
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)

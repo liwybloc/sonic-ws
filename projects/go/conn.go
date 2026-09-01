@@ -89,14 +89,15 @@ func (c *Conn) Send(ctx context.Context, tag string, values ...any) error {
 	}
 	c.mu.Unlock()
 	frame := append([]byte{key}, data...)
+	var writeErr error
 	if packet.replay && c.server != nil {
-		frame = c.server.storeReplay(c, frame)
+		writeErr = c.server.writeReplay(ctx, c, frame)
+	} else {
+		writeErr = c.write(ctx, frame)
 	}
-	if err := c.write(ctx, frame); err != nil {
-		if !packet.replay {
-			packet.restoreResidual(c.codecID, previous, existed)
-		}
-		return err
+	if writeErr != nil {
+		packet.restoreResidual(c.codecID, previous, existed)
+		return writeErr
 	}
 	if packet.rereference && len(data) != 0 {
 		c.mu.Lock()
