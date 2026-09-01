@@ -1,0 +1,82 @@
+name: TypeScript adapters
+
+on:
+  push:
+    paths:
+      - ".github/workflows/adapters.yml"
+      - "projects/adapters-ts/**"
+      - "projects/core/**"
+      - "projects/ts/**"
+  pull_request:
+    paths:
+      - ".github/workflows/adapters.yml"
+      - "projects/adapters-ts/**"
+      - "projects/core/**"
+      - "projects/ts/**"
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            projects/ts/package-lock.json
+            projects/adapters-ts/postgres/package-lock.json
+            projects/adapters-ts/redis/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: projects/core
+      - uses: taiki-e/install-action@wasm-pack
+      - run: npm ci
+        working-directory: projects/ts
+      - run: npm run build_node
+        working-directory: projects/ts
+      - run: npm ci
+        working-directory: projects/adapters-ts/postgres
+      - run: npm run typecheck
+        working-directory: projects/adapters-ts/postgres
+      - run: npm run build
+        working-directory: projects/adapters-ts/postgres
+      - run: node tests/test1.js
+        working-directory: projects/adapters-ts/postgres
+      - run: node tests/test2.js
+        working-directory: projects/adapters-ts/postgres
+      - run: npm ci
+        working-directory: projects/adapters-ts/redis
+      - run: npm run typecheck
+        working-directory: projects/adapters-ts/redis
+      - run: npm run build
+        working-directory: projects/adapters-ts/redis
+      - run: node tests/test1.js
+        working-directory: projects/adapters-ts/redis

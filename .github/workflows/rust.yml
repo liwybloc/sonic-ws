@@ -1,0 +1,36 @@
+name: Rust
+
+on:
+  push:
+    paths:
+      - ".github/workflows/rust.yml"
+      - "projects/core/**"
+      - "projects/rust/**"
+  pull_request:
+    paths:
+      - ".github/workflows/rust.yml"
+      - "projects/core/**"
+      - "projects/rust/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            projects/core
+            projects/rust
+      - run: cargo fmt --manifest-path projects/core/Cargo.toml --check
+      - run: cargo fmt --manifest-path projects/rust/Cargo.toml --check
+      - run: cargo clippy --locked --manifest-path projects/core/Cargo.toml --all-targets -- -D warnings
+      - run: cargo clippy --locked --manifest-path projects/rust/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --locked --manifest-path projects/core/Cargo.toml
+      - run: cargo test --locked --manifest-path projects/rust/Cargo.toml

@@ -1,0 +1,48 @@
+name: TypeScript
+
+on:
+  push:
+    paths:
+      - ".github/workflows/typescript.yml"
+      - "build.sh"
+      - "projects/core/**"
+      - "projects/ts/**"
+      - "protocol/golden-vectors.json"
+  pull_request:
+    paths:
+      - ".github/workflows/typescript.yml"
+      - "build.sh"
+      - "projects/core/**"
+      - "projects/ts/**"
+      - "protocol/golden-vectors.json"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: projects/ts/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: projects/core
+      - uses: taiki-e/install-action@wasm-pack
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: node tests/test_node.mjs
+      - run: npx tsc --strict --target es2024 --module nodenext --moduleResolution nodenext --esModuleInterop --skipLibCheck --noEmit tests/test_types.ts
+      - run: node tests/test_conformance.mjs
+      - run: node tests/test_web.mjs
