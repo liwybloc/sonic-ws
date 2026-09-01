@@ -42,9 +42,12 @@ fn assert_compatible(actual: &SonicValue, expected: &SonicValue) {
         }
         (SonicValue::Object(a), SonicValue::Object(b)) => {
             assert_eq!(a.len(), b.len(), "object length mismatch");
-            for ((ak, av), (bk, bv)) in a.iter().zip(b) {
-                assert_eq!(ak, bk);
-                assert_compatible(av, bv);
+            for (key, expected) in b {
+                let actual = a
+                    .iter()
+                    .find_map(|(candidate, value)| (candidate == key).then_some(value))
+                    .unwrap_or_else(|| panic!("missing object key: {key}"));
+                assert_compatible(actual, expected);
             }
         }
         _ => assert_eq!(actual, expected),

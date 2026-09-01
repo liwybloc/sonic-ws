@@ -1,0 +1,67 @@
+name: Go
+
+on:
+  push:
+    paths:
+      - ".github/workflows/go.yml"
+      - "build.sh"
+      - "projects/core/**"
+      - "projects/go/**"
+      - "protocol/golden-vectors.json"
+  pull_request:
+    paths:
+      - ".github/workflows/go.yml"
+      - "build.sh"
+      - "projects/core/**"
+      - "projects/go/**"
+      - "protocol/golden-vectors.json"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: projects/go/go.mod
+          cache-dependency-path: projects/go/go.sum
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go test -race ./...
+
+  codec-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: projects/go/go.mod
+          cache-dependency-path: projects/go/go.sum
+      - run: rustup target add wasm32-unknown-unknown
+      - run: ./build.sh go
+      - run: go test ./...
+        working-directory: projects/go
+      - run: cargo build --manifest-path projects/rust/Cargo.toml --bin test_compat
+      - name: Go and Rust compatibility
+        run: |
+          set -euo pipefail
+          timeout 90s ./build.sh test_compat go --host &
+          host=$!
+          trap 'kill "$host" 2>/dev/null || true' EXIT
+          sleep 1
+          ./projects/rust/target/debug/test_compat --client
+          wait "$host"
+
+          timeout 90s ./projects/rust/target/debug/test_compat --host &
+          host=$!
+          sleep 1
+          ./build.sh test_compat go --client
+          wait "$host"
+          trap - EXIT

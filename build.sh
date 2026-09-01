@@ -8,6 +8,7 @@ RUST="$ROOT/projects/rust"
 TS="$ROOT/projects/ts"
 PY="$ROOT/projects/py"
 GO="$ROOT/projects/go"
+GO_WASM="$GO/internal/core/core.wasm"
 
 python_for_tests() {
     local candidate
@@ -59,7 +60,8 @@ Build commands:
   py           Build the Python wheel and source distribution
   py-wheel     Build only the Python wheel
   py-sdist     Build only the self-contained Python source distribution
-  go           Build the Go package
+  go           Build the Go codec and package
+  go-core      Rebuild the embedded Go WASM codec
 
 Test and packaging commands:
   test         Run Rust, Node, browser, Python, and Go tests
@@ -69,7 +71,7 @@ Test and packaging commands:
   test-py      Run Python codec, parity, integration, and runtime tests
   test-go      Run the Go tests
   test_compat  Run one compatibility peer (language plus --host or --client)
-  conformance  Run the shared Node and Python golden-vector corpus
+  conformance  Run the shared Node, Python, and Go golden-vector corpus
   pack-node    Build and create the npm tarball
   benchmark    Build and run the reproducible codec benchmark suite
   check        Run non-networked static checks
@@ -114,7 +116,13 @@ build_python_sdist() {
     python3 -m build --no-isolation --sdist "$PY"
 }
 
+build_go_core() {
+    cargo build --release --locked --target wasm32-unknown-unknown --features python --manifest-path "$CORE/Cargo.toml"
+    install -m 0644 "$CORE/target/wasm32-unknown-unknown/release/sonic_ws_core.wasm" "$GO_WASM"
+}
+
 build_go() {
+    build_go_core
     (cd "$GO" && go build ./...)
 }
 
@@ -154,12 +162,13 @@ test_conformance() {
     (cd "$TS" && npm run test_conformance)
     export PYTHONPATH="$PY/src${PYTHONPATH:+:$PYTHONPATH}"
     "$python" "$PY/tests/test_conformance.py"
+    (cd "$GO" && go test -run '^TestGoldenVectors$' .)
 }
 
 test_compat() {
     local language="${1:-}"
     if [[ -z "$language" ]]; then
-        printf 'Usage: ./build.sh test_compat <python|rust|typescript> <--host|--client>\n' >&2
+        printf 'Usage: ./build.sh test_compat <python|rust|typescript|go> <--host|--client>\n' >&2
         exit 2
     fi
     shift
@@ -178,9 +187,12 @@ test_compat() {
             build_node
             node "$TS/tests/test_compat.mjs" "$@"
             ;;
+        go|golang)
+            (cd "$GO" && go run ./cmd/test_compat "$@")
+            ;;
         *)
             printf 'Unknown compatibility implementation: %s\n' "$language" >&2
-            printf 'Expected python, rust, or typescript.\n' >&2
+            printf 'Expected python, rust, typescript, or go.\n' >&2
             exit 2
             ;;
     esac
@@ -232,6 +244,9 @@ case "$command" in
         ;;
     go)
         build_go
+        ;;
+    go-core)
+        build_go_core
         ;;
     test)
         test_rust

@@ -130,7 +130,7 @@ From the repository root, use the build dispatcher:
 ./build.sh core      # Shared codec core only
 ./build.sh ts        # Complete Node/browser package
 ./build.sh py        # Python wheel and sdist
-./build.sh go        # Go package
+./build.sh go        # Embedded Go codec and package
 ./build.sh test      # Run all test suites
 ./build.sh help      # List every target
 ```
@@ -176,6 +176,7 @@ Cross-language compatibility peers can be selected from the root build script. R
 ./build.sh test_compat typescript --host
 ./build.sh test_compat python --client
 ./build.sh test_compat rust --client
+./build.sh test_compat go --client
 ```
 
 Packet schemas can now map the existing single-type wire format directly to application objects:

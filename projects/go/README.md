@@ -63,3 +63,10 @@ Run the tests from this directory:
 go test ./...
 go test -race ./...
 ```
+
+From the repository root, `./build.sh go-core` rebuilds `internal/core/core.wasm` from `projects/core`. Compatibility peers can run against the other implementations:
+
+```sh
+./build.sh test_compat go --host
+./build.sh test_compat python --client
+```
