@@ -208,6 +208,7 @@ Arbitrary chat strings and already-compressed or highly dynamic JSON may see lit
 ## PLANNED FEATURES
 - Better encoding for the first packet that sends packet information
 - Publish the Rust core as a standalone, documented crate
+- Create branches for each project rather than spamming everything in /projects/
 
 ## API AND PROTOCOL STABILITY
 
