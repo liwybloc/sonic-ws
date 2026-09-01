@@ -74,15 +74,15 @@ Whether you're making a real-time game, a dashboard, a distributed system, or an
 
 You define the packets each side is allowed to send. SonicWS exchanges that schema during the connection handshake, assigns compact numeric packet IDs, and validates incoming data before calling your listeners.
 
-The TypeScript, Python, and native Rust packages handle connections, packet definitions, and their language-specific public APIs. The shared Rust core handles the wire format:
+The TypeScript, Python, Go, and native Rust packages handle connections, packet definitions, and their language-specific public APIs. The shared Rust core handles the wire format:
 
 - Primitive and object packet encoding/decoding
 - Packet validation and range checks
 - Enum, string, boolean, varint, delta, float, and hex codecs
 - Object framing, batching, and raw DEFLATE compression
-- TypeScript/Python-side JSON conversion transported through reserved wire type 16 as raw bytes
+- Language-side JSON conversion transported through reserved wire type 16 as raw bytes
 
-Node and browsers run the core through WebAssembly, and Python loads its packaged WASM core through `wasmtime`. The native Rust package links the core directly and adds a Tokio WebSocket client/server runtime. Protocol behavior therefore comes from the same codec on every supported runtime.
+Node and browsers run the core through WebAssembly. Python uses `wasmtime`, Go uses `wazero`, and native Rust links the core directly. Protocol behavior therefore comes from the same codec on every supported runtime.
 
 Automatic browser-file serving at `/SonicWS/bundle.js` and
 `/SonicWS/bundle.wasm` is supported only by the Node.js server, where it can be
@@ -113,10 +113,14 @@ Rust:
 ```toml
 sonic-ws = { path = "projects/rust" }
 ```
+Go:
+```sh
+go get github.com/liwybloc/sonic-ws/projects/go
+```
 
 ## BUILDING AND TESTING
 
-Building requires Node.js, Rust with the `wasm32-unknown-unknown` target, and `wasm-pack`.
+Building requires Node.js, Go, Rust with the `wasm32-unknown-unknown` target, and `wasm-pack`.
 
 From the repository root, use the build dispatcher:
 
@@ -126,6 +130,7 @@ From the repository root, use the build dispatcher:
 ./build.sh core      # Shared codec core only
 ./build.sh ts        # Complete Node/browser package
 ./build.sh py        # Python wheel and sdist
+./build.sh go        # Embedded Go codec and package
 ./build.sh test      # Run all test suites
 ./build.sh help      # List every target
 ```
@@ -142,7 +147,7 @@ npm run test_node   # Node end-to-end packet tests
 npm run test_web    # Headless browser/WASM end-to-end tests
 ```
 
-The workspace is split into `projects/core`, `projects/rust`, `projects/ts`, and `projects/py`.
+The workspace is split into `projects/core`, `projects/rust`, `projects/ts`, `projects/py`, and `projects/go`.
 Each project owns its source, tests, and packaging configuration. Shared browser
 artifacts remain at `bundled/bundle.js` and `bundled/bundle.wasm`.
 
@@ -157,6 +162,7 @@ Full API documentation:
 - [TypeScript / Node / browser](docs/ts/README.md)
 - [Python](docs/py/README.md)
 - [Native Rust](projects/rust/README.md)
+- [Go](projects/go/README.md)
 - [Protocol version 25](docs/protocol.md)
 - [Production defaults](docs/defaults.md)
 - [Authentication and recovery](docs/authentication.md)
@@ -170,6 +176,7 @@ Cross-language compatibility peers can be selected from the root build script. R
 ./build.sh test_compat typescript --host
 ./build.sh test_compat python --client
 ./build.sh test_compat rust --client
+./build.sh test_compat go --client
 ```
 
 Packet schemas can now map the existing single-type wire format directly to application objects:
@@ -187,7 +194,7 @@ await ws.send("entitySnapshot", [...entities.values()]);
 
 This remains a homogeneous `VARINT` packet. Schema mapping, row-major `autoFlatten`, object-packet `autoTranspose`, quantization, bounds, and packet groups are application-layer conveniences and do not turn the codec into a mixed-type serializer. See the packet documentation above for TypeScript and Python examples.
 
-Clients can opt into capped exponential-backoff reconnect. Packets marked `replay: true` are retained in a bounded per-session buffer; successful recovery also restores server-side `state` and room membership. RPC request payloads use ordinary packet definitions, so validation and compact encoding still apply. Room broadcasts work locally and can be forwarded across processes through an adapter. Long-polling fallback is intentionally outside SonicWS's scope.
+TypeScript and Python clients can opt into capped exponential-backoff reconnect; Rust and Go expose explicit reconnect operations. Packets marked `replay: true` are retained in a bounded per-session buffer; successful recovery also restores server-side `state` and room membership. RPC request payloads use ordinary packet definitions, so validation and compact encoding still apply. Room broadcasts work locally and can be forwarded across processes through an adapter. Long-polling fallback is intentionally outside SonicWS's scope.
 
 ## WHERE SONICWS FITS
 
@@ -201,7 +208,6 @@ Arbitrary chat strings and already-compressed or highly dynamic JSON may see lit
 ## PLANNED FEATURES
 - Better encoding for the first packet that sends packet information
 - Publish the Rust core as a standalone, documented crate
-- Add first-class Go bindings
 
 ## API AND PROTOCOL STABILITY
 

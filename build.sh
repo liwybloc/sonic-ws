@@ -7,6 +7,8 @@ CORE="$ROOT/projects/core"
 RUST="$ROOT/projects/rust"
 TS="$ROOT/projects/ts"
 PY="$ROOT/projects/py"
+GO="$ROOT/projects/go"
+GO_WASM="$GO/internal/core/core.wasm"
 
 python_for_tests() {
     local candidate
@@ -48,7 +50,7 @@ usage() {
 Usage: ./build.sh <command>
 
 Build commands:
-  all          Build Rust, TypeScript/Node/browser, and Python artifacts
+  all          Build Rust, TypeScript/Node/browser, Python, and Go artifacts
   rust         Build the Rust codec core and native Rust runtime
   core         Build only the shared Rust codec core
   rust-runtime Build only the native Rust client/server package
@@ -58,15 +60,18 @@ Build commands:
   py           Build the Python wheel and source distribution
   py-wheel     Build only the Python wheel
   py-sdist     Build only the self-contained Python source distribution
+  go           Build the Go codec and package
+  go-core      Rebuild the embedded Go WASM codec
 
 Test and packaging commands:
-  test         Run Rust, Node, browser, and Python tests
+  test         Run Rust, Node, browser, Python, and Go tests
   test-rust    Run the Rust test suite
   test-node    Run the Node end-to-end suite
   test-web     Run the browser/WASM end-to-end suite
   test-py      Run Python codec, parity, integration, and runtime tests
+  test-go      Run the Go tests
   test_compat  Run one compatibility peer (language plus --host or --client)
-  conformance  Run the shared Node and Python golden-vector corpus
+  conformance  Run the shared Node, Python, and Go golden-vector corpus
   pack-node    Build and create the npm tarball
   benchmark    Build and run the reproducible codec benchmark suite
   check        Run non-networked static checks
@@ -111,6 +116,16 @@ build_python_sdist() {
     python3 -m build --no-isolation --sdist "$PY"
 }
 
+build_go_core() {
+    cargo build --release --locked --target wasm32-unknown-unknown --features python --manifest-path "$CORE/Cargo.toml"
+    install -m 0644 "$CORE/target/wasm32-unknown-unknown/release/sonic_ws_core.wasm" "$GO_WASM"
+}
+
+build_go() {
+    build_go_core
+    (cd "$GO" && go build ./...)
+}
+
 test_rust() {
     cargo test --manifest-path "$CORE/Cargo.toml"
     cargo test --manifest-path "$RUST/Cargo.toml"
@@ -122,6 +137,10 @@ test_node() {
 
 test_web() {
     (cd "$TS" && npm run test_web)
+}
+
+test_go() {
+    (cd "$GO" && go test ./...)
 }
 
 test_python() {
@@ -143,12 +162,13 @@ test_conformance() {
     (cd "$TS" && npm run test_conformance)
     export PYTHONPATH="$PY/src${PYTHONPATH:+:$PYTHONPATH}"
     "$python" "$PY/tests/test_conformance.py"
+    (cd "$GO" && go test -run '^TestGoldenVectors$' .)
 }
 
 test_compat() {
     local language="${1:-}"
     if [[ -z "$language" ]]; then
-        printf 'Usage: ./build.sh test_compat <python|rust|typescript> <--host|--client>\n' >&2
+        printf 'Usage: ./build.sh test_compat <python|rust|typescript|go> <--host|--client>\n' >&2
         exit 2
     fi
     shift
@@ -167,9 +187,12 @@ test_compat() {
             build_node
             node "$TS/tests/test_compat.mjs" "$@"
             ;;
+        go|golang)
+            (cd "$GO" && go run ./cmd/test_compat "$@")
+            ;;
         *)
             printf 'Unknown compatibility implementation: %s\n' "$language" >&2
-            printf 'Expected python, rust, or typescript.\n' >&2
+            printf 'Expected python, rust, typescript, or go.\n' >&2
             exit 2
             ;;
     esac
@@ -180,6 +203,7 @@ static_checks() {
     cargo check --manifest-path "$RUST/Cargo.toml"
     (cd "$TS" && npx tsc --noEmit)
     python3 -m compileall -q "$PY/src" "$PY/tests"
+    (cd "$GO" && go vet ./...)
 }
 
 command="${1:-help}"
@@ -189,6 +213,7 @@ case "$command" in
         build_rust
         build_ts
         build_python
+        build_go
         ;;
     rust)
         build_rust
@@ -217,11 +242,18 @@ case "$command" in
     py-sdist)
         build_python_sdist
         ;;
+    go)
+        build_go
+        ;;
+    go-core)
+        build_go_core
+        ;;
     test)
         test_rust
         test_node
         test_web
         test_python
+        test_go
         ;;
     test-rust)
         test_rust
@@ -234,6 +266,9 @@ case "$command" in
         ;;
     test-py)
         test_python
+        ;;
+    test-go)
+        test_go
         ;;
     test_compat|test-compat)
         shift
