@@ -238,7 +238,7 @@ wss.on_recovered(ws => {
 	synchronize(ws, entity, true);
 });
 
-setInterval(() => {
+wss.setInterval(() => {
 	const now = Date.now();
 	for (const entity of entities.values())
 		if (now - entity.lastSeen > 30_000 && !pendingRemoval.has(entity.id)) {
@@ -247,7 +247,7 @@ setInterval(() => {
 				id: entity.id
 			});
 		}
-}, 5000).unref();
-setInterval(broadcastSnapshot, 15_000).unref();
+}, 5000);
+wss.setInterval(broadcastSnapshot, 15_000);
 
 httpServer.listen(6726, "localhost", () => console.log("SonicWS 3D world: http://localhost:6726"));
