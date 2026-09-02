@@ -215,6 +215,27 @@ try {
     const address = server.wss.address();
     assert(address && typeof address !== "string");
 
+    let canceledTimeoutFired = false;
+    const canceledTimeout = server.setTimeout(() => { canceledTimeoutFired = true; }, 10);
+    server.clearTimeout(canceledTimeout);
+    await new Promise(resolve => globalThis.setTimeout(resolve, 20));
+    assert.equal(canceledTimeoutFired, false, "cleared server timeout fired");
+
+    await withTimeout(new Promise(resolve => {
+        let calls = 0;
+        const interval = server.setInterval(() => {
+            calls++;
+            if (calls === 2) {
+                server.clearInterval(interval);
+                resolve();
+            }
+        }, 5);
+    }), 1_000, "server interval");
+
+    await withTimeout(new Promise(resolve => {
+        server.setTimeout(resolve, 5);
+    }), 1_000, "server timeout");
+
     const connectionPromise = new Promise(resolve => server.on_connect(resolve));
     client = new SonicWS(`ws://127.0.0.1:${address.port}`);
 
@@ -474,7 +495,13 @@ try {
         client.close();
         await withTimeout(closed, 2_000, "client close").catch(() => undefined);
     }
-    if (server) await new Promise(resolve => server.shutdown(() => resolve()));
+    if (server) {
+        let shutdownTimerFired = false;
+        server.setTimeout(() => { shutdownTimerFired = true; }, 10);
+        await new Promise(resolve => server.shutdown(() => resolve()));
+        await new Promise(resolve => globalThis.setTimeout(resolve, 20));
+        assert.equal(shutdownTimerFired, false, "server timeout survived shutdown");
+    }
 }
 
 await import("./test_recovery.mjs");

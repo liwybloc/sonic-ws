@@ -204,6 +204,7 @@ export class SonicWSServer<
     ST extends PacketArray = PacketArray,
 > extends MiddlewareHolder<ServerMiddleware> {
     private wss: WS.WebSocketServer;
+    private timers = new Set<ReturnType<typeof globalThis.setTimeout>>();
 
     private availableIds: number[] = [];
     private lastId: number = 0;
@@ -568,6 +569,35 @@ export class SonicWSServer<
         this.wss.on('listening', runner);
     }
 
+    /** Sets a timeout that is automatically cleared when the server shuts down. */
+    public setTimeout(callback: () => void, delay: number): ReturnType<typeof globalThis.setTimeout> {
+        const timer = globalThis.setTimeout(() => {
+            this.timers.delete(timer);
+            callback();
+        }, delay);
+        this.timers.add(timer);
+        return timer;
+    }
+
+    /** Sets an interval that is automatically cleared when the server shuts down. */
+    public setInterval(callback: () => void, delay: number): ReturnType<typeof globalThis.setInterval> {
+        const timer = globalThis.setInterval(callback, delay);
+        this.timers.add(timer);
+        return timer;
+    }
+
+    /** Clears a timeout created by {@link setTimeout}. */
+    public clearTimeout(timer: ReturnType<typeof globalThis.setTimeout>): void {
+        globalThis.clearTimeout(timer);
+        this.timers.delete(timer);
+    }
+
+    /** Clears an interval created by {@link setInterval}. */
+    public clearInterval(timer: ReturnType<typeof globalThis.setInterval>): void {
+        globalThis.clearInterval(timer);
+        this.timers.delete(timer);
+    }
+
     /**
      * Writes a portable packet manifest and optional generated client types.
      *
@@ -602,6 +632,8 @@ export class SonicWSServer<
      * @param callback Called when server closes
      */
     public shutdown(callback: (err?: Error) => void): void {
+        for (const timer of this.timers) globalThis.clearTimeout(timer);
+        this.timers.clear();
         this.sessions.clear();
         Promise.resolve(this.adapter?.close?.()).catch(error =>
             this.handleSendError(error, { packetTag: "<adapter>", operation: "broadcast" }));
