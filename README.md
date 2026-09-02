@@ -1,6 +1,6 @@
 # sonic-ws
 
-### The socket library that handle correctness, security, and performance for you
+### The socket library that handle correctness, security, bandwidth, and performance for you
 
 SonicWS is a schema-driven WebSocket library for multiple languages. It uses a shared Rust packet codec, to provide compact binary packets, validation before listener execution, batching, compression, built-in rate limiting, and more.
 
