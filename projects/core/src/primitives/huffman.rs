@@ -117,7 +117,7 @@ const CODES: &[(&str, &str)] = &[
     ("110101100", "°"),
     ("110101101", "¯"),
     ("110110100", "®"),
-    ("110111100", "­"),
+    ("110111100", "\u{ad}"),
     ("110111101", "%"),
     ("111000000", "¬"),
     ("111000001", "«"),
@@ -268,7 +268,7 @@ pub fn encode_huffman(text: &str) -> Option<Vec<u8>> {
         let value = ch.to_string();
         bits.push_str(CODES.iter().find(|(_, c)| *c == value)?.0);
     }
-    let mut out = Vec::with_capacity((bits.len() + 7) / 8);
+    let mut out = Vec::with_capacity(bits.len().div_ceil(8));
     for chunk in bits.as_bytes().chunks(8) {
         let mut byte = 0_u8;
         for (i, bit) in chunk.iter().enumerate() {

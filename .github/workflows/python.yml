@@ -35,7 +35,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: projects/core
-      - run: python -m pip install --upgrade pip build
+      - run: python -m pip install --upgrade pip build setuptools wheel
       - run: python -m pip install -e projects/py
       - run: ./build.sh test-py
       - run: ./build.sh py

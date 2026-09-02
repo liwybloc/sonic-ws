@@ -47,13 +47,14 @@ fn decode_type(
                 .collect(),
         ),
         PacketType::Shorts | PacketType::UShorts => {
-            if !bytes.len().is_multiple_of(2) {
+            let (chunks, remainder) = bytes.as_chunks::<2>();
+            if !remainder.is_empty() {
                 return Err(Error::InvalidData("truncated short"));
             }
-            let values = bytes
-                .chunks_exact(2)
+            let values = chunks
+                .iter()
                 .map(|v| {
-                    let n = u16::from_be_bytes([v[0], v[1]]);
+                    let n = u16::from_be_bytes(*v);
                     if kind == PacketType::Shorts {
                         SonicValue::I64(zigzag::decode(u64::from(n)))
                     } else {
@@ -82,24 +83,26 @@ fn decode_type(
             array(values)
         }
         PacketType::Floats => {
-            if !bytes.len().is_multiple_of(4) {
+            let (chunks, remainder) = bytes.as_chunks::<4>();
+            if !remainder.is_empty() {
                 return Err(Error::InvalidData("truncated float"));
             }
             array(
-                bytes
-                    .chunks_exact(4)
-                    .map(|v| SonicValue::F32(floats::decode_f32(v.try_into().unwrap())))
+                chunks
+                    .iter()
+                    .map(|v| SonicValue::F32(floats::decode_f32(*v)))
                     .collect(),
             )
         }
         PacketType::Doubles => {
-            if !bytes.len().is_multiple_of(8) {
+            let (chunks, remainder) = bytes.as_chunks::<8>();
+            if !remainder.is_empty() {
                 return Err(Error::InvalidData("truncated double"));
             }
             array(
-                bytes
-                    .chunks_exact(8)
-                    .map(|v| SonicValue::F64(floats::decode_f64(v.try_into().unwrap())))
+                chunks
+                    .iter()
+                    .map(|v| SonicValue::F64(floats::decode_f64(*v)))
                     .collect(),
             )
         }
