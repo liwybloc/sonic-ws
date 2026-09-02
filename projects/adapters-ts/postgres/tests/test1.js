@@ -127,7 +127,13 @@ async function main() {
 
             await waitFor(
                 () =>
+                    receivedA.length === 1 &&
                     receivedB.length === 1
+            );
+
+            assert.deepEqual(
+                receivedA[0],
+                message
             );
 
             assert.deepEqual(
@@ -159,11 +165,17 @@ async function main() {
 
             await waitFor(
                 () =>
-                    receivedA.length === 1
+                    receivedA.length === 1 &&
+                    receivedB.length === 1
             );
 
             assert.deepEqual(
                 receivedA[0],
+                message
+            );
+
+            assert.deepEqual(
+                receivedB[0],
                 message
             );
         }
