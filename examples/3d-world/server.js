@@ -16,11 +16,11 @@ app.use(express.static("public"));
 app.use("/vendor/three", express.static("node_modules/three/build"));
 
 let nextEntityId = 1;
-const entities = new Map();
+export const entities = new Map();
 const pendingInitialization = new WeakMap();
 const pendingRemoval = new Map();
 
-const wss = new SonicWSServer({
+export const wss = new SonicWSServer({
 	clientPackets: [
 		CreatePacket({
 			tag: "click",
@@ -37,7 +37,7 @@ const wss = new SonicWSServer({
 				dataMax: 2, dataMin: 0,
 				quantized: { scale: 1000 },
 				schema: [ "dPitch", "dYaw" ],
-				validator: (s, data) => data == null || (data.dPitch !== null && data.dYaw !== null), // verify that there is either no args or both args
+				validator: (s, data) => data == null || (data.dPitch !== null && data.dYaw !== null),
 			},
 		})
 	],
@@ -128,7 +128,11 @@ const snapshot = () => [...entities.values()].map(({
 	pitch,
 	yaw
 }));
-const broadcastSnapshot = () => wss.broadcast("entitySnapshot", snapshot());
+export const broadcastSnapshot = exclude => wss.broadcastFiltered(
+	"entitySnapshot",
+	ws => ws !== exclude && Boolean(ws.state.entityId),
+	snapshot()
+);
 
 function createPlayer(ws) {
 	const spawn = nextEntityId - 1;
@@ -136,7 +140,7 @@ function createPlayer(ws) {
 		id: nextEntityId++,
 		position: {
 			x: Math.sin(spawn) * 3,
-			y: 1.7,
+			y: 0,
 			z: 5 + Math.cos(spawn) * 3,
 		},
 		pitch: 0,
@@ -155,7 +159,7 @@ function configureConnection(ws, entity) {
 	ws.on("click", () => ws.sendReliable("pointsInfo", ++ws.state.clicks));
 	ws.on("movement", ({ variant, payload, permutation }) => {
 		entity.lastSeen = Date.now();
-		if(!variant) return; // Ignore the 1s keepalive
+		if(!variant) return;
 
 		const { W, A, S, D } = permutation;
 
@@ -213,17 +217,14 @@ function synchronize(ws, entity, recovered = false) {
 	void ws.sendReliable("pointsInfo", ws.state.clicks);
 	void ws.sendReliable("notification", recovered ? "Session recovered" : "Welcome to the SonicWS 3D world");
 	void ws.sendReliable("entitySnapshot", snapshot());
-	void broadcastSnapshot();
+	void broadcastSnapshot(ws);
 }
 
 wss.on_connect(ws => {
-	// Recovery is presented immediately after the schema handshake. Delay fresh
-	// allocation briefly so a replacement transport does not create a duplicate entity.
 	pendingInitialization.set(ws, setTimeout(() => {
 		pendingInitialization.delete(ws);
 		if (!ws.state.entityId) synchronize(ws, createPlayer(ws));
 	}, 100));
-	// Development-only readable packet logs:
 	if (process.env.SONIC_DEBUG_PACKETS) ws.addMiddleware(new PacketLogger());
 });
 
@@ -250,4 +251,25 @@ wss.setInterval(() => {
 }, 5000);
 wss.setInterval(broadcastSnapshot, 15_000);
 
-httpServer.listen(6726, "localhost", () => console.log("SonicWS 3D world: http://localhost:6726"));
+const port = Number(process.env.SONIC_3D_PORT ?? 6726);
+
+export const serverReady = new Promise(resolve => {
+	httpServer.listen(port, "localhost", () => {
+		const address = httpServer.address();
+		const listeningPort = typeof address === "object" && address ? address.port : port;
+		console.log(`SonicWS 3D world: http://localhost:${listeningPort}`);
+		resolve(listeningPort);
+	});
+});
+
+export async function shutdown() {
+	for (const timer of pendingRemoval.values()) clearTimeout(timer);
+	pendingRemoval.clear();
+
+	await new Promise((resolve, reject) => {
+		wss.shutdown(error => error ? reject(error) : resolve());
+	});
+	await new Promise((resolve, reject) => {
+		httpServer.close(error => error ? reject(error) : resolve());
+	});
+}

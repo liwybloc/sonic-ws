@@ -1,10 +1,6 @@
-// Shared physics/movement helpers for both client and server.
-
 export const FIXED_DT_MS = 50;
 export const FIXED_DT_SECONDS = FIXED_DT_MS / 1000;
 
-// Prevents huge tab-sleep/debugger pauses from causing thousands of instant ticks.
-// Remove the cap in script.js if you want unlimited catch-up.
 export const MAX_CATCH_UP_TICKS = 20;
 
 export const EYE_HEIGHT = 1.7;
@@ -29,15 +25,6 @@ export function clampPitch(pitch) {
 	return clamp(pitch, MIN_PITCH, MAX_PITCH);
 }
 
-/**
- * Converts key state into normalized local movement input.
- *
- * Local axes:
- * - x: right positive
- * - z: backward positive
- *
- * So W produces z = -1.
- */
 export function getMovementInput(keys) {
 	const x = keys.D - keys.A;
 	const z = keys.S - keys.W;
@@ -56,12 +43,6 @@ export function getMovementInput(keys) {
 	};
 }
 
-/**
- * Rotates local x/z movement by yaw into world-space movement.
- *
- * This matches:
- * new THREE.Vector3(x, 0, z).applyAxisAngle(Y_AXIS, yaw)
- */
 export function rotateMovementByYaw(input, yaw) {
 	const cos = Math.cos(yaw);
 	const sin = Math.sin(yaw);
@@ -72,9 +53,6 @@ export function rotateMovementByYaw(input, yaw) {
 	};
 }
 
-/**
- * Computes a movement delta for one physics step.
- */
 export function computeMovementDelta({
 	keys,
 	yaw,
@@ -97,15 +75,6 @@ export function computeMovementDelta({
 	};
 }
 
-/**
- * Mutates a plain player object:
- *
- * {
- *   position: { x, y, z },
- *   pitch,
- *   yaw
- * }
- */
 export function stepPlayer(player, {
 	keys,
 	dt = FIXED_DT_SECONDS
@@ -123,9 +92,6 @@ export function stepPlayer(player, {
 	return delta;
 }
 
-/**
- * Applies mouse movement to a player object.
- */
 export function applyLook(player, {
 	movementX,
 	movementY
@@ -134,9 +100,6 @@ export function applyLook(player, {
 	player.pitch = clampPitch(player.pitch - movementY * MOUSE_SENSITIVITY);
 }
 
-/**
- * Applies a received movement delta to a position-like object.
- */
 export function applyDelta(position, delta) {
 	position.x += delta.dx ?? 0;
 	position.y += delta.dy ?? 0;

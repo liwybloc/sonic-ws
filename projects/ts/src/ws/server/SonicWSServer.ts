@@ -712,41 +712,168 @@ export class SonicWSServer<
         target:
             | { type: "all" }
             | { type: "tagged"; tag: string }
-            | { type: "filter"; filter: (socket: SonicWSConnection<CT, ST>) => boolean },
+            | {
+                type: "filter";
+                filter: (
+                    socket: SonicWSConnection<CT, ST>
+                ) => boolean
+            },
         values: any[],
     ): Promise<void> {
-        let recipients: SonicWSConnection<CT, ST>[];
+        const hasMiddleware =
+            this.middlewares.length > 0;
 
-        if (target.type === "all") {
-            recipients = this.connections;
-        } else if (target.type === "tagged") {
-            if (!this.tagsInv.has(target.tag)) return;
-            recipients = Array.from(this.tagsInv.get(target.tag)!);
+        let middlewareRecipients:
+            SonicWSConnection<CT, ST>[] |
+            undefined;
+
+        if (hasMiddleware) {
+            switch (target.type) {
+                case "all":
+                    middlewareRecipients =
+                        this.connections;
+                    break;
+
+                case "tagged": {
+                    const tagged =
+                        this.tagsInv.get(target.tag);
+
+                    if (!tagged || tagged.size === 0)
+                        return;
+
+                    middlewareRecipients =
+                        Array.from(tagged);
+
+                    break;
+                }
+
+                case "filter":
+                    middlewareRecipients =
+                        this.connections.filter(
+                            target.filter
+                        );
+
+                    if (
+                        middlewareRecipients.length ===
+                        0
+                    ) return;
+
+                    break;
+            }
+
+            const cancelled = await this.callMiddleware(
+                    "onPacketBroadcast_pre",
+                    packetTag,
+                    {
+                        recipients:
+                            middlewareRecipients!,
+                        ...target
+                    },
+                    values
+                );
+            if (cancelled) return;
         } else {
-            recipients = this.connections.filter(target.filter);
+            if (
+                target.type === "all" &&
+                this.connections.length === 0
+            ) return;
+
+            if (target.type === "tagged") {
+                const tagged =
+                    this.tagsInv.get(target.tag);
+
+                if (!tagged || tagged.size === 0)
+                    return;
+            }
         }
 
-        if (await this.callMiddleware("onPacketBroadcast_pre", packetTag, { recipients, ...target }, values)) return;
+        const [code, data, packet] =
+            await processPacket(
+                this.serverPackets,
+                packetTag,
+                values,
+                this.serverwideSendQueue,
+                -1,
+            );
 
-        if (recipients.length === 0) return;
+        if (hasMiddleware) {
+            const cancelled = await this.callMiddleware(
+                "onPacketBroadcast_post",
+                packetTag,
+                {
+                    recipients:
+                        middlewareRecipients!,
+                    ...target
+                },
+                data,
+                data.length,
+            );
+            if (cancelled) return;
+        }
 
-        const [code, data, packet] = await processPacket(
-            this.serverPackets,
-            packetTag,
-            values,
-            this.serverwideSendQueue,
-            -1,
-        );
+        if (middlewareRecipients) {
+            for (
+                const connection
+                of middlewareRecipients
+            ) {
+                connection.send_processed(
+                    code,
+                    data,
+                    packet
+                );
+            }
 
-        if (await this.callMiddleware(
-            "onPacketBroadcast_post",
-            packetTag,
-            { recipients, ...target },
-            data,
-            data.length,
-        )) return;
+            return;
+        }
 
-        recipients.forEach(connection => connection.send_processed(code, data, packet));
+        switch (target.type) {
+            case "all":
+                for (
+                    const connection
+                    of this.connections
+                ) {
+                    connection.send_processed(
+                        code,
+                        data,
+                        packet
+                    );
+                }
+                break;
+
+            case "tagged": {
+                const tagged =
+                    this.tagsInv.get(target.tag);
+
+                if (!tagged) break;
+
+                for (const connection of tagged) {
+                    connection.send_processed(
+                        code,
+                        data,
+                        packet
+                    );
+                }
+
+                break;
+            }
+
+            case "filter":
+                for (
+                    const connection
+                    of this.connections
+                ) {
+                    if (!target.filter(connection))
+                        continue;
+
+                    connection.send_processed(
+                        code,
+                        data,
+                        packet
+                    );
+                }
+
+                break;
+        }
     }
 
     public async broadcastTagged<Tag extends PacketTags<ST>>(

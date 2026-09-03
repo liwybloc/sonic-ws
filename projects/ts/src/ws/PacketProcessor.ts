@@ -46,7 +46,7 @@ export interface IMiddlewareHolder<T extends BasicMiddleware> {
 }
 
 export class MiddlewareHolder<T extends BasicMiddleware> implements IMiddlewareHolder<T> {
-    private middlewares: T[] = [];
+    public middlewares: T[] = [];
 
     addMiddleware(middleware: T): void {
         this.middlewares.push(middleware);
