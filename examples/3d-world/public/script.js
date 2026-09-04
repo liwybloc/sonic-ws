@@ -60,6 +60,16 @@ const player = {
 	pitch: 0,
 	yaw: 0
 };
+const visualPlayerPosition = new THREE.Vector3(
+	player.position.x,
+	player.position.y,
+	player.position.z
+);
+const visualPlayerTarget = visualPlayerPosition.clone();
+
+const LOCAL_POSITION_SMOOTHING = 20;
+const REMOTE_POSITION_SMOOTHING = 12;
+const REMOTE_ROTATION_SMOOTHING = 15;
 
 const keys = new Set();
 
@@ -86,6 +96,14 @@ addEventListener("mousemove", event => {
 
 const entities = new Map();
 let selfId;
+let synchronized = false;
+const onlinePlayerCount = document.querySelector("#entities");
+
+function updateOnlinePlayerCount() {
+	const ids = new Set(entities.keys());
+	if (selfId !== undefined) ids.add(selfId);
+	onlinePlayerCount.textContent = ids.size;
+}
 
 const geometry = new THREE.CapsuleGeometry(
 	CAPSULE_RADIUS,
@@ -93,10 +111,6 @@ const geometry = new THREE.CapsuleGeometry(
 	4,
 	8
 );
-
-function toVector3(position) {
-	return new THREE.Vector3(position.x, position.y, position.z);
-}
 
 function copyPosition(target, source) {
 	target.x = source.x;
@@ -116,11 +130,53 @@ function lengthSq3(value) {
 	return value.x * value.x + value.y * value.y + value.z * value.z;
 }
 
+function createNameplate(name) {
+	const canvas = document.createElement("canvas");
+	const ctx = canvas.getContext("2d");
+	const fontSize = 48;
+	const paddingX = 24;
+	const paddingY = 12;
+
+	ctx.font = `600 ${fontSize}px sans-serif`;
+
+	const textWidth = ctx.measureText(name).width;
+	canvas.width = Math.ceil(textWidth + paddingX * 2);
+	canvas.height = fontSize + paddingY * 2;
+	ctx.font = `600 ${fontSize}px sans-serif`;
+	ctx.textAlign = "center";
+	ctx.textBaseline = "middle";
+	ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+	ctx.beginPath();
+	ctx.roundRect(0, 0, canvas.width, canvas.height, 16);
+	ctx.fill();
+	ctx.fillStyle = "white";
+	ctx.fillText(
+		name,
+		canvas.width / 2,
+		canvas.height / 2
+	);
+
+	const texture = new THREE.CanvasTexture(canvas);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	texture.minFilter = THREE.LinearFilter;
+
+	const material = new THREE.SpriteMaterial({
+		map: texture,
+		transparent: true,
+		depthTest: false
+	});
+
+	const sprite = new THREE.Sprite(material);
+	const height = 0.45;
+	sprite.scale.set(height * (canvas.width / canvas.height), height, 1);
+	sprite.position.set(0, CAPSULE_LENGTH / 2 + CAPSULE_RADIUS + 0.45, 0);
+	return sprite;
+}
+
 function upsert(data, snap = false) {
 	const isSelf = data.id === selfId;
 
 	if (isSelf) {
-		if(receivedSnapshot) return;
 		if (snap) {
 			player.position.x = data.x;
 			player.position.y = data.y;
@@ -132,6 +188,14 @@ function upsert(data, snap = false) {
 			copyPosition(sent.position, player.position);
 			sent.pitch = player.pitch;
 			sent.yaw = player.yaw;
+
+			if (!synchronized) {
+				visualPlayerPosition.set(
+					player.position.x,
+					player.position.y,
+					player.position.z
+				);
+			}
 		} else {
 			player.position.x += data.dx ?? 0;
 			player.position.y += data.dy ?? 0;
@@ -149,15 +213,24 @@ function upsert(data, snap = false) {
 	}
 
 	let entity = entities.get(data.id);
+	const isNew = !entity;
 
 	if (!entity) {
+		const mesh = new THREE.Mesh(
+			geometry,
+			new THREE.MeshStandardMaterial({
+				color: 0x2563eb
+			})
+		);
+
+		const name = `Player ${data.id}`;
+		const nameplate = createNameplate(name);
+		mesh.add(nameplate);
+
 		entity = {
-			mesh: new THREE.Mesh(
-				geometry,
-				new THREE.MeshStandardMaterial({
-					color: 0x2563eb
-				})
-			),
+			mesh,
+			nameplate,
+			name,
 			target: new THREE.Vector3(),
 			yaw: 0
 		};
@@ -181,7 +254,16 @@ function upsert(data, snap = false) {
 		entity.yaw += data.dYaw ?? 0;
 	}
 
-	document.querySelector("#entities").textContent = entities.size;
+	if (isNew) {
+		entity.mesh.position.set(
+			entity.target.x,
+			entity.target.y + CAPSULE_CENTER_Y,
+			entity.target.z
+		);
+		entity.mesh.rotation.y = entity.yaw;
+	}
+
+	updateOnlinePlayerCount();
 }
 
 const sent = {
@@ -194,12 +276,6 @@ const sent = {
 	yaw: player.yaw,
 	still: 0
 };
-
-let receivedSnapshot = false;
-
-ws.on_ready(() => {
-	receivedSnapshot = false;
-});
 
 ws.on("entitySnapshot", snapshot => {
 	const ids = new Set(snapshot.map(value => value.id));
@@ -215,21 +291,13 @@ ws.on("entitySnapshot", snapshot => {
 		}
 	}
 
-	document.querySelector("#entities").textContent = entities.size;
-	receivedSnapshot = true;
+	updateOnlinePlayerCount();
+	if (snapshot.some(value => value.id === selfId)) synchronized = true;
 });
 
-ws.on("entity.move", data => {
-	upsert(data);
-});
-
-ws.on("entity.look", data => {
-	upsert(data);
-});
-
-ws.on("entity.both", data => {
-	upsert(data);
-});
+ws.on("entity.move", upsert);
+ws.on("entity.look", upsert);
+ws.on("entity.both", upsert);
 
 ws.on("entity.remove", ({ id }) => {
 	const entity = entities.get(id);
@@ -239,16 +307,30 @@ ws.on("entity.remove", ({ id }) => {
 	}
 
 	entities.delete(id);
-	document.querySelector("#entities").textContent = entities.size;
+	updateOnlinePlayerCount();
 });
 
 ws.on("selfEntity", id => {
 	selfId = id;
-})
+	updateOnlinePlayerCount();
+});
 
 ws.on("pointsInfo", value => {
 	document.querySelector("#points").textContent = value;
 });
+
+ws.on_reconnecting(() => {
+	synchronized = false;
+	keys.clear();
+});
+
+ws.on_reconnect(() => {
+	synchronized = false;
+	physicsAccumulatorMs = 0;
+	lastPhysicsTime = performance.now();
+});
+
+ws.on_recovered(() => synchronized = false);
 
 document.querySelector("#click").onclick = () => {
 	ws.sendReliable("click");
@@ -258,6 +340,7 @@ let lastPhysicsTime = performance.now();
 let physicsAccumulatorMs = 0;
 
 function runPhysicsTick() {
+	if (!synchronized) return;
 
 	stepPlayer(player, {
 		keys: {
@@ -332,9 +415,17 @@ function physicsLoop() {
 	setTimeout(physicsLoop, delay);
 }
 
-function renderFrame() {
-	console.log(player.position, player.pitch, player.yaw);
-	camera.position.copy(toVector3(player.position));
+let lastRenderTime = performance.now();
+
+function renderFrame(now) {
+	const deltaSeconds = Math.min((now - lastRenderTime) / 1000, 0.1);
+	lastRenderTime = now;
+
+	const localAlpha = 1 - Math.exp(-LOCAL_POSITION_SMOOTHING * deltaSeconds);
+	visualPlayerTarget.set(player.position.x, player.position.y, player.position.z);
+	visualPlayerPosition.lerp(visualPlayerTarget, localAlpha);
+
+	camera.position.copy(visualPlayerPosition);
 	camera.position.y += EYE_HEIGHT;
 
 	camera.rotation.set(
@@ -344,21 +435,63 @@ function renderFrame() {
 		"YXZ"
 	);
 
+	const remotePositionAlpha = 1 - Math.exp(-REMOTE_POSITION_SMOOTHING * deltaSeconds);
+	const remoteRotationAlpha = 1 - Math.exp(-REMOTE_ROTATION_SMOOTHING * deltaSeconds);
+
 	for (const entity of entities.values()) {
-		const visualTarget = entity.target.clone();
-		visualTarget.y += CAPSULE_CENTER_Y;
-
-		entity.mesh.position.lerp(
-			visualTarget,
-			1 - Math.pow(0.0001, FIXED_DT_SECONDS)
+		entity.mesh.position.x = THREE.MathUtils.lerp(
+			entity.mesh.position.x,
+			entity.target.x,
+			remotePositionAlpha
 		);
-
-		entity.mesh.rotation.y = entity.yaw;
+		entity.mesh.position.y = THREE.MathUtils.lerp(
+			entity.mesh.position.y,
+			entity.target.y + CAPSULE_CENTER_Y,
+			remotePositionAlpha
+		);
+		entity.mesh.position.z = THREE.MathUtils.lerp(
+			entity.mesh.position.z,
+			entity.target.z,
+			remotePositionAlpha
+		);
+		entity.mesh.rotation.y = THREE.MathUtils.lerp(
+			entity.mesh.rotation.y,
+			entity.yaw,
+			remoteRotationAlpha
+		);
 	}
 
 	renderer.render(scene, camera);
 	requestAnimationFrame(renderFrame);
 }
+
+const playerPositions = document.querySelector("#player-positions");
+
+function updatePlayerPositions() {
+	const players = [{
+		id: selfId,
+		name: `Player ${selfId} (you)`,
+		position: player.position
+	}];
+
+	for (const [id, entity] of entities) {
+		players.push({ id, name: entity.name, position: entity.target });
+	}
+
+	players.sort((a, b) => (a.id ?? Infinity) - (b.id ?? Infinity));
+	playerPositions.replaceChildren(...players
+		.filter(value => value.id !== undefined)
+		.map(value => {
+			const item = document.createElement("li");
+			const { x, y, z } = value.position;
+			item.textContent = `${value.name}: ${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}`;
+			return item;
+		}));
+
+	updateOnlinePlayerCount();
+}
+
+setInterval(updatePlayerPositions, 100);
 
 setTimeout(physicsLoop, FIXED_DT_MS);
 requestAnimationFrame(renderFrame);

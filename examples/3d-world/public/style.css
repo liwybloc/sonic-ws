@@ -35,6 +35,19 @@ button {
 	border-radius: 6px
 }
 
+#player-positions {
+	min-width: 220px;
+	margin: 8px 0 0;
+	padding: 8px 8px 8px 30px;
+	font: 12px/1.5 ui-monospace, monospace;
+	background: #0004;
+	border-radius: 6px
+}
+
+#player-positions:empty {
+	display: none
+}
+
 #crosshair {
 	position: fixed;
 	z-index: 2;
